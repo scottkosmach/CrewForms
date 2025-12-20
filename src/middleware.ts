@@ -27,10 +27,20 @@ export async function middleware(request: NextRequest) {
     },
   })
 
+  // Skip auth refresh if Supabase is not configured
+  // This allows the app to run without Supabase (for testing deployment)
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  
+  if (!supabaseUrl || !supabaseAnonKey) {
+    // Supabase not configured - skip auth middleware
+    return response
+  }
+
   // Create Supabase client for the middleware
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         // Read cookies from the request
