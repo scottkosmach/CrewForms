@@ -7,10 +7,18 @@
 
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import type { ResponseCookie } from 'next/dist/compiled/@edge-runtime/cookies'
 
 // Type import for Database - will be generated after running:
 // supabase gen types typescript --linked > src/types/database.ts
 // import { Database } from '@/types/database'
+
+// Type for cookie objects used by Supabase SSR
+type CookieToSet = {
+  name: string
+  value: string
+  options?: Partial<ResponseCookie>
+}
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -25,7 +33,7 @@ export async function createClient() {
           return cookieStore.getAll()
         },
         // Set cookies on the response
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: CookieToSet[]) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)

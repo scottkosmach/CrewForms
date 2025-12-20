@@ -10,6 +10,14 @@
 
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import type { ResponseCookie } from 'next/dist/compiled/@edge-runtime/cookies'
+
+// Type for cookie objects used by Supabase SSR
+type CookieToSet = {
+  name: string
+  value: string
+  options?: Partial<ResponseCookie>
+}
 
 export async function middleware(request: NextRequest) {
   // Create a response object that we can modify
@@ -30,7 +38,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         // Write cookies to both request and response
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: CookieToSet[]) {
           // Update request cookies (for downstream handlers)
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
