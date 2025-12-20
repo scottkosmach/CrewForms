@@ -1,0 +1,391 @@
+---
+description: Audit logging for tracking data changes
+globs: ["**/supabase/migrations/**", "**/lib/audit/**"]
+alwaysApply: false
+---
+3 character code: aud
+
+
+# Audit Logging Rules
+
+## Overview
+
+Audit logging tracks who changed what and when. In Supabase, this is implemented using PostgreSQL triggers that automatically log changes to an `audit_log` table.
+
+
+## Audit Log Table
+
+```sql
+-- supabase/migrations/20240101000000_create_audit_log.sql
+
+CREATE TABLE audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_name TEXT NOT NULL,
+  record_id UUID NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('INSERT', 'UPDATE', 'DELETE')),
+  old_data JSONB,
+  new_data JSONB,
+  changed_fields TEXT[],
+  user_id UUID REFERENCES auth.users(id),
+  user_email TEXT,
+  ip_address INET,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Indexes for common queries
+CREATE INDEX audit_log_table_name_idx ON audit_log(table_name);
+CREATE INDEX audit_log_record_id_idx ON audit_log(record_id);
+CREATE INDEX audit_log_user_id_idx ON audit_log(user_id);
+CREATE INDEX audit_log_created_at_idx ON audit_log(created_at DESC);
+
+-- RLS: Users can view audit logs for records they have access to
+ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+
+-- Admins can view all audit logs
+CREATE POLICY "Admins can view all audit logs"
+  ON audit_log FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles
+      WHERE id = auth.uid()
+      AND role IN ('admin', 'super_admin')
+    )
+  );
+```
+
+
+## Audit Trigger Function
+
+```sql
+-- supabase/migrations/20240101000001_create_audit_function.sql
+
+CREATE OR REPLACE FUNCTION audit_trigger_function()
+RETURNS TRIGGER AS $$
+DECLARE
+  old_data JSONB;
+  new_data JSONB;
+  changed_fields TEXT[];
+  current_user_id UUID;
+  current_user_email TEXT;
+BEGIN
+  -- Get current user from auth context
+  current_user_id := auth.uid();
+  current_user_email := auth.email();
+
+  IF TG_OP = 'INSERT' THEN
+    new_data := to_jsonb(NEW);
+    
+    INSERT INTO audit_log (table_name, record_id, action, new_data, user_id, user_email)
+    VALUES (TG_TABLE_NAME, NEW.id, 'INSERT', new_data, current_user_id, current_user_email);
+    
+    RETURN NEW;
+
+  ELSIF TG_OP = 'UPDATE' THEN
+    old_data := to_jsonb(OLD);
+    new_data := to_jsonb(NEW);
+    
+    -- Find changed fields
+    SELECT array_agg(key)
+    INTO changed_fields
+    FROM jsonb_each(old_data) AS o(key, value)
+    WHERE NOT (new_data->key = o.value)
+       OR (new_data->key IS NULL AND o.value IS NOT NULL)
+       OR (new_data->key IS NOT NULL AND o.value IS NULL);
+    
+    -- Only log if something actually changed
+    IF changed_fields IS NOT NULL AND array_length(changed_fields, 1) > 0 THEN
+      INSERT INTO audit_log (table_name, record_id, action, old_data, new_data, changed_fields, user_id, user_email)
+      VALUES (TG_TABLE_NAME, NEW.id, 'UPDATE', old_data, new_data, changed_fields, current_user_id, current_user_email);
+    END IF;
+    
+    RETURN NEW;
+
+  ELSIF TG_OP = 'DELETE' THEN
+    old_data := to_jsonb(OLD);
+    
+    INSERT INTO audit_log (table_name, record_id, action, old_data, user_id, user_email)
+    VALUES (TG_TABLE_NAME, OLD.id, 'DELETE', old_data, current_user_id, current_user_email);
+    
+    RETURN OLD;
+  END IF;
+
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+
+## Adding Audit Triggers to Tables
+
+```sql
+-- Add to any table you want to audit
+CREATE TRIGGER audit_projects_trigger
+  AFTER INSERT OR UPDATE OR DELETE ON projects
+  FOR EACH ROW
+  EXECUTE FUNCTION audit_trigger_function();
+
+CREATE TRIGGER audit_profiles_trigger
+  AFTER INSERT OR UPDATE OR DELETE ON profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION audit_trigger_function();
+
+-- Example for a new table
+CREATE TRIGGER audit_tasks_trigger
+  AFTER INSERT OR UPDATE OR DELETE ON tasks
+  FOR EACH ROW
+  EXECUTE FUNCTION audit_trigger_function();
+```
+
+
+## Excluding Fields from Audit
+
+For sensitive fields or frequently-updated timestamps:
+
+```sql
+CREATE OR REPLACE FUNCTION audit_trigger_function()
+RETURNS TRIGGER AS $$
+DECLARE
+  excluded_fields TEXT[] := ARRAY['updated_at', 'last_seen_at', 'password_hash'];
+  -- ... rest of function
+BEGIN
+  -- When finding changed fields, exclude certain ones
+  SELECT array_agg(key)
+  INTO changed_fields
+  FROM jsonb_each(old_data) AS o(key, value)
+  WHERE NOT (new_data->key = o.value)
+    AND NOT (key = ANY(excluded_fields));  -- Exclude these fields
+  -- ...
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+
+## Querying Audit Logs
+
+### Get History for a Record
+
+```typescript
+async function getRecordHistory(tableName: string, recordId: string) {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('*')
+    .eq('table_name', tableName)
+    .eq('record_id', recordId)
+    .order('created_at', { ascending: false })
+
+  return data
+}
+
+// Usage
+const projectHistory = await getRecordHistory('projects', projectId)
+```
+
+### Get Recent Changes by User
+
+```typescript
+async function getUserActivity(userId: string, limit = 50) {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  return data
+}
+```
+
+### Get Changes in Time Range
+
+```typescript
+async function getChangesInRange(startDate: Date, endDate: Date) {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('*')
+    .gte('created_at', startDate.toISOString())
+    .lte('created_at', endDate.toISOString())
+    .order('created_at', { ascending: false })
+
+  return data
+}
+```
+
+### Get Changes to Specific Field
+
+```typescript
+async function getFieldChanges(tableName: string, fieldName: string) {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('*')
+    .eq('table_name', tableName)
+    .contains('changed_fields', [fieldName])
+    .order('created_at', { ascending: false })
+
+  return data
+}
+
+// Example: Get all status changes for projects
+const statusChanges = await getFieldChanges('projects', 'status')
+```
+
+
+## Displaying Audit History
+
+```typescript
+// components/audit-history.tsx
+import { formatDistanceToNow } from 'date-fns'
+
+interface AuditEntry {
+  id: string
+  action: 'INSERT' | 'UPDATE' | 'DELETE'
+  changed_fields: string[] | null
+  old_data: Record<string, unknown> | null
+  new_data: Record<string, unknown> | null
+  user_email: string | null
+  created_at: string
+}
+
+export function AuditHistory({ entries }: { entries: AuditEntry[] }) {
+  return (
+    <div className="space-y-4">
+      {entries.map((entry) => (
+        <div key={entry.id} className="border-l-2 border-muted pl-4 py-2">
+          <div className="flex items-center gap-2 text-sm">
+            <ActionBadge action={entry.action} />
+            <span className="text-muted-foreground">
+              by {entry.user_email ?? 'System'}
+            </span>
+            <span className="text-muted-foreground">
+              {formatDistanceToNow(new Date(entry.created_at), { addSuffix: true })}
+            </span>
+          </div>
+
+          {entry.action === 'UPDATE' && entry.changed_fields && (
+            <div className="mt-2 text-sm">
+              <p className="text-muted-foreground">Changed fields:</p>
+              <ul className="mt-1 space-y-1">
+                {entry.changed_fields.map((field) => (
+                  <li key={field} className="flex gap-2">
+                    <span className="font-medium">{field}:</span>
+                    <span className="text-red-500 line-through">
+                      {formatValue(entry.old_data?.[field])}
+                    </span>
+                    <span>→</span>
+                    <span className="text-green-500">
+                      {formatValue(entry.new_data?.[field])}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ActionBadge({ action }: { action: string }) {
+  const colors = {
+    INSERT: 'bg-green-100 text-green-800',
+    UPDATE: 'bg-blue-100 text-blue-800',
+    DELETE: 'bg-red-100 text-red-800',
+  }
+
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[action]}`}>
+      {action}
+    </span>
+  )
+}
+
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return '(empty)'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+```
+
+
+## Audit Log Cleanup
+
+For high-volume tables, periodically clean old audit logs:
+
+```sql
+-- Supabase Edge Function or scheduled job
+-- Delete audit logs older than 90 days
+DELETE FROM audit_log
+WHERE created_at < now() - INTERVAL '90 days';
+
+-- Or archive to cold storage first
+INSERT INTO audit_log_archive
+SELECT * FROM audit_log
+WHERE created_at < now() - INTERVAL '90 days';
+
+DELETE FROM audit_log
+WHERE created_at < now() - INTERVAL '90 days';
+```
+
+### Scheduled Cleanup Function
+
+```typescript
+// supabase/functions/cleanup-audit-logs/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+serve(async () => {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  )
+
+  const ninetyDaysAgo = new Date()
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+
+  const { error, count } = await supabase
+    .from('audit_log')
+    .delete()
+    .lt('created_at', ninetyDaysAgo.toISOString())
+
+  if (error) {
+    console.error('Cleanup failed:', error)
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 })
+  }
+
+  console.log(`Deleted ${count} old audit log entries`)
+  return new Response(JSON.stringify({ deleted: count }), { status: 200 })
+})
+```
+
+
+## Tables to Audit
+
+| Table | Audit? | Reason |
+|-------|--------|--------|
+| `profiles` | ✅ | Track user profile changes |
+| `projects` | ✅ | Track project modifications |
+| `tasks` | ✅ | Track task updates |
+| `settings` | ✅ | Track configuration changes |
+| `audit_log` | ❌ | Would cause infinite loop |
+| `sessions` | ❌ | Too high volume, not valuable |
+| `analytics_events` | ❌ | High volume, separate tracking |
+
+
+## Key Conventions
+
+- **Audit business-critical tables** - Not everything needs auditing
+- **Exclude high-frequency fields** - Like `updated_at` or `last_seen`
+- **Use SECURITY DEFINER** - Trigger runs with elevated privileges
+- **Index wisely** - Add indexes for common query patterns
+- **Clean up old logs** - Implement retention policy
+- **Don't audit the audit table** - Avoid infinite loops
+- **Store user context** - Capture who made the change via auth.uid()

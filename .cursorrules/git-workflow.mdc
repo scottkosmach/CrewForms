@@ -1,0 +1,139 @@
+---
+description: Git workflow rules for committing, pushing, and version control
+globs: []
+alwaysApply: false
+---
+3 character code: git
+
+
+# Git Workflow Rules
+
+## Golden Rule: Commit Only When Asked
+
+**NEVER automatically commit changes after edits.** Only commit when the user explicitly requests it with phrases like:
+- "commit this"
+- "push this to GitHub"
+- "let's commit"
+- "save this to git"
+
+
+## Pre-Commit Checklist
+
+Before committing, ALWAYS:
+
+1. **Check git status** to see what files have changed
+2. **Verify `.gitignore` exists** - if deleted, restore it
+3. **Review sensitive files** - NEVER commit files containing secrets:
+   - `.env.local`, `.env` (Supabase keys, API secrets)
+   - Any file with API keys, passwords, or tokens
+
+
+## Files That Should Be Ignored
+
+These files/folders are in `.gitignore` and should NOT be committed:
+
+| Path | Reason |
+|------|--------|
+| `.env.local` | Contains Supabase keys and secrets |
+| `.env*.local` | All local environment files |
+| `node_modules/` | Dependencies (auto-installed) |
+| `.next/` | Next.js build output |
+| `out/` | Static export output |
+| `.vercel/` | Vercel deployment cache |
+| `*.log` | Log files |
+| `.DS_Store` | macOS system files |
+
+
+## Standard Git Commands
+
+### Check Status
+```bash
+git status
+```
+
+### Stage and Commit
+```bash
+# Stage specific file
+git add <filename>
+
+# Stage all changes
+git add .
+
+# Commit with message
+git commit -m "Your commit message"
+```
+
+### Push to Remote
+```bash
+git push
+```
+
+### Pull Latest Changes
+```bash
+git pull
+```
+
+### Create and Switch Branch
+```bash
+# Create and switch
+git checkout -b feature/my-feature
+
+# Switch to existing branch
+git checkout main
+```
+
+### Merge Branch into Main
+```bash
+# Switch to main and get latest
+git checkout main
+git pull origin main
+
+# Merge your branch
+git merge feature/my-feature
+
+# Push the merge
+git push origin main
+
+# Delete merged branch (optional)
+git branch -d feature/my-feature
+```
+
+
+## Commit Message Guidelines
+
+Write clear, concise commit messages:
+- Start with a verb (Add, Update, Fix, Remove, Refactor)
+- Describe WHAT changed and WHY
+- Keep under 72 characters for the first line
+
+**Examples:**
+- `Add user authentication with magic link`
+- `Fix RLS policy for organization members`
+- `Update dashboard layout for mobile`
+- `Remove deprecated API endpoint`
+- `Refactor data fetching to use Server Components`
+
+
+## Branch Naming Conventions
+
+| Prefix | Use For | Example |
+|--------|---------|---------|
+| `feature/` | New features | `feature/user-profiles` |
+| `fix/` | Bug fixes | `fix/login-redirect` |
+| `refactor/` | Code improvements | `refactor/auth-middleware` |
+| `docs/` | Documentation | `docs/api-readme` |
+
+
+## Working with Supabase Migrations
+
+When committing database changes:
+
+1. **Always include migration files** from `supabase/migrations/`
+2. **Never commit** `.supabase/` directory (local Supabase state)
+3. **Document breaking changes** in commit message
+
+```bash
+# Good commit for schema change
+git add supabase/migrations/20240115_add_profiles_table.sql
+git commit -m "Add profiles table with RLS policies"
+```

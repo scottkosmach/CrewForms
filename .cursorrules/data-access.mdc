@@ -1,0 +1,485 @@
+---
+description: Data access patterns using Supabase client
+globs: ["**/lib/supabase/**", "**/*.ts", "**/*.tsx"]
+alwaysApply: false
+---
+3 character code: dba
+
+
+# Data Access Rules
+
+## Architecture Pattern
+
+```
+Server Component → createServerClient() → Supabase → PostgreSQL
+Client Component → createBrowserClient() → Supabase → PostgreSQL
+```
+
+**Use Server Components by default.** Only use Client Components when you need interactivity.
+
+
+## Supabase Client Setup
+
+### Server Client (`src/lib/supabase/server.ts`)
+
+```typescript
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { Database } from '@/types/database'
+
+export async function createClient() {
+  const cookieStore = await cookies()
+
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // Called from Server Component - ignore
+          }
+        },
+      },
+    }
+  )
+}
+```
+
+### Browser Client (`src/lib/supabase/client.ts`)
+
+```typescript
+import { createBrowserClient } from '@supabase/ssr'
+import { Database } from '@/types/database'
+
+export function createClient() {
+  return createBrowserClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
+```
+
+
+## Fetching Data in Server Components
+
+```typescript
+// app/projects/page.tsx
+import { createClient } from '@/lib/supabase/server'
+
+export default async function ProjectsPage() {
+  const supabase = await createClient()
+  
+  const { data: projects, error } = await supabase
+    .from('projects')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('Failed to fetch projects:', error)
+    return <div>Failed to load projects</div>
+  }
+
+  return (
+    <ul>
+      {projects.map(project => (
+        <li key={project.id}>{project.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+
+## Fetching Data in Client Components
+
+```typescript
+'use client'
+
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import type { Database } from '@/types/database'
+
+type Project = Database['public']['Tables']['projects']['Row']
+
+export function ProjectList() {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchProjects() {
+      const supabase = createClient()
+      
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        setError(error.message)
+      } else {
+        setProjects(data)
+      }
+      setLoading(false)
+    }
+
+    fetchProjects()
+  }, [])
+
+  if (loading) return <div>Loading...</div>
+  if (error) return <div>Error: {error}</div>
+
+  return (
+    <ul>
+      {projects.map(project => (
+        <li key={project.id}>{project.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+
+## Common Query Patterns
+
+### Select with Related Data (Joins)
+
+```typescript
+// Get projects with their tasks
+const { data } = await supabase
+  .from('projects')
+  .select(`
+    *,
+    tasks (
+      id,
+      title,
+      status
+    )
+  `)
+
+// Get a single project with owner info
+const { data } = await supabase
+  .from('projects')
+  .select(`
+    *,
+    owner:profiles!owner_id (
+      id,
+      full_name,
+      avatar_url
+    )
+  `)
+  .eq('id', projectId)
+  .single()
+```
+
+### Filtering
+
+```typescript
+// Equality
+.eq('status', 'active')
+
+// Not equal
+.neq('status', 'archived')
+
+// In list
+.in('status', ['active', 'pending'])
+
+// Greater/less than
+.gt('created_at', '2024-01-01')
+.lt('priority', 5)
+
+// Pattern matching
+.ilike('name', '%search%')  // Case-insensitive
+.like('name', '%search%')   // Case-sensitive
+
+// Null checks
+.is('deleted_at', null)
+.not('deleted_at', 'is', null)
+
+// Combining filters
+.eq('owner_id', userId)
+.is('deleted_at', null)
+.order('created_at', { ascending: false })
+```
+
+### Pagination
+
+```typescript
+const PAGE_SIZE = 10
+
+const { data, count } = await supabase
+  .from('projects')
+  .select('*', { count: 'exact' })
+  .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+  .order('created_at', { ascending: false })
+
+const totalPages = Math.ceil((count ?? 0) / PAGE_SIZE)
+```
+
+### Single Record
+
+```typescript
+// Get one record (throws if not found)
+const { data, error } = await supabase
+  .from('projects')
+  .select('*')
+  .eq('id', projectId)
+  .single()
+
+// Get one record (returns null if not found)
+const { data, error } = await supabase
+  .from('projects')
+  .select('*')
+  .eq('id', projectId)
+  .maybeSingle()
+```
+
+
+## Creating Data
+
+### Server Action Pattern
+
+```typescript
+// app/projects/actions.ts
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+
+export async function createProject(formData: FormData) {
+  const supabase = await createClient()
+  
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({
+      name: formData.get('name') as string,
+      description: formData.get('description') as string,
+      owner_id: user.id,
+    })
+    .select()
+    .single()
+
+  if (error) throw new Error(error.message)
+
+  revalidatePath('/projects')
+  return data
+}
+```
+
+### Client Component Pattern
+
+```typescript
+'use client'
+
+import { createClient } from '@/lib/supabase/client'
+
+async function createProject(name: string, description: string) {
+  const supabase = createClient()
+  
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({ name, description })
+    .select()
+    .single()
+
+  if (error) throw new Error(error.message)
+  return data
+}
+```
+
+
+## Updating Data
+
+```typescript
+// Update single record
+const { error } = await supabase
+  .from('projects')
+  .update({ name: 'New Name' })
+  .eq('id', projectId)
+
+// Update and return updated record
+const { data, error } = await supabase
+  .from('projects')
+  .update({ name: 'New Name' })
+  .eq('id', projectId)
+  .select()
+  .single()
+
+// Update multiple records
+const { error } = await supabase
+  .from('tasks')
+  .update({ status: 'archived' })
+  .eq('project_id', projectId)
+```
+
+
+## Deleting Data
+
+```typescript
+// Hard delete
+const { error } = await supabase
+  .from('projects')
+  .delete()
+  .eq('id', projectId)
+
+// Soft delete (if using deleted_at pattern)
+const { error } = await supabase
+  .from('projects')
+  .update({ deleted_at: new Date().toISOString() })
+  .eq('id', projectId)
+```
+
+
+## Avoiding N+1 Queries
+
+**Never fetch data inside a loop.** Use joins or batch queries instead.
+
+### Bad Pattern (N+1)
+
+```typescript
+// DON'T DO THIS
+const projects = await getProjects()
+
+for (const project of projects) {
+  // This makes N database calls!
+  const tasks = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('project_id', project.id)
+}
+```
+
+### Good Pattern (Join)
+
+```typescript
+// DO THIS - single query with join
+const { data } = await supabase
+  .from('projects')
+  .select(`
+    *,
+    tasks (*)
+  `)
+```
+
+### Good Pattern (Batch)
+
+```typescript
+// OR THIS - two queries, batch the second
+const { data: projects } = await supabase
+  .from('projects')
+  .select('*')
+
+const projectIds = projects.map(p => p.id)
+
+const { data: tasks } = await supabase
+  .from('tasks')
+  .select('*')
+  .in('project_id', projectIds)
+
+// Map tasks to projects in memory
+```
+
+
+## Real-time Subscriptions
+
+```typescript
+'use client'
+
+import { useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
+
+export function useProjectSubscription(
+  projectId: string,
+  onUpdate: (project: Project) => void
+) {
+  useEffect(() => {
+    const supabase = createClient()
+    
+    const channel = supabase
+      .channel(`project-${projectId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'projects',
+          filter: `id=eq.${projectId}`,
+        },
+        (payload) => {
+          onUpdate(payload.new as Project)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [projectId, onUpdate])
+}
+```
+
+
+## Error Handling
+
+```typescript
+const { data, error } = await supabase
+  .from('projects')
+  .select('*')
+
+if (error) {
+  // Log for debugging
+  console.error('Database error:', error.message)
+  
+  // Check error code for specific handling
+  if (error.code === 'PGRST116') {
+    // Not found
+    return null
+  }
+  
+  // Throw for error boundary or try/catch
+  throw new Error(`Failed to fetch: ${error.message}`)
+}
+```
+
+
+## TypeScript Types
+
+Always use generated types for full type safety:
+
+```typescript
+import { Database } from '@/types/database'
+
+// Table row type
+type Project = Database['public']['Tables']['projects']['Row']
+
+// Insert type (required fields only)
+type NewProject = Database['public']['Tables']['projects']['Insert']
+
+// Update type (all fields optional)
+type ProjectUpdate = Database['public']['Tables']['projects']['Update']
+
+// Use with Supabase client
+const supabase = createClient<Database>(...)
+```
+
+
+## Key Conventions
+
+- **Server Components first** - Use Client Components only for interactivity
+- **Always handle errors** - Check `error` before using `data`
+- **Use generated types** - Run `supabase gen types` after schema changes
+- **Revalidate paths** - Call `revalidatePath()` after mutations in Server Actions
+- **Use `.single()`** - When expecting exactly one result
+- **Use `.maybeSingle()`** - When result might not exist
+- **Join over loop** - Use Supabase's select with relations, not N+1 queries

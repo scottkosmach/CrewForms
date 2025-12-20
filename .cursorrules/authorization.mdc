@@ -1,0 +1,393 @@
+---
+description: Application-level roles and permission checks
+globs: ["**/lib/auth/**", "**/types/**"]
+alwaysApply: false
+---
+3 character code: aut
+
+
+# Authorization Rules
+
+## Overview
+
+Authorization happens at two levels:
+1. **Database (RLS)** - See `row-level-security.mdc`
+2. **Application (this file)** - Role checks in components and actions
+
+This file covers app-level role management beyond what RLS provides.
+
+
+## Role Storage Pattern
+
+Store roles in a `profiles` table linked to auth.users:
+
+```sql
+-- In your profiles migration
+CREATE TYPE user_role AS ENUM ('user', 'admin', 'super_admin');
+
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT,
+  full_name TEXT,
+  role user_role NOT NULL DEFAULT 'user',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Index for role queries
+CREATE INDEX profiles_role_idx ON profiles(role);
+```
+
+
+## Role Definitions
+
+| Role | Access Level | Description |
+|------|--------------|-------------|
+| `user` | Standard | Default for new users. Access to own data only. |
+| `admin` | Elevated | Can manage users, view all data, access admin pages. |
+| `super_admin` | Full | System configuration, can grant admin roles. |
+
+
+## Getting User Role
+
+### Server-Side Helper
+
+```typescript
+// src/lib/auth/roles.ts
+import { createClient } from '@/lib/supabase/server'
+
+export type UserRole = 'user' | 'admin' | 'super_admin'
+
+export async function getUserRole(): Promise<UserRole> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) return 'user'
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  return (profile?.role as UserRole) ?? 'user'
+}
+
+export async function isAdmin(): Promise<boolean> {
+  const role = await getUserRole()
+  return role === 'admin' || role === 'super_admin'
+}
+
+export async function isSuperAdmin(): Promise<boolean> {
+  const role = await getUserRole()
+  return role === 'super_admin'
+}
+```
+
+### Client-Side Hook
+
+```typescript
+// src/hooks/use-role.ts
+'use client'
+
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import type { UserRole } from '@/lib/auth/roles'
+
+export function useRole() {
+  const [role, setRole] = useState<UserRole>('user')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchRole() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+
+        setRole((profile?.role as UserRole) ?? 'user')
+      }
+      setLoading(false)
+    }
+
+    fetchRole()
+  }, [])
+
+  return {
+    role,
+    loading,
+    isAdmin: role === 'admin' || role === 'super_admin',
+    isSuperAdmin: role === 'super_admin',
+  }
+}
+```
+
+
+## Protecting Pages
+
+### Server Component (Recommended)
+
+```typescript
+// app/(dashboard)/admin/page.tsx
+import { isAdmin } from '@/lib/auth/roles'
+import { redirect } from 'next/navigation'
+
+export default async function AdminPage() {
+  const admin = await isAdmin()
+
+  if (!admin) {
+    redirect('/dashboard')  // Or show 403 page
+  }
+
+  return <div>Admin content</div>
+}
+```
+
+### Layout-Level Protection
+
+```typescript
+// app/(dashboard)/admin/layout.tsx
+import { isAdmin } from '@/lib/auth/roles'
+import { redirect } from 'next/navigation'
+
+export default async function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const admin = await isAdmin()
+
+  if (!admin) {
+    redirect('/dashboard')
+  }
+
+  return <>{children}</>
+}
+```
+
+
+## Protecting Server Actions
+
+```typescript
+'use server'
+
+import { isAdmin } from '@/lib/auth/roles'
+
+export async function deleteUser(userId: string) {
+  const admin = await isAdmin()
+
+  if (!admin) {
+    throw new Error('Unauthorized: Admin access required')
+  }
+
+  // ... delete logic
+}
+```
+
+
+## Conditional UI
+
+### Server Component
+
+```typescript
+import { isAdmin } from '@/lib/auth/roles'
+
+export default async function Sidebar() {
+  const admin = await isAdmin()
+
+  return (
+    <nav>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/projects">Projects</a>
+      {admin && <a href="/admin">Admin</a>}
+    </nav>
+  )
+}
+```
+
+### Client Component
+
+```typescript
+'use client'
+
+import { useRole } from '@/hooks/use-role'
+
+export function AdminButton() {
+  const { isAdmin, loading } = useRole()
+
+  if (loading || !isAdmin) return null
+
+  return <button>Admin Action</button>
+}
+```
+
+
+## Role-Based Components
+
+### RoleGate Component
+
+```typescript
+// src/components/auth/role-gate.tsx
+import { getUserRole, type UserRole } from '@/lib/auth/roles'
+
+interface RoleGateProps {
+  allowedRoles: UserRole[]
+  children: React.ReactNode
+  fallback?: React.ReactNode
+}
+
+export async function RoleGate({
+  allowedRoles,
+  children,
+  fallback = null,
+}: RoleGateProps) {
+  const role = await getUserRole()
+
+  if (!allowedRoles.includes(role)) {
+    return <>{fallback}</>
+  }
+
+  return <>{children}</>
+}
+```
+
+### Usage
+
+```typescript
+import { RoleGate } from '@/components/auth/role-gate'
+
+export default function Page() {
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      
+      {/* Only admins see this */}
+      <RoleGate allowedRoles={['admin', 'super_admin']}>
+        <AdminPanel />
+      </RoleGate>
+
+      {/* With fallback */}
+      <RoleGate 
+        allowedRoles={['admin']} 
+        fallback={<p>Contact admin for access</p>}
+      >
+        <SensitiveData />
+      </RoleGate>
+    </div>
+  )
+}
+```
+
+
+## Changing User Roles
+
+### Admin Action (Super Admin Only)
+
+```typescript
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
+import { revalidatePath } from 'next/cache'
+
+export async function updateUserRole(userId: string, newRole: UserRole) {
+  // Only super admins can change roles
+  const superAdmin = await isSuperAdmin()
+  if (!superAdmin) {
+    throw new Error('Unauthorized')
+  }
+
+  const supabase = await createClient()
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ role: newRole })
+    .eq('id', userId)
+
+  if (error) throw new Error(error.message)
+
+  revalidatePath('/admin/users')
+}
+```
+
+
+## RLS Policies for Roles
+
+Combine with RLS for defense in depth:
+
+```sql
+-- Helper function to check role
+CREATE OR REPLACE FUNCTION is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM profiles
+    WHERE id = auth.uid()
+    AND role IN ('admin', 'super_admin')
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Admin-only table access
+CREATE POLICY "Admins can view all users"
+  ON profiles FOR SELECT
+  USING (
+    id = auth.uid()  -- Users can see own profile
+    OR is_admin()    -- Admins can see all
+  );
+
+-- Only super_admin can modify roles
+CREATE POLICY "Super admins can update roles"
+  ON profiles FOR UPDATE
+  USING (
+    id = auth.uid()  -- Users can update own (except role)
+    OR (
+      SELECT role FROM profiles WHERE id = auth.uid()
+    ) = 'super_admin'
+  );
+```
+
+
+## Permission Constants
+
+```typescript
+// src/lib/auth/permissions.ts
+
+export const PERMISSIONS = {
+  // User management
+  VIEW_USERS: ['admin', 'super_admin'],
+  EDIT_USERS: ['admin', 'super_admin'],
+  DELETE_USERS: ['super_admin'],
+  CHANGE_ROLES: ['super_admin'],
+
+  // Content management
+  VIEW_ALL_CONTENT: ['admin', 'super_admin'],
+  EDIT_ALL_CONTENT: ['admin', 'super_admin'],
+
+  // System
+  VIEW_LOGS: ['admin', 'super_admin'],
+  SYSTEM_SETTINGS: ['super_admin'],
+} as const
+
+export function hasPermission(
+  userRole: UserRole,
+  permission: keyof typeof PERMISSIONS
+): boolean {
+  return PERMISSIONS[permission].includes(userRole)
+}
+```
+
+
+## Key Conventions
+
+- **RLS first** - Use RLS for data access, app roles for UI/feature gating
+- **Check server-side** - Never trust client-side role checks alone
+- **Defense in depth** - App checks + RLS policies together
+- **Principle of least privilege** - Default to 'user' role
+- **Log role changes** - Audit who changed what (see audit-logging.mdc)
+- **Cache carefully** - Role checks should be fresh, not stale

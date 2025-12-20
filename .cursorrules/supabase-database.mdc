@@ -1,0 +1,259 @@
+---
+description: Supabase database schema, migrations, and SQL conventions
+globs: ["**/supabase/migrations/**", "**/supabase/*.sql", "**/supabase/config.toml"]
+alwaysApply: false
+---
+3 character code: sdb
+
+
+# Supabase Database Rules
+
+## Critical Rule: All Schema Changes Through Migrations
+
+**NEVER modify the database schema directly in Supabase Dashboard for production.**
+
+All table/column/index changes MUST go through SQL migration files:
+
+1. Create migration file in `supabase/migrations/`
+2. Write SQL for the change
+3. Run `supabase db push` (local) or deploy via CI/CD
+4. Commit migration file to git
+
+
+## Migration File Naming
+
+Format: `YYYYMMDDHHMMSS_description.sql`
+
+```
+supabase/migrations/
+├── 20240115100000_create_users_table.sql
+├── 20240115100001_create_profiles_table.sql
+├── 20240116090000_add_avatar_to_profiles.sql
+└── 20240120140000_create_projects_table.sql
+```
+
+Use descriptive names:
+- `create_[table]_table` - New table
+- `add_[column]_to_[table]` - New column
+- `remove_[column]_from_[table]` - Remove column
+- `add_[index_name]_index` - New index
+- `update_[table]_rls_policies` - RLS changes
+
+
+## Common Commands
+
+| Task | Command |
+|------|---------|
+| Start local Supabase | `supabase start` |
+| Stop local Supabase | `supabase stop` |
+| Push migrations to local | `supabase db push` |
+| Reset local database | `supabase db reset` |
+| Generate types | `supabase gen types typescript --local > src/types/database.ts` |
+| Create new migration | Create file manually in `supabase/migrations/` |
+| Link to remote project | `supabase link --project-ref <ref>` |
+| Push to remote | `supabase db push --linked` |
+
+
+## Creating a New Table
+
+```sql
+-- supabase/migrations/20240115100000_create_projects_table.sql
+
+-- Create the table
+CREATE TABLE projects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  is_archived BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Add indexes
+CREATE INDEX projects_owner_id_idx ON projects(owner_id);
+
+-- Enable RLS (ALWAYS do this)
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+
+-- Create RLS policies (see row-level-security.mdc for patterns)
+CREATE POLICY "Users can view own projects"
+  ON projects FOR SELECT
+  USING (owner_id = auth.uid());
+
+CREATE POLICY "Users can create own projects"
+  ON projects FOR INSERT
+  WITH CHECK (owner_id = auth.uid());
+
+CREATE POLICY "Users can update own projects"
+  ON projects FOR UPDATE
+  USING (owner_id = auth.uid());
+
+CREATE POLICY "Users can delete own projects"
+  ON projects FOR DELETE
+  USING (owner_id = auth.uid());
+
+-- Add updated_at trigger
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON projects
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+```
+
+
+## Standard Column Conventions
+
+### Primary Key
+```sql
+id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+```
+
+### Foreign Key to Auth User
+```sql
+user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+```
+
+### Timestamps
+```sql
+created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+### Soft Delete (Optional)
+```sql
+deleted_at TIMESTAMPTZ  -- NULL means not deleted
+```
+
+
+## Updated At Trigger Function
+
+Create this once, reuse for all tables:
+
+```sql
+-- supabase/migrations/20240101000000_create_updated_at_function.sql
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+Then for each table:
+```sql
+CREATE TRIGGER set_updated_at
+  BEFORE UPDATE ON your_table
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+```
+
+
+## Adding a Column
+
+```sql
+-- supabase/migrations/20240120100000_add_status_to_projects.sql
+
+ALTER TABLE projects
+ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
+CHECK (status IN ('active', 'paused', 'completed'));
+```
+
+
+## Creating a Lookup Table
+
+```sql
+-- supabase/migrations/20240120110000_create_project_statuses_table.sql
+
+CREATE TABLE project_statuses (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+-- Seed data
+INSERT INTO project_statuses (name, description, sort_order) VALUES
+  ('active', 'Project is in progress', 1),
+  ('paused', 'Project is temporarily on hold', 2),
+  ('completed', 'Project is finished', 3),
+  ('archived', 'Project is archived', 4);
+
+-- RLS: Everyone can read lookup tables
+ALTER TABLE project_statuses ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can view statuses"
+  ON project_statuses FOR SELECT
+  USING (true);
+```
+
+
+## Foreign Key Relationships
+
+```sql
+-- Reference a lookup table
+ALTER TABLE projects
+ADD COLUMN status_id INTEGER REFERENCES project_statuses(id);
+
+-- Reference with cascade delete
+ALTER TABLE comments
+ADD COLUMN project_id UUID NOT NULL
+REFERENCES projects(id) ON DELETE CASCADE;
+
+-- Reference with set null on delete
+ALTER TABLE tasks
+ADD COLUMN assignee_id UUID
+REFERENCES auth.users(id) ON DELETE SET NULL;
+```
+
+
+## Indexes
+
+```sql
+-- Single column index
+CREATE INDEX tasks_project_id_idx ON tasks(project_id);
+
+-- Composite index
+CREATE INDEX tasks_project_status_idx ON tasks(project_id, status);
+
+-- Unique constraint
+CREATE UNIQUE INDEX users_email_unique ON profiles(email);
+
+-- Partial index (only index active records)
+CREATE INDEX active_projects_idx ON projects(owner_id)
+WHERE deleted_at IS NULL;
+```
+
+
+## Generating TypeScript Types
+
+After schema changes, regenerate types:
+
+```bash
+# From local database
+supabase gen types typescript --local > src/types/database.ts
+
+# From remote database
+supabase gen types typescript --linked > src/types/database.ts
+```
+
+This gives you full type safety:
+```typescript
+import { Database } from '@/types/database'
+
+type Project = Database['public']['Tables']['projects']['Row']
+type NewProject = Database['public']['Tables']['projects']['Insert']
+type ProjectUpdate = Database['public']['Tables']['projects']['Update']
+```
+
+
+## Key Conventions
+
+- **Always enable RLS** on every table (except lookup tables in some cases)
+- **Always add updated_at trigger** for tables that will be modified
+- **Use UUID** for primary keys (better for distributed systems)
+- **Use TIMESTAMPTZ** not TIMESTAMP (timezone-aware)
+- **Add indexes** for columns you filter or join on
+- **Cascade deletes** for child records, SET NULL for optional references
+- **Check constraints** for enum-like columns without a lookup table

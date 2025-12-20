@@ -1,0 +1,534 @@
+---
+description: Supabase Storage for file uploads and management
+globs: ["**/lib/supabase/**", "**/components/**upload**"]
+alwaysApply: false
+---
+3 character code: sto
+
+
+# Supabase Storage Rules
+
+## Overview
+
+Supabase Storage handles file uploads, downloads, and management. It integrates with RLS for access control.
+
+
+## Storage Architecture
+
+```
+Supabase Storage
+├── Buckets (containers for files)
+│   ├── avatars/          (public bucket)
+│   ├── documents/        (private bucket)
+│   └── project-files/    (private bucket)
+└── Each bucket can have RLS policies
+```
+
+
+## Creating Buckets
+
+### Via SQL Migration
+
+```sql
+-- supabase/migrations/20240120_create_storage_buckets.sql
+
+-- Create public bucket for avatars
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true);
+
+-- Create private bucket for documents
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('documents', 'documents', false);
+
+-- Create private bucket for project files
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('project-files', 'project-files', false);
+```
+
+### Storage RLS Policies
+
+```sql
+-- Avatars bucket: Users can manage their own avatars
+CREATE POLICY "Users can upload own avatar"
+ON storage.objects FOR INSERT
+WITH CHECK (
+  bucket_id = 'avatars' 
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Users can update own avatar"
+ON storage.objects FOR UPDATE
+USING (
+  bucket_id = 'avatars' 
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Users can delete own avatar"
+ON storage.objects FOR DELETE
+USING (
+  bucket_id = 'avatars' 
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+CREATE POLICY "Anyone can view avatars"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'avatars');
+
+-- Documents bucket: Users can manage their own documents
+CREATE POLICY "Users can manage own documents"
+ON storage.objects FOR ALL
+USING (
+  bucket_id = 'documents' 
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+-- Project files: Project members can access
+CREATE POLICY "Project members can access files"
+ON storage.objects FOR ALL
+USING (
+  bucket_id = 'project-files'
+  AND EXISTS (
+    SELECT 1 FROM project_members
+    WHERE project_id::text = (storage.foldername(name))[1]
+    AND user_id = auth.uid()
+  )
+);
+```
+
+
+## File Upload Patterns
+
+### Simple Upload (Client Component)
+
+```typescript
+'use client'
+
+import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+
+export function AvatarUpload({ userId }: { userId: string }) {
+  const [uploading, setUploading] = useState(false)
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+
+    try {
+      const supabase = createClient()
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${userId}/avatar.${fileExt}`
+
+      const { error } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, {
+          upsert: true, // Overwrite if exists
+        })
+
+      if (error) throw error
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName)
+
+      // Update profile with new avatar URL
+      await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', userId)
+
+    } catch (error) {
+      console.error('Upload error:', error)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <input
+      type="file"
+      accept="image/*"
+      onChange={handleUpload}
+      disabled={uploading}
+    />
+  )
+}
+```
+
+### Upload with Preview
+
+```typescript
+'use client'
+
+import { useState, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
+
+export function FileUpload({ 
+  bucket, 
+  path, 
+  onUpload 
+}: { 
+  bucket: string
+  path: string
+  onUpload: (url: string) => void 
+}) {
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0]
+    if (!selectedFile) return
+
+    setFile(selectedFile)
+
+    // Create preview for images
+    if (selectedFile.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onloadend = () => setPreview(reader.result as string)
+      reader.readAsDataURL(selectedFile)
+    }
+  }
+
+  const handleUpload = async () => {
+    if (!file) return
+
+    setUploading(true)
+
+    try {
+      const supabase = createClient()
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${path}/${Date.now()}.${fileExt}`
+
+      const { error } = await supabase.storage
+        .from(bucket)
+        .upload(fileName, file)
+
+      if (error) throw error
+
+      const { data: { publicUrl } } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(fileName)
+
+      onUpload(publicUrl)
+      toast.success('File uploaded successfully')
+
+      // Reset
+      setFile(null)
+      setPreview(null)
+    } catch (error) {
+      console.error('Upload error:', error)
+      toast.error('Failed to upload file')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <input
+        type="file"
+        onChange={handleFileChange}
+        className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-primary file:text-primary-foreground"
+      />
+
+      {preview && (
+        <img src={preview} alt="Preview" className="max-w-xs rounded" />
+      )}
+
+      {file && (
+        <Button onClick={handleUpload} disabled={uploading}>
+          {uploading ? 'Uploading...' : 'Upload'}
+        </Button>
+      )}
+    </div>
+  )
+}
+```
+
+### Server Action Upload
+
+```typescript
+// app/upload/actions.ts
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+
+export async function uploadFile(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Unauthorized' }
+  }
+
+  const file = formData.get('file') as File
+  if (!file) {
+    return { error: 'No file provided' }
+  }
+
+  const fileExt = file.name.split('.').pop()
+  const fileName = `${user.id}/${Date.now()}.${fileExt}`
+
+  const { error } = await supabase.storage
+    .from('documents')
+    .upload(fileName, file)
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  return { success: true, path: fileName }
+}
+```
+
+
+## File Download
+
+### Public Files
+
+```typescript
+// For public buckets, use the public URL directly
+const { data: { publicUrl } } = supabase.storage
+  .from('avatars')
+  .getPublicUrl('user-123/avatar.png')
+
+// Use in img tag
+<img src={publicUrl} alt="Avatar" />
+```
+
+### Private Files (Signed URLs)
+
+```typescript
+// Generate a signed URL (expires after specified seconds)
+const { data, error } = await supabase.storage
+  .from('documents')
+  .createSignedUrl('user-123/document.pdf', 3600) // 1 hour
+
+if (data) {
+  // data.signedUrl is valid for 1 hour
+  window.open(data.signedUrl)
+}
+```
+
+### Download File
+
+```typescript
+const { data, error } = await supabase.storage
+  .from('documents')
+  .download('user-123/document.pdf')
+
+if (data) {
+  // data is a Blob
+  const url = URL.createObjectURL(data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'document.pdf'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+```
+
+
+## File Management
+
+### List Files
+
+```typescript
+const { data, error } = await supabase.storage
+  .from('documents')
+  .list('user-123', {
+    limit: 100,
+    offset: 0,
+    sortBy: { column: 'created_at', order: 'desc' },
+  })
+
+// data is array of FileObject
+// { name, id, updated_at, created_at, last_accessed_at, metadata }
+```
+
+### Delete Files
+
+```typescript
+// Delete single file
+const { error } = await supabase.storage
+  .from('documents')
+  .remove(['user-123/document.pdf'])
+
+// Delete multiple files
+const { error } = await supabase.storage
+  .from('documents')
+  .remove([
+    'user-123/doc1.pdf',
+    'user-123/doc2.pdf',
+  ])
+```
+
+### Move/Copy Files
+
+```typescript
+// Move file
+const { error } = await supabase.storage
+  .from('documents')
+  .move('old-path/file.pdf', 'new-path/file.pdf')
+
+// Copy file
+const { error } = await supabase.storage
+  .from('documents')
+  .copy('source/file.pdf', 'destination/file.pdf')
+```
+
+
+## Image Transformations
+
+Supabase supports on-the-fly image transformations:
+
+```typescript
+const { data: { publicUrl } } = supabase.storage
+  .from('avatars')
+  .getPublicUrl('user-123/avatar.png', {
+    transform: {
+      width: 200,
+      height: 200,
+      resize: 'cover', // 'cover', 'contain', 'fill'
+      quality: 80,
+    },
+  })
+```
+
+### Common Transform Patterns
+
+```typescript
+// Thumbnail
+const thumbnail = supabase.storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: { width: 150, height: 150, resize: 'cover' }
+  })
+
+// Medium size
+const medium = supabase.storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: { width: 600, height: 400, resize: 'contain' }
+  })
+
+// Compressed
+const compressed = supabase.storage
+  .from('images')
+  .getPublicUrl('photo.jpg', {
+    transform: { quality: 60 }
+  })
+```
+
+
+## File Validation
+
+```typescript
+// Validate before upload
+function validateFile(file: File) {
+  const MAX_SIZE = 5 * 1024 * 1024 // 5MB
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+
+  if (file.size > MAX_SIZE) {
+    return { valid: false, error: 'File too large (max 5MB)' }
+  }
+
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    return { valid: false, error: 'File type not allowed' }
+  }
+
+  return { valid: true }
+}
+
+// Usage
+const handleUpload = async (file: File) => {
+  const validation = validateFile(file)
+  if (!validation.valid) {
+    toast.error(validation.error)
+    return
+  }
+
+  // Proceed with upload
+}
+```
+
+
+## Drag and Drop Upload
+
+```typescript
+'use client'
+
+import { useCallback, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { Upload } from 'lucide-react'
+
+export function DropZone({ onUpload }: { onUpload: (url: string) => void }) {
+  const [isDragging, setIsDragging] = useState(false)
+  const [uploading, setUploading] = useState(false)
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+
+    const file = e.dataTransfer.files[0]
+    if (!file) return
+
+    setUploading(true)
+
+    try {
+      const supabase = createClient()
+      const fileName = `${Date.now()}-${file.name}`
+
+      const { error } = await supabase.storage
+        .from('uploads')
+        .upload(fileName, file)
+
+      if (error) throw error
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('uploads')
+        .getPublicUrl(fileName)
+
+      onUpload(publicUrl)
+    } catch (error) {
+      console.error('Upload failed:', error)
+    } finally {
+      setUploading(false)
+    }
+  }, [onUpload])
+
+  return (
+    <div
+      onDrop={handleDrop}
+      onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+      onDragLeave={() => setIsDragging(false)}
+      className={`
+        border-2 border-dashed rounded-lg p-8 text-center transition-colors
+        ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'}
+        ${uploading ? 'opacity-50' : ''}
+      `}
+    >
+      <Upload className="h-10 w-10 mx-auto mb-4 text-muted-foreground" />
+      <p className="text-sm text-muted-foreground">
+        {uploading ? 'Uploading...' : 'Drag and drop a file here'}
+      </p>
+    </div>
+  )
+}
+```
+
+
+## Key Conventions
+
+- **Use RLS on storage** - Protect files with row-level security policies
+- **Organize by user/entity** - Use folder structure like `{userId}/{filename}`
+- **Validate on client** - Check file size and type before uploading
+- **Use signed URLs for private files** - Never expose private bucket contents
+- **Clean up unused files** - Delete files when associated records are deleted
+- **Transform images on-the-fly** - Use Supabase transforms instead of storing multiple sizes
+- **Handle errors gracefully** - Show user-friendly error messages

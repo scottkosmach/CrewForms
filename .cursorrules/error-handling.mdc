@@ -1,0 +1,530 @@
+---
+description: Error handling, toast notifications, and error boundaries
+globs: ["**/*.tsx", "**/lib/**"]
+alwaysApply: false
+---
+3 character code: err
+
+
+# Error Handling Rules
+
+## Overview
+
+Error handling spans multiple layers:
+1. **UI Feedback** - Toast notifications (Sonner)
+2. **Page Errors** - Error boundaries (error.tsx)
+3. **Form Errors** - Inline validation messages
+4. **API Errors** - Consistent error responses
+5. **Logging** - Server-side error tracking
+
+
+## Toast Notifications (Sonner)
+
+### Setup
+
+```bash
+npm install sonner
+```
+
+```typescript
+// app/layout.tsx
+import { Toaster } from 'sonner'
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html>
+      <body>
+        {children}
+        <Toaster richColors position="top-right" />
+      </body>
+    </html>
+  )
+}
+```
+
+### Basic Usage
+
+```typescript
+'use client'
+
+import { toast } from 'sonner'
+
+// Success
+toast.success('Project created successfully')
+
+// Error
+toast.error('Failed to save changes')
+
+// Warning
+toast.warning('Your session will expire soon')
+
+// Info
+toast.info('New updates available')
+
+// Loading with promise
+toast.promise(saveProject(), {
+  loading: 'Saving project...',
+  success: 'Project saved!',
+  error: 'Failed to save project',
+})
+```
+
+### Toast with Actions
+
+```typescript
+toast('File deleted', {
+  action: {
+    label: 'Undo',
+    onClick: () => restoreFile(),
+  },
+})
+
+toast.error('Failed to sync', {
+  action: {
+    label: 'Retry',
+    onClick: () => syncData(),
+  },
+})
+```
+
+### Toast with Description
+
+```typescript
+toast.success('Project created', {
+  description: 'Your new project is ready to use.',
+})
+
+toast.error('Upload failed', {
+  description: 'The file size exceeds the 5MB limit.',
+})
+```
+
+### Custom Duration
+
+```typescript
+// Default is 4 seconds
+toast.success('Saved', { duration: 2000 }) // 2 seconds
+toast.error('Error', { duration: 6000 })   // 6 seconds
+toast.info('Info', { duration: Infinity }) // Won't auto-dismiss
+```
+
+
+## Error Boundaries (error.tsx)
+
+### Page-Level Error Boundary
+
+```typescript
+// app/projects/error.tsx
+'use client'
+
+import { useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { AlertCircle } from 'lucide-react'
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
+  useEffect(() => {
+    // Log to error reporting service
+    console.error('Page error:', error)
+  }, [error])
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] p-8">
+      <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+      <h2 className="text-xl font-semibold mb-2">Something went wrong</h2>
+      <p className="text-muted-foreground text-center mb-6 max-w-md">
+        We encountered an error loading this page. Please try again.
+      </p>
+      <div className="flex gap-3">
+        <Button onClick={reset}>Try again</Button>
+        <Button variant="outline" asChild>
+          <a href="/">Go home</a>
+        </Button>
+      </div>
+    </div>
+  )
+}
+```
+
+### Global Error Boundary
+
+```typescript
+// app/global-error.tsx
+'use client'
+
+export default function GlobalError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
+  return (
+    <html>
+      <body>
+        <div className="flex flex-col items-center justify-center min-h-screen">
+          <h2 className="text-xl font-semibold mb-4">Something went wrong</h2>
+          <button onClick={reset}>Try again</button>
+        </div>
+      </body>
+    </html>
+  )
+}
+```
+
+
+## Form Error Handling
+
+### Server Action Errors
+
+```typescript
+// actions.ts
+'use server'
+
+export async function createProject(formData: FormData) {
+  const name = formData.get('name') as string
+
+  if (!name) {
+    return { error: 'Project name is required' }
+  }
+
+  try {
+    const supabase = await createClient()
+    const { error } = await supabase.from('projects').insert({ name })
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    return { success: true }
+  } catch (e) {
+    return { error: 'An unexpected error occurred' }
+  }
+}
+```
+
+### Handling in Component
+
+```typescript
+'use client'
+
+import { useFormState } from 'react-dom'
+import { createProject } from './actions'
+import { toast } from 'sonner'
+import { useEffect } from 'react'
+
+const initialState = { error: null, success: false }
+
+export function CreateProjectForm() {
+  const [state, formAction] = useFormState(createProject, initialState)
+
+  useEffect(() => {
+    if (state.error) {
+      toast.error(state.error)
+    }
+    if (state.success) {
+      toast.success('Project created!')
+    }
+  }, [state])
+
+  return (
+    <form action={formAction}>
+      <input name="name" required />
+      {state.error && (
+        <p className="text-sm text-destructive mt-1">{state.error}</p>
+      )}
+      <SubmitButton />
+    </form>
+  )
+}
+```
+
+### React Hook Form Errors
+
+```typescript
+'use client'
+
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { toast } from 'sonner'
+
+const schema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  email: z.string().email('Invalid email address'),
+})
+
+export function ContactForm() {
+  const form = useForm({
+    resolver: zodResolver(schema),
+  })
+
+  const onSubmit = async (data: z.infer<typeof schema>) => {
+    try {
+      await submitForm(data)
+      toast.success('Form submitted!')
+    } catch (error) {
+      toast.error('Failed to submit form')
+    }
+  }
+
+  return (
+    <form onSubmit={form.handleSubmit(onSubmit)}>
+      <div>
+        <input {...form.register('name')} />
+        {form.formState.errors.name && (
+          <p className="text-sm text-destructive">
+            {form.formState.errors.name.message}
+          </p>
+        )}
+      </div>
+      <button type="submit">Submit</button>
+    </form>
+  )
+}
+```
+
+
+## API Error Handling
+
+### Consistent Error Format
+
+```typescript
+// lib/api/errors.ts
+export interface ApiError {
+  error: string
+  code?: string
+  details?: Record<string, string[]>
+}
+
+export function createApiError(
+  message: string,
+  code?: string,
+  details?: Record<string, string[]>
+): ApiError {
+  return { error: message, code, details }
+}
+
+// Usage in API routes
+import { NextResponse } from 'next/server'
+
+export async function POST(request: Request) {
+  try {
+    // ... logic
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        createApiError('Validation failed', 'VALIDATION_ERROR', error.flatten().fieldErrors),
+        { status: 400 }
+      )
+    }
+
+    console.error('API error:', error)
+    return NextResponse.json(
+      createApiError('Internal server error', 'INTERNAL_ERROR'),
+      { status: 500 }
+    )
+  }
+}
+```
+
+### Client-Side API Error Handling
+
+```typescript
+async function fetchProjects() {
+  const response = await fetch('/api/projects')
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error || 'Request failed')
+  }
+
+  return response.json()
+}
+
+// Usage with toast
+try {
+  const projects = await fetchProjects()
+} catch (error) {
+  toast.error(error.message)
+}
+```
+
+
+## Supabase Error Handling
+
+```typescript
+const { data, error } = await supabase
+  .from('projects')
+  .select('*')
+
+if (error) {
+  // Handle specific error codes
+  switch (error.code) {
+    case '42501': // RLS policy violation
+      toast.error('You do not have permission to access this resource')
+      break
+    case 'PGRST116': // Not found
+      toast.error('Resource not found')
+      break
+    case '23505': // Unique violation
+      toast.error('This item already exists')
+      break
+    default:
+      toast.error('An error occurred')
+      console.error('Supabase error:', error)
+  }
+  return
+}
+```
+
+
+## Try-Catch Patterns
+
+### Async Function Pattern
+
+```typescript
+async function loadData() {
+  try {
+    setLoading(true)
+    const data = await fetchData()
+    setData(data)
+  } catch (error) {
+    console.error('Load error:', error)
+    toast.error('Failed to load data')
+  } finally {
+    setLoading(false)
+  }
+}
+```
+
+### Server Action Pattern
+
+```typescript
+'use server'
+
+export async function updateProject(id: string, data: ProjectData) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return { error: 'Unauthorized' }
+    }
+
+    const { error } = await supabase
+      .from('projects')
+      .update(data)
+      .eq('id', id)
+
+    if (error) {
+      console.error('Update error:', error)
+      return { error: 'Failed to update project' }
+    }
+
+    revalidatePath(`/projects/${id}`)
+    return { success: true }
+  } catch (error) {
+    console.error('Unexpected error:', error)
+    return { error: 'An unexpected error occurred' }
+  }
+}
+```
+
+
+## Loading States
+
+### With Error Recovery
+
+```typescript
+'use client'
+
+import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
+
+export function DataLoader() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const result = await fetchData()
+      setData(result)
+    } catch (e) {
+      setError('Failed to load data')
+      toast.error('Failed to load data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center p-8">
+        <p className="text-destructive mb-4">{error}</p>
+        <Button onClick={loadData}>Retry</Button>
+      </div>
+    )
+  }
+
+  return <DataDisplay data={data} />
+}
+```
+
+
+## Error Logging (Production)
+
+```typescript
+// lib/logger.ts
+export function logError(error: Error, context?: Record<string, unknown>) {
+  console.error('Error:', error.message, context)
+
+  // In production, send to error tracking service
+  if (process.env.NODE_ENV === 'production') {
+    // Example: Sentry
+    // Sentry.captureException(error, { extra: context })
+  }
+}
+
+// Usage
+try {
+  await riskyOperation()
+} catch (error) {
+  logError(error as Error, { userId, action: 'riskyOperation' })
+  toast.error('Something went wrong')
+}
+```
+
+
+## Key Conventions
+
+- **Always show feedback** - Users should know when something fails
+- **Use toast for transient errors** - Non-blocking, auto-dismissing
+- **Use inline for form errors** - Show next to the relevant field
+- **Use error.tsx for page failures** - Full-page error states with recovery
+- **Log server-side** - Don't expose internal errors to users
+- **Provide recovery options** - Retry buttons, alternative actions
+- **Be specific when safe** - "Email already exists" vs "Something went wrong"
+- **Handle loading states** - Show progress, disable buttons during operations

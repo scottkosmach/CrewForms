@@ -1,0 +1,169 @@
+---
+description: Project development guidelines and rule routing
+alwaysApply: true
+---
+3 character code: 000
+
+
+# Project Name - Cursor Rules
+
+## Beginning of Responses
+
+All rule files begin with a 3 character code (e.g., 000). Prefix each response with the combined codes of the rule files you're using.
+
+
+## Tech Stack Overview
+
+- **Framework:** Next.js 14+ (App Router)
+- **Database:** Supabase (PostgreSQL)
+- **Auth:** Supabase Auth (Email/Password + Magic Link)
+- **UI:** React + Tailwind CSS + shadcn/ui
+- **Forms:** Server Actions (simple) + React Hook Form + Zod (complex)
+- **Deployment:** Vercel
+- **Pattern:** Server Components → Supabase Client → PostgreSQL
+
+
+## Project Structure
+
+```
+project/
+├── src/
+│   ├── app/                    # Next.js App Router
+│   │   ├── (auth)/             # Auth route group (login, signup)
+│   │   ├── (dashboard)/        # Protected route group
+│   │   ├── api/                # API routes (webhooks, etc.)
+│   │   ├── layout.tsx          # Root layout
+│   │   └── page.tsx            # Home page
+│   ├── components/
+│   │   ├── ui/                 # shadcn/ui components
+│   │   └── [feature]/          # Feature-specific components
+│   ├── lib/
+│   │   ├── supabase/
+│   │   │   ├── client.ts       # Browser client
+│   │   │   ├── server.ts       # Server client
+│   │   │   └── middleware.ts   # Auth middleware helper
+│   │   ├── validations/        # Zod schemas
+│   │   └── utils.ts            # Utility functions
+│   ├── hooks/                  # Custom React hooks
+│   └── types/                  # TypeScript types
+│
+├── supabase/
+│   ├── migrations/             # SQL migration files
+│   ├── functions/              # Edge Functions
+│   ├── seed.sql                # Seed data
+│   └── config.toml             # Supabase config
+│
+├── public/                     # Static assets
+└── .env.local                  # Environment variables (git-ignored)
+```
+
+
+## Context Selection Sub Rules
+
+**Before responding to any request, determine which specialized rules to reference:**
+
+### Reference `supabase-database.mdc` when:
+- Adding, modifying, or removing database tables or columns
+- Creating or running SQL migrations
+- Seeding data or working with lookup tables
+- Understanding the migration workflow
+
+### Reference `data-access.mdc` when:
+- Fetching, creating, updating, or deleting data
+- Working with Supabase client (server or browser)
+- Writing queries or handling relationships
+- Generating TypeScript types from the database
+
+### Reference `row-level-security.mdc` when:
+- Implementing data access policies
+- Writing RLS policies for tables
+- Testing or debugging permission issues
+- Understanding who can access what data
+
+### Reference `business-context.mdc` when:
+- Need to understand domain terminology
+- Working with entity relationships
+- Unsure about business rules
+- Implementing domain-specific logic
+
+### Reference `nextjs-components.mdc` when:
+- Creating or modifying React components
+- Building pages or layouts
+- Working with Server vs Client Components
+- Handling component lifecycle or state
+
+### Reference `styling.mdc` when:
+- Making visual/cosmetic changes
+- Using Tailwind CSS classes
+- Adding or modifying shadcn/ui components
+- Building responsive layouts
+
+### Reference `authentication.mdc` when:
+- Working with user login/logout/signup
+- Implementing magic link or password auth
+- Accessing current user session
+- Configuring auth middleware
+
+### Reference `authorization.mdc` when:
+- Working with application roles
+- Checking user permissions in components
+- Using custom roles beyond RLS
+- Implementing admin functionality
+
+### Reference `access-control.mdc` when:
+- Implementing page-level access restrictions
+- Showing/hiding UI based on permissions
+- Checking entity-specific access
+- Handling "Access Denied" scenarios
+
+### Reference `api-routes.mdc` when:
+- Creating API route handlers
+- Implementing Server Actions
+- Handling webhooks
+- Validating request data
+
+### Reference `supabase-functions.mdc` when:
+- Creating Edge Functions (Deno)
+- Implementing scheduled jobs
+- Building webhook handlers
+- Calling external APIs from the server
+
+### Reference `supabase-storage.mdc` when:
+- Handling file uploads/downloads
+- Working with storage buckets
+- Implementing signed URLs
+- Managing file permissions
+
+### Reference `error-handling.mdc` when:
+- Implementing error boundaries
+- Showing toast notifications (Sonner)
+- Logging errors
+- Handling edge cases gracefully
+
+### Reference `audit-logging.mdc` when:
+- Tracking data changes
+- Querying change history
+- Setting up audit triggers
+- Understanding who changed what
+
+### Reference `deployment.mdc` when:
+- Deploying to Vercel
+- Managing environment variables
+- Setting up CI/CD
+- Configuring domains
+
+### Reference `git-workflow.mdc` when:
+- User asks to commit, push, or merge
+- Working with branches
+- **IMPORTANT:** Do NOT commit automatically—only when explicitly asked
+
+**If you determine that we're touching on new capabilities that require a new rule file or an update to an existing rule file, call it out to the user.**
+
+
+## General Guidelines
+
+- Use Server Components by default, Client Components only when needed
+- Inject Supabase client via `createServerClient()` or `createBrowserClient()`
+- Add clear comments explaining non-obvious code
+- Prefer TypeScript strict mode patterns
+- Use absolute imports with `@/` prefix

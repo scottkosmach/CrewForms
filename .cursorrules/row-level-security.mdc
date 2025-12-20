@@ -1,0 +1,403 @@
+---
+description: Supabase Row Level Security (RLS) policies
+globs: ["**/supabase/migrations/**"]
+alwaysApply: false
+---
+3 character code: rls
+
+
+# Row Level Security Rules
+
+## Overview
+
+Row Level Security (RLS) is PostgreSQL's built-in authorization at the database level. Every query is filtered by policies you define—no data leaks even if application code has bugs.
+
+**Golden Rule: Enable RLS on every table, then create policies to allow access.**
+
+
+## Enabling RLS
+
+```sql
+-- Always do this for every new table
+ALTER TABLE your_table ENABLE ROW LEVEL SECURITY;
+
+-- Without policies, NO ONE can access data (not even service role by default in Supabase)
+-- For service role to bypass, use:
+ALTER TABLE your_table FORCE ROW LEVEL SECURITY;  -- Even owner follows RLS
+```
+
+
+## Policy Basics
+
+```sql
+CREATE POLICY "policy_name"
+  ON table_name
+  FOR operation  -- SELECT, INSERT, UPDATE, DELETE, or ALL
+  TO role        -- Usually 'authenticated' or 'anon'
+  USING (condition)        -- Filter for SELECT, UPDATE, DELETE
+  WITH CHECK (condition);  -- Filter for INSERT, UPDATE
+```
+
+| Clause | Used For | When It Runs |
+|--------|----------|--------------|
+| `USING` | SELECT, UPDATE, DELETE | Filters which rows can be read/modified |
+| `WITH CHECK` | INSERT, UPDATE | Validates new/updated data |
+
+
+## Auth Helper Functions
+
+Supabase provides these in every query context:
+
+```sql
+auth.uid()        -- Current user's UUID (from JWT)
+auth.jwt()        -- Full JWT payload
+auth.role()       -- 'authenticated', 'anon', or 'service_role'
+auth.email()      -- Current user's email
+```
+
+
+## Common Policy Patterns
+
+### Pattern 1: Users Own Their Data
+
+```sql
+-- Users can CRUD their own records
+CREATE POLICY "Users can view own records"
+  ON profiles FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own records"
+  ON profiles FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own records"
+  ON profiles FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own records"
+  ON profiles FOR DELETE
+  USING (auth.uid() = user_id);
+```
+
+### Pattern 2: Public Read, Authenticated Write
+
+```sql
+-- Anyone can read
+CREATE POLICY "Public read access"
+  ON posts FOR SELECT
+  USING (true);
+
+-- Only authenticated users can insert
+CREATE POLICY "Authenticated users can create"
+  ON posts FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = author_id);
+
+-- Only author can update
+CREATE POLICY "Authors can update own posts"
+  ON posts FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = author_id);
+```
+
+### Pattern 3: Organization/Team Membership
+
+```sql
+-- Users can access data from their organization
+CREATE POLICY "Org members can view"
+  ON projects FOR SELECT
+  USING (
+    org_id IN (
+      SELECT org_id FROM org_members
+      WHERE user_id = auth.uid()
+    )
+  );
+
+-- Or with a helper function (more efficient)
+CREATE OR REPLACE FUNCTION is_org_member(check_org_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM org_members
+    WHERE org_id = check_org_id
+    AND user_id = auth.uid()
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE POLICY "Org members can view"
+  ON projects FOR SELECT
+  USING (is_org_member(org_id));
+```
+
+### Pattern 4: Role-Based Access
+
+```sql
+-- Check role from a profiles or user_roles table
+CREATE OR REPLACE FUNCTION get_user_role()
+RETURNS TEXT AS $$
+BEGIN
+  RETURN (
+    SELECT role FROM profiles
+    WHERE user_id = auth.uid()
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Admins can do anything
+CREATE POLICY "Admins have full access"
+  ON settings FOR ALL
+  USING (get_user_role() = 'admin');
+
+-- Editors can view and update
+CREATE POLICY "Editors can view"
+  ON posts FOR SELECT
+  USING (get_user_role() IN ('admin', 'editor'));
+
+CREATE POLICY "Editors can update"
+  ON posts FOR UPDATE
+  USING (get_user_role() IN ('admin', 'editor'));
+```
+
+### Pattern 5: Hierarchical Access (Parent → Child)
+
+```sql
+-- If user can access project, they can access its tasks
+CREATE POLICY "Project members can view tasks"
+  ON tasks FOR SELECT
+  USING (
+    project_id IN (
+      SELECT id FROM projects
+      WHERE owner_id = auth.uid()
+      OR id IN (
+        SELECT project_id FROM project_members
+        WHERE user_id = auth.uid()
+      )
+    )
+  );
+```
+
+### Pattern 6: Soft Delete Protection
+
+```sql
+-- Only show non-deleted records
+CREATE POLICY "Hide deleted records"
+  ON posts FOR SELECT
+  USING (deleted_at IS NULL);
+
+-- Prevent hard deletes, allow soft delete via update
+CREATE POLICY "No hard deletes"
+  ON posts FOR DELETE
+  USING (false);  -- No one can delete
+
+CREATE POLICY "Allow soft delete"
+  ON posts FOR UPDATE
+  USING (auth.uid() = author_id)
+  WITH CHECK (
+    -- Can only change deleted_at, nothing else
+    -- (This is a simplified example)
+    true
+  );
+```
+
+
+## Lookup Tables (Public Read)
+
+```sql
+-- Lookup tables often need public read
+ALTER TABLE statuses ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can view statuses"
+  ON statuses FOR SELECT
+  USING (true);
+
+-- No insert/update/delete for regular users
+-- (Admins use service role to manage)
+```
+
+
+## Security Definer Functions
+
+For complex logic, use `SECURITY DEFINER` functions:
+
+```sql
+CREATE OR REPLACE FUNCTION can_access_project(project_uuid UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM projects
+    WHERE id = project_uuid
+    AND (
+      owner_id = auth.uid()
+      OR EXISTS (
+        SELECT 1 FROM project_members
+        WHERE project_id = project_uuid
+        AND user_id = auth.uid()
+      )
+    )
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Use in policy
+CREATE POLICY "Members can view"
+  ON tasks FOR SELECT
+  USING (can_access_project(project_id));
+```
+
+**Note:** `SECURITY DEFINER` runs with the function creator's privileges. Be careful with what it does.
+
+
+## Testing RLS Policies
+
+### In Supabase Dashboard
+
+1. Go to SQL Editor
+2. Use `SET ROLE` to test as different users:
+
+```sql
+-- Test as authenticated user
+SET request.jwt.claims = '{"sub": "user-uuid-here", "role": "authenticated"}';
+SET ROLE authenticated;
+
+SELECT * FROM projects;  -- Should only show accessible projects
+
+-- Reset
+RESET ROLE;
+```
+
+### In Application Code
+
+```typescript
+// Test with a specific user's session
+const { data, error } = await supabase
+  .from('projects')
+  .select('*')
+
+// If RLS is working, this only returns allowed rows
+console.log(data)
+
+// Check for permission errors
+if (error?.code === '42501') {
+  console.log('RLS policy denied access')
+}
+```
+
+
+## Debugging RLS Issues
+
+### Common Error Codes
+
+| Code | Meaning |
+|------|---------|
+| `42501` | Permission denied (RLS blocked) |
+| `PGRST301` | Row not found (might be RLS or actually missing) |
+
+### Debug Checklist
+
+1. **Is RLS enabled?**
+   ```sql
+   SELECT tablename, rowsecurity 
+   FROM pg_tables 
+   WHERE schemaname = 'public';
+   ```
+
+2. **What policies exist?**
+   ```sql
+   SELECT * FROM pg_policies 
+   WHERE tablename = 'your_table';
+   ```
+
+3. **Is auth.uid() set?**
+   ```sql
+   SELECT auth.uid();  -- Should return UUID if authenticated
+   ```
+
+4. **Test policy condition directly:**
+   ```sql
+   SELECT * FROM your_table
+   WHERE your_policy_condition;
+   ```
+
+
+## Performance Considerations
+
+### Use Functions for Complex Logic
+
+```sql
+-- Bad: Subquery in every row check
+CREATE POLICY "slow"
+  ON tasks FOR SELECT
+  USING (
+    project_id IN (SELECT project_id FROM memberships WHERE user_id = auth.uid())
+  );
+
+-- Better: Function with proper indexing
+CREATE OR REPLACE FUNCTION user_project_ids()
+RETURNS SETOF UUID AS $$
+  SELECT project_id FROM memberships WHERE user_id = auth.uid()
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+CREATE POLICY "faster"
+  ON tasks FOR SELECT
+  USING (project_id IN (SELECT user_project_ids()));
+```
+
+### Index Policy Columns
+
+```sql
+-- If policy checks owner_id, index it
+CREATE INDEX projects_owner_id_idx ON projects(owner_id);
+
+-- If policy joins memberships, index the join columns
+CREATE INDEX memberships_user_project_idx ON memberships(user_id, project_id);
+```
+
+
+## Migration Template
+
+```sql
+-- supabase/migrations/YYYYMMDD_create_[table]_with_rls.sql
+
+-- 1. Create table
+CREATE TABLE items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 2. Add indexes
+CREATE INDEX items_owner_id_idx ON items(owner_id);
+
+-- 3. Enable RLS
+ALTER TABLE items ENABLE ROW LEVEL SECURITY;
+
+-- 4. Create policies
+CREATE POLICY "Users can view own items"
+  ON items FOR SELECT
+  USING (owner_id = auth.uid());
+
+CREATE POLICY "Users can create own items"
+  ON items FOR INSERT
+  WITH CHECK (owner_id = auth.uid());
+
+CREATE POLICY "Users can update own items"
+  ON items FOR UPDATE
+  USING (owner_id = auth.uid());
+
+CREATE POLICY "Users can delete own items"
+  ON items FOR DELETE
+  USING (owner_id = auth.uid());
+```
+
+
+## Key Conventions
+
+- **Enable RLS on every table** - No exceptions for production
+- **Deny by default** - Start with no policies, add permissions explicitly
+- **Use auth.uid()** - Never trust client-provided user IDs
+- **Index policy columns** - RLS runs on every query
+- **Use SECURITY DEFINER sparingly** - Only for complex access logic
+- **Test as different users** - Verify policies work correctly
+- **Combine with app-level checks** - RLS is defense in depth, not the only layer

@@ -1,0 +1,457 @@
+---
+description: Tailwind CSS and shadcn/ui styling conventions
+globs: ["**/*.tsx", "**/globals.css", "**/tailwind.config.*"]
+alwaysApply: false
+---
+3 character code: sty
+
+
+# Styling Rules
+
+## Design System Overview
+
+- **CSS Framework:** Tailwind CSS (utility-first)
+- **Component Library:** shadcn/ui (accessible, customizable)
+- **Icons:** Lucide React
+- **Fonts:** Inter (or your chosen font via next/font)
+
+
+## shadcn/ui Setup
+
+### Installation
+
+```bash
+npx shadcn-ui@latest init
+```
+
+### Adding Components
+
+```bash
+# Add individual components
+npx shadcn-ui@latest add button
+npx shadcn-ui@latest add card
+npx shadcn-ui@latest add form
+npx shadcn-ui@latest add input
+npx shadcn-ui@latest add table
+
+# Components are added to src/components/ui/
+```
+
+### Using Components
+
+```typescript
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+
+export function Example() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Settings</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Input placeholder="Enter value" />
+        <Button>Save</Button>
+      </CardContent>
+    </Card>
+  )
+}
+```
+
+
+## Tailwind CSS Variables
+
+shadcn/ui uses CSS variables for theming in `globals.css`:
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    /* ... dark mode values */
+  }
+}
+```
+
+
+## Common Patterns
+
+### Page Layout
+
+```typescript
+export default function Page() {
+  return (
+    <main className="container py-8">
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">Page Title</h1>
+        <p className="text-muted-foreground mt-2">
+          Page description goes here.
+        </p>
+      </header>
+      
+      <section>
+        {/* Content */}
+      </section>
+    </main>
+  )
+}
+```
+
+### Card Grid
+
+```typescript
+<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+  {items.map(item => (
+    <Card key={item.id}>
+      <CardHeader>
+        <CardTitle>{item.name}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground">{item.description}</p>
+      </CardContent>
+    </Card>
+  ))}
+</div>
+```
+
+### Empty State
+
+```typescript
+<div className="flex flex-col items-center justify-center py-12 text-center">
+  <FileIcon className="h-12 w-12 text-muted-foreground mb-4" />
+  <h3 className="text-lg font-semibold">No projects yet</h3>
+  <p className="text-sm text-muted-foreground mb-4">
+    Get started by creating your first project.
+  </p>
+  <Button>Create Project</Button>
+</div>
+```
+
+
+## Button Variants
+
+```typescript
+import { Button } from '@/components/ui/button'
+
+// Primary action
+<Button>Save Changes</Button>
+
+// Secondary action
+<Button variant="secondary">Cancel</Button>
+
+// Danger action
+<Button variant="destructive">Delete</Button>
+
+// Ghost (subtle)
+<Button variant="ghost">Edit</Button>
+
+// Outline
+<Button variant="outline">View Details</Button>
+
+// Link style
+<Button variant="link">Learn more</Button>
+
+// Sizes
+<Button size="sm">Small</Button>
+<Button size="default">Default</Button>
+<Button size="lg">Large</Button>
+<Button size="icon"><PlusIcon className="h-4 w-4" /></Button>
+
+// With icon
+<Button>
+  <PlusIcon className="h-4 w-4 mr-2" />
+  Add Item
+</Button>
+
+// Loading state
+<Button disabled>
+  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+  Saving...
+</Button>
+
+// As link
+<Button asChild>
+  <Link href="/projects">View Projects</Link>
+</Button>
+```
+
+
+## Forms
+
+```typescript
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+// Basic input
+<div className="space-y-2">
+  <Label htmlFor="email">Email</Label>
+  <Input id="email" type="email" placeholder="you@example.com" />
+</div>
+
+// Textarea
+<div className="space-y-2">
+  <Label htmlFor="description">Description</Label>
+  <Textarea id="description" placeholder="Enter description..." />
+</div>
+
+// Select
+<div className="space-y-2">
+  <Label>Status</Label>
+  <Select>
+    <SelectTrigger>
+      <SelectValue placeholder="Select status" />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="active">Active</SelectItem>
+      <SelectItem value="paused">Paused</SelectItem>
+      <SelectItem value="completed">Completed</SelectItem>
+    </SelectContent>
+  </Select>
+</div>
+
+// Form group spacing
+<form className="space-y-6">
+  {/* Each field wrapped in space-y-2, form uses space-y-6 */}
+</form>
+```
+
+
+## Tables
+
+```typescript
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+
+<div className="rounded-md border">
+  <Table>
+    <TableHeader>
+      <TableRow>
+        <TableHead>Name</TableHead>
+        <TableHead>Status</TableHead>
+        <TableHead className="text-right">Actions</TableHead>
+      </TableRow>
+    </TableHeader>
+    <TableBody>
+      {items.map(item => (
+        <TableRow key={item.id}>
+          <TableCell className="font-medium">{item.name}</TableCell>
+          <TableCell>
+            <Badge>{item.status}</Badge>
+          </TableCell>
+          <TableCell className="text-right">
+            <Button variant="ghost" size="sm">Edit</Button>
+          </TableCell>
+        </TableRow>
+      ))}
+    </TableBody>
+  </Table>
+</div>
+```
+
+
+## Badges
+
+```typescript
+import { Badge } from '@/components/ui/badge'
+
+<Badge>Default</Badge>
+<Badge variant="secondary">Secondary</Badge>
+<Badge variant="destructive">Error</Badge>
+<Badge variant="outline">Outline</Badge>
+
+// Status badges pattern
+function StatusBadge({ status }: { status: string }) {
+  const variants: Record<string, 'default' | 'secondary' | 'destructive'> = {
+    active: 'default',
+    pending: 'secondary',
+    failed: 'destructive',
+  }
+
+  return <Badge variant={variants[status] ?? 'secondary'}>{status}</Badge>
+}
+```
+
+
+## Icons (Lucide)
+
+```typescript
+import { 
+  Plus, 
+  Pencil, 
+  Trash2, 
+  ChevronRight,
+  Loader2,
+  Check,
+  X,
+  Settings,
+  User,
+  LogOut,
+} from 'lucide-react'
+
+// Standard size in buttons
+<Button>
+  <Plus className="h-4 w-4 mr-2" />
+  Add
+</Button>
+
+// Icon-only button
+<Button variant="ghost" size="icon">
+  <Pencil className="h-4 w-4" />
+</Button>
+
+// Loading spinner
+<Loader2 className="h-4 w-4 animate-spin" />
+
+// In text
+<p className="flex items-center gap-2">
+  <Check className="h-4 w-4 text-green-500" />
+  Completed
+</p>
+```
+
+
+## Responsive Design
+
+```typescript
+// Mobile-first approach
+<div className="
+  grid 
+  gap-4 
+  grid-cols-1 
+  sm:grid-cols-2 
+  md:grid-cols-3 
+  lg:grid-cols-4
+">
+  {/* Items */}
+</div>
+
+// Hide on mobile
+<div className="hidden md:block">Desktop only</div>
+
+// Show on mobile only
+<div className="md:hidden">Mobile only</div>
+
+// Responsive text
+<h1 className="text-2xl md:text-3xl lg:text-4xl font-bold">
+  Title
+</h1>
+
+// Responsive padding
+<main className="px-4 md:px-6 lg:px-8 py-6 md:py-8">
+  {/* Content */}
+</main>
+```
+
+
+## Dark Mode
+
+```typescript
+// In layout.tsx, use ThemeProvider from next-themes
+import { ThemeProvider } from '@/components/theme-provider'
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+        </ThemeProvider>
+      </body>
+    </html>
+  )
+}
+
+// Toggle component
+'use client'
+
+import { useTheme } from 'next-themes'
+import { Moon, Sun } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+
+export function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+    >
+      <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+      <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+    </Button>
+  )
+}
+```
+
+
+## Common Utility Classes
+
+| Purpose | Classes |
+|---------|---------|
+| Spacing | `p-4`, `px-6`, `py-8`, `m-2`, `mx-auto`, `space-y-4`, `gap-4` |
+| Flexbox | `flex`, `items-center`, `justify-between`, `flex-1`, `flex-col` |
+| Grid | `grid`, `grid-cols-3`, `gap-6`, `col-span-2` |
+| Text | `text-sm`, `text-lg`, `font-medium`, `font-bold`, `text-muted-foreground` |
+| Colors | `bg-primary`, `text-primary`, `border-border`, `bg-muted` |
+| Borders | `border`, `rounded-md`, `rounded-lg`, `border-b` |
+| Shadows | `shadow-sm`, `shadow-md`, `shadow-lg` |
+| Width | `w-full`, `max-w-md`, `min-w-0`, `w-[200px]` |
+
+
+## Key Conventions
+
+- **Use shadcn/ui components** - Don't rebuild common patterns
+- **Utility-first** - Prefer Tailwind classes over custom CSS
+- **CSS variables for theming** - Customize in globals.css
+- **Mobile-first** - Start with mobile styles, add breakpoints
+- **Consistent spacing** - Use Tailwind's spacing scale (4, 6, 8...)
+- **Semantic colors** - Use `primary`, `muted`, `destructive` not raw colors
+- **Icon sizing** - Standard is `h-4 w-4` in buttons, `h-5 w-5` standalone

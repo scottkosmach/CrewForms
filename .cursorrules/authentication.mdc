@@ -1,0 +1,465 @@
+---
+description: Supabase authentication setup and patterns
+globs: ["**/lib/supabase/**", "**/app/(auth)/**", "**/middleware.ts"]
+alwaysApply: false
+---
+3 character code: atn
+
+
+# Authentication Rules
+
+## Overview
+
+The app uses **Supabase Auth** with:
+- **Email/Password** - Traditional sign up and login
+- **Magic Link** - Passwordless email login
+
+OAuth providers (Google, GitHub) can be added later via Supabase Dashboard.
+
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/supabase/server.ts` | Server-side Supabase client |
+| `src/lib/supabase/client.ts` | Browser-side Supabase client |
+| `src/middleware.ts` | Session refresh middleware |
+| `src/app/(auth)/login/page.tsx` | Login page |
+| `src/app/(auth)/signup/page.tsx` | Sign up page |
+| `src/app/(auth)/auth/callback/route.ts` | OAuth/Magic Link callback |
+
+
+## Middleware Setup (`src/middleware.ts`)
+
+**Critical:** This refreshes the session on every request.
+
+```typescript
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            request.cookies.set(name, value)
+          )
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  // Refresh session if expired
+  await supabase.auth.getUser()
+
+  return response
+}
+
+export const config = {
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
+}
+```
+
+
+## Auth Callback Route (`src/app/(auth)/auth/callback/route.ts`)
+
+Handles redirects from magic links and OAuth:
+
+```typescript
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+
+export async function GET(request: Request) {
+  const { searchParams, origin } = new URL(request.url)
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/'
+
+  if (code) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    
+    if (!error) {
+      return NextResponse.redirect(`${origin}${next}`)
+    }
+  }
+
+  // Redirect to error page on failure
+  return NextResponse.redirect(`${origin}/auth/error`)
+}
+```
+
+
+## Getting Current User
+
+### In Server Components
+
+```typescript
+import { createClient } from '@/lib/supabase/server'
+
+export default async function Page() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
+  return <div>Hello, {user.email}</div>
+}
+```
+
+### In Client Components
+
+```typescript
+'use client'
+
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import type { User } from '@supabase/supabase-js'
+
+export function useUser() {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const supabase = createClient()
+
+    // Get initial user
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user)
+      setLoading(false)
+    })
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null)
+      }
+    )
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  return { user, loading }
+}
+```
+
+### In Server Actions
+
+```typescript
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+
+export async function someAction() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('Not authenticated')
+  }
+
+  // ... action logic
+}
+```
+
+
+## Sign Up (Email/Password)
+
+### Server Action
+
+```typescript
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export async function signUp(formData: FormData) {
+  const supabase = await createClient()
+
+  const email = formData.get('email') as string
+  const password = formData.get('password') as string
+
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
+    },
+  })
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  // Redirect to check email page
+  redirect('/check-email')
+}
+```
+
+### Form Component
+
+```typescript
+'use client'
+
+import { signUp } from './actions'
+import { useFormStatus } from 'react-dom'
+
+function SubmitButton() {
+  const { pending } = useFormStatus()
+  return (
+    <button type="submit" disabled={pending}>
+      {pending ? 'Creating account...' : 'Sign up'}
+    </button>
+  )
+}
+
+export function SignUpForm() {
+  return (
+    <form action={signUp}>
+      <input name="email" type="email" placeholder="Email" required />
+      <input name="password" type="password" placeholder="Password" required />
+      <SubmitButton />
+    </form>
+  )
+}
+```
+
+
+## Sign In (Email/Password)
+
+### Server Action
+
+```typescript
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export async function signIn(formData: FormData) {
+  const supabase = await createClient()
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email: formData.get('email') as string,
+    password: formData.get('password') as string,
+  })
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  redirect('/dashboard')
+}
+```
+
+
+## Magic Link (Passwordless)
+
+### Server Action
+
+```typescript
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export async function signInWithMagicLink(formData: FormData) {
+  const supabase = await createClient()
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email: formData.get('email') as string,
+    options: {
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
+    },
+  })
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  redirect('/check-email')
+}
+```
+
+
+## Sign Out
+
+### Server Action
+
+```typescript
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export async function signOut() {
+  const supabase = await createClient()
+  await supabase.auth.signOut()
+  redirect('/login')
+}
+```
+
+### Usage
+
+```typescript
+import { signOut } from '@/app/(auth)/actions'
+
+export function SignOutButton() {
+  return (
+    <form action={signOut}>
+      <button type="submit">Sign out</button>
+    </form>
+  )
+}
+```
+
+
+## Protecting Routes
+
+### Option 1: Check in Page (Simple)
+
+```typescript
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export default async function DashboardPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
+  return <div>Dashboard content</div>
+}
+```
+
+### Option 2: Layout-Level Protection (Better)
+
+```typescript
+// app/(dashboard)/layout.tsx
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export default async function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
+  return <>{children}</>
+}
+```
+
+### Option 3: Middleware (Most Secure)
+
+```typescript
+// In middleware.ts, add route protection
+const protectedRoutes = ['/dashboard', '/settings', '/projects']
+const authRoutes = ['/login', '/signup']
+
+export async function middleware(request: NextRequest) {
+  // ... existing session refresh code ...
+
+  const { data: { user } } = await supabase.auth.getUser()
+  const path = request.nextUrl.pathname
+
+  // Redirect unauthenticated users from protected routes
+  if (protectedRoutes.some(route => path.startsWith(route)) && !user) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  // Redirect authenticated users from auth routes
+  if (authRoutes.includes(path) && user) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  return response
+}
+```
+
+
+## Environment Variables
+
+```bash
+# .env.local
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+NEXT_PUBLIC_SITE_URL=http://localhost:3000  # Your app URL
+```
+
+
+## User Metadata
+
+Store additional user data in a `profiles` table:
+
+```sql
+-- supabase/migrations/create_profiles_table.sql
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name TEXT,
+  avatar_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Auto-create profile on signup
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO profiles (id, full_name)
+  VALUES (NEW.id, NEW.raw_user_meta_data->>'full_name');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION handle_new_user();
+```
+
+
+## Key Conventions
+
+- **Always use `getUser()`** not `getSession()` for server-side auth checks
+- **Middleware refreshes sessions** - Don't skip it
+- **Protect at multiple layers** - Middleware + Layout + RLS
+- **Store user data in profiles** - Not in auth.users metadata
+- **Use Server Actions** - For auth operations, avoid client-side auth when possible
+- **Handle loading states** - Auth state is async in Client Components

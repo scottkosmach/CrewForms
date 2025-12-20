@@ -1,0 +1,130 @@
+---
+description: Business domain context and terminology
+globs: []
+alwaysApply: false
+---
+3 character code: ctx
+
+
+# Business Context Reference
+
+## Overview
+
+This file contains business domain terminology and entity relationships for the project.
+Use this as a reference when:
+- Understanding domain terminology
+- Working with entity relationships
+- Implementing business rules
+- Unsure about how concepts relate
+
+
+## Connection
+
+- **Project:** [Your Supabase Project URL]
+- **Database:** PostgreSQL via Supabase
+- **Access:** Via Supabase client with RLS policies
+
+
+---
+
+## Domain Terminology
+
+<!-- 
+Define your core business concepts here. Example structure:
+
+### Entity Name
+
+Brief description of what this entity represents.
+
+**Key points:**
+1. Important rule or relationship
+2. How it connects to other entities
+3. Special considerations
+
+**Database:** `table_name` table with key columns noted.
+-->
+
+### [Primary Entity]
+
+Description of the main entity in your system.
+
+**Key points:**
+1. [Key business rule]
+2. [Relationship to other entities]
+3. [Important constraint]
+
+**Database:** `[table_name]` table.
+
+
+### [Secondary Entity]
+
+Description of a supporting entity.
+
+**Key points:**
+1. [Key business rule]
+2. [Relationship to primary entity]
+
+**Database:** `[table_name]` table.
+
+
+---
+
+## Lookup Tables / Reference Data
+
+<!--
+Document your lookup/reference tables and their values.
+-->
+
+### [Lookup Table Name]
+
+| ID | Name | Description |
+|----|------|-------------|
+| 1 | Value One | What it means |
+| 2 | Value Two | What it means |
+
+**Database:** `[table_name]` lookup table.
+
+
+---
+
+## Entity Relationship Summary
+
+<!--
+ASCII diagram showing how entities relate. Example:
+
+```
+User (1) ←──────── (0..n) Project
+                          │
+                          └─→ (0..n) Task
+                                     │
+                                     └─→ (0..n) Comment
+```
+-->
+
+```
+[Your entity relationship diagram here]
+```
+
+
+---
+
+## Business Rules
+
+<!--
+Document important business rules that span multiple entities or aren't obvious from the schema.
+-->
+
+### Rule: [Rule Name]
+
+**When:** [Trigger condition]
+**Then:** [What happens]
+**Why:** [Business justification]
+
+
+---
+
+## Glossary
+
+| Term | Definition |
+|------|------------|
+| [Term] | [Definition] |

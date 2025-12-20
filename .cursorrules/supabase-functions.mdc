@@ -1,0 +1,387 @@
+---
+description: Supabase Edge Functions (Deno)
+globs: ["**/supabase/functions/**"]
+alwaysApply: false
+---
+3 character code: sfn
+
+
+# Supabase Edge Functions Rules
+
+## Overview
+
+Supabase Edge Functions run on Deno and are useful for:
+- Webhook handlers
+- Scheduled tasks (cron jobs)
+- Server-side logic that needs to run outside Next.js
+- Integrating with external APIs securely
+
+
+## Project Structure
+
+```
+supabase/
+├── functions/
+│   ├── send-email/
+│   │   └── index.ts
+│   ├── process-webhook/
+│   │   └── index.ts
+│   └── scheduled-cleanup/
+│       └── index.ts
+└── config.toml
+```
+
+
+## Creating a Function
+
+### 1. Create the Function File
+
+```typescript
+// supabase/functions/send-email/index.ts
+// Modern pattern: Use Deno.serve() directly (built into Deno, no imports needed)
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+Deno.serve(async (req: Request) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    const { to, subject, body } = await req.json()
+
+    // Your email sending logic here
+    // e.g., using Resend, SendGrid, etc.
+
+    return new Response(
+      JSON.stringify({ success: true }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      { 
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
+    )
+  }
+})
+```
+
+### 2. Deploy the Function
+
+```bash
+# Deploy single function
+supabase functions deploy send-email
+
+# Deploy all functions
+supabase functions deploy
+```
+
+
+## Common Commands
+
+| Task | Command |
+|------|---------|
+| Create new function | `supabase functions new <name>` |
+| Serve locally | `supabase functions serve` |
+| Deploy function | `supabase functions deploy <name>` |
+| Deploy all | `supabase functions deploy` |
+| Delete function | `supabase functions delete <name>` |
+| View logs | `supabase functions logs <name>` |
+
+
+## Accessing Supabase from Functions
+
+```typescript
+// supabase/functions/process-order/index.ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+Deno.serve(async (req: Request) => {
+  // Create Supabase client with service role (admin access)
+  const supabaseAdmin = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  )
+
+  // Or create client with user's JWT for RLS
+  const authHeader = req.headers.get('Authorization')
+  const supabaseClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    { global: { headers: { Authorization: authHeader ?? '' } } }
+  )
+
+  // Use supabaseClient for user-scoped queries (respects RLS)
+  const { data: userProjects } = await supabaseClient
+    .from('projects')
+    .select('*')
+
+  // Use supabaseAdmin for admin operations (bypasses RLS)
+  const { data: allUsers } = await supabaseAdmin
+    .from('profiles')
+    .select('*')
+
+  return new Response(JSON.stringify({ userProjects, allUsers }), {
+    headers: { 'Content-Type': 'application/json' }
+  })
+})
+```
+
+
+## Environment Variables (Secrets)
+
+### Setting Secrets
+
+```bash
+# Set a secret
+supabase secrets set RESEND_API_KEY=re_xxxxx
+
+# Set multiple secrets
+supabase secrets set STRIPE_SECRET_KEY=sk_xxx SENDGRID_API_KEY=SG.xxx
+
+# List secrets
+supabase secrets list
+```
+
+### Using Secrets in Functions
+
+```typescript
+// Deno.env.get() reads environment variables
+const resendApiKey = Deno.env.get('RESEND_API_KEY')
+const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')
+
+// Built-in Supabase secrets (always available)
+const supabaseUrl = Deno.env.get('SUPABASE_URL')
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
+const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+```
+
+
+## Webhook Handler Pattern
+
+```typescript
+// supabase/functions/stripe-webhook/index.ts
+import Stripe from 'https://esm.sh/stripe@14.0.0?target=deno'
+
+const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
+  apiVersion: '2024-04-10',
+  httpClient: Stripe.createFetchHttpClient(),
+})
+
+const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
+
+Deno.serve(async (req: Request) => {
+  const signature = req.headers.get('stripe-signature')
+  const body = await req.text()
+
+  let event: Stripe.Event
+
+  try {
+    event = stripe.webhooks.constructEvent(body, signature!, webhookSecret)
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message)
+    return new Response('Invalid signature', { status: 400 })
+  }
+
+  switch (event.type) {
+    case 'checkout.session.completed': {
+      const session = event.data.object as Stripe.Checkout.Session
+      console.log('Checkout completed:', session.id)
+      // Handle successful payment
+      break
+    }
+    case 'customer.subscription.deleted': {
+      const subscription = event.data.object as Stripe.Subscription
+      console.log('Subscription cancelled:', subscription.id)
+      // Handle cancellation
+      break
+    }
+  }
+
+  return new Response(JSON.stringify({ received: true }), {
+    headers: { 'Content-Type': 'application/json' }
+  })
+})
+```
+
+
+## Scheduled Functions (Cron)
+
+### 1. Define Schedule in config.toml
+
+```toml
+# supabase/config.toml
+[functions.daily-cleanup]
+schedule = "0 0 * * *"  # Every day at midnight UTC
+
+[functions.hourly-sync]
+schedule = "0 * * * *"  # Every hour
+```
+
+### 2. Create the Function
+
+```typescript
+// supabase/functions/daily-cleanup/index.ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+Deno.serve(async (req: Request) => {
+  // Scheduled functions are invoked via POST
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  )
+
+  // Delete old records
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+  const { error } = await supabase
+    .from('audit_logs')
+    .delete()
+    .lt('created_at', thirtyDaysAgo.toISOString())
+
+  if (error) {
+    console.error('Cleanup failed:', error)
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 })
+  }
+
+  console.log('Cleanup completed successfully')
+  return new Response(JSON.stringify({ success: true }), { status: 200 })
+})
+```
+
+
+## Calling Functions from Next.js
+
+### Using Supabase Client
+
+```typescript
+// From client or server
+const supabase = createClient()
+
+const { data, error } = await supabase.functions.invoke('send-email', {
+  body: {
+    to: 'user@example.com',
+    subject: 'Hello',
+    body: 'Email content',
+  },
+})
+
+if (error) {
+  console.error('Function error:', error)
+}
+```
+
+### Using fetch Directly
+
+```typescript
+const response = await fetch(
+  `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-email`,
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({
+      to: 'user@example.com',
+      subject: 'Hello',
+    }),
+  }
+)
+
+const data = await response.json()
+```
+
+
+## Local Development
+
+```bash
+# Start local Supabase (includes functions)
+supabase start
+
+# Serve functions with hot reload
+supabase functions serve
+
+# Serve specific function
+supabase functions serve send-email
+
+# Test with curl
+curl -i --location --request POST \
+  'http://localhost:54321/functions/v1/send-email' \
+  --header 'Authorization: Bearer <anon-key>' \
+  --header 'Content-Type: application/json' \
+  --data '{"to":"test@example.com","subject":"Test"}'
+```
+
+
+## Error Handling Pattern
+
+```typescript
+// Modern pattern: Use Deno.serve() directly (no import needed)
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+function errorResponse(message: string, status: number = 400) {
+  return new Response(
+    JSON.stringify({ error: message }),
+    { 
+      status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    }
+  )
+}
+
+function successResponse(data: unknown, status: number = 200) {
+  return new Response(
+    JSON.stringify(data),
+    { 
+      status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    }
+  )
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    // Validate request
+    const { email } = await req.json()
+    if (!email) {
+      return errorResponse('Email is required', 400)
+    }
+
+    // Process
+    const result = await processEmail(email)
+
+    return successResponse({ success: true, result })
+  } catch (error) {
+    console.error('Function error:', error)
+    return errorResponse('Internal server error', 500)
+  }
+})
+```
+
+
+## Key Conventions
+
+- **Use `Deno.serve()`** - Built into Deno, no imports needed for the server
+- **Use ESM imports** - Import packages from `https://esm.sh/` URLs
+- **Handle CORS** - Always include CORS headers for browser access
+- **Use service role sparingly** - Only when bypassing RLS is necessary
+- **Set secrets via CLI** - Never commit secrets to code
+- **Log errors** - Use `console.error()` for debugging
+- **Return JSON** - Always set Content-Type header
+- **Handle OPTIONS** - For CORS preflight requests

@@ -1,0 +1,540 @@
+---
+description: React and Next.js component patterns
+globs: ["**/components/**", "**/app/**/*.tsx"]
+alwaysApply: false
+---
+3 character code: com
+
+
+# Next.js Components Rules
+
+## Server vs Client Components
+
+### Default: Server Components
+
+```typescript
+// app/projects/page.tsx
+// No 'use client' = Server Component
+
+import { createClient } from '@/lib/supabase/server'
+
+export default async function ProjectsPage() {
+  const supabase = await createClient()
+  const { data: projects } = await supabase.from('projects').select('*')
+
+  return (
+    <ul>
+      {projects?.map(project => (
+        <li key={project.id}>{project.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### When to Use Client Components
+
+Add `'use client'` only when you need:
+- Event handlers (onClick, onChange, onSubmit)
+- useState, useEffect, or other hooks
+- Browser APIs (localStorage, window)
+- Interactive libraries (form libraries, drag-and-drop)
+
+```typescript
+'use client'
+
+import { useState } from 'react'
+
+export function Counter() {
+  const [count, setCount] = useState(0)
+  
+  return (
+    <button onClick={() => setCount(c => c + 1)}>
+      Count: {count}
+    </button>
+  )
+}
+```
+
+
+## Component Location
+
+```
+src/
+├── app/                        # Pages and layouts
+│   ├── page.tsx                # Home page
+│   ├── layout.tsx              # Root layout
+│   └── projects/
+│       ├── page.tsx            # /projects
+│       └── [id]/
+│           └── page.tsx        # /projects/:id
+│
+├── components/
+│   ├── ui/                     # shadcn/ui components
+│   │   ├── button.tsx
+│   │   ├── card.tsx
+│   │   └── ...
+│   ├── forms/                  # Form components
+│   │   ├── project-form.tsx
+│   │   └── ...
+│   └── [feature]/              # Feature-specific
+│       ├── project-card.tsx
+│       └── project-list.tsx
+```
+
+
+## Page Component Template
+
+```typescript
+// app/projects/page.tsx
+import { createClient } from '@/lib/supabase/server'
+import { ProjectList } from '@/components/projects/project-list'
+
+export const metadata = {
+  title: 'Projects',
+  description: 'Manage your projects',
+}
+
+export default async function ProjectsPage() {
+  const supabase = await createClient()
+  
+  const { data: projects, error } = await supabase
+    .from('projects')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    return <div>Failed to load projects</div>
+  }
+
+  return (
+    <main className="container py-8">
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold">Projects</h1>
+      </header>
+      
+      <ProjectList projects={projects} />
+    </main>
+  )
+}
+```
+
+
+## Layout Template
+
+```typescript
+// app/(dashboard)/layout.tsx
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { Sidebar } from '@/components/sidebar'
+
+export default async function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
+  return (
+    <div className="flex h-screen">
+      <Sidebar />
+      <main className="flex-1 overflow-auto">
+        {children}
+      </main>
+    </div>
+  )
+}
+```
+
+
+## Loading States
+
+### Suspense with Loading UI
+
+```typescript
+// app/projects/page.tsx
+import { Suspense } from 'react'
+import { ProjectList } from '@/components/projects/project-list'
+import { ProjectListSkeleton } from '@/components/projects/project-list-skeleton'
+
+export default function ProjectsPage() {
+  return (
+    <main>
+      <h1>Projects</h1>
+      <Suspense fallback={<ProjectListSkeleton />}>
+        <ProjectList />
+      </Suspense>
+    </main>
+  )
+}
+```
+
+### loading.tsx (File-based)
+
+```typescript
+// app/projects/loading.tsx
+import { Skeleton } from '@/components/ui/skeleton'
+
+export default function Loading() {
+  return (
+    <div className="container py-8">
+      <Skeleton className="h-10 w-48 mb-8" />
+      <div className="grid gap-4">
+        {[...Array(3)].map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full" />
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+
+## Error Handling
+
+### error.tsx (File-based)
+
+```typescript
+'use client'
+
+import { useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
+  useEffect(() => {
+    console.error(error)
+  }, [error])
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px]">
+      <h2 className="text-xl font-semibold mb-4">Something went wrong!</h2>
+      <Button onClick={reset}>Try again</Button>
+    </div>
+  )
+}
+```
+
+### not-found.tsx
+
+```typescript
+// app/projects/[id]/not-found.tsx
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+
+export default function NotFound() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px]">
+      <h2 className="text-xl font-semibold mb-2">Project Not Found</h2>
+      <p className="text-muted-foreground mb-4">
+        The project you're looking for doesn't exist.
+      </p>
+      <Button asChild>
+        <Link href="/projects">Back to Projects</Link>
+      </Button>
+    </div>
+  )
+}
+```
+
+
+## Forms with Server Actions
+
+### Simple Form (Server Action only)
+
+```typescript
+// app/projects/new/page.tsx
+import { createProject } from './actions'
+
+export default function NewProjectPage() {
+  return (
+    <form action={createProject}>
+      <label htmlFor="name">Project Name</label>
+      <input 
+        id="name"
+        name="name" 
+        type="text" 
+        required 
+        className="border rounded px-3 py-2"
+      />
+      
+      <label htmlFor="description">Description</label>
+      <textarea 
+        id="description"
+        name="description" 
+        className="border rounded px-3 py-2"
+      />
+      
+      <SubmitButton />
+    </form>
+  )
+}
+
+// Separate client component for pending state
+'use client'
+import { useFormStatus } from 'react-dom'
+import { Button } from '@/components/ui/button'
+
+function SubmitButton() {
+  const { pending } = useFormStatus()
+  
+  return (
+    <Button type="submit" disabled={pending}>
+      {pending ? 'Creating...' : 'Create Project'}
+    </Button>
+  )
+}
+```
+
+```typescript
+// app/projects/new/actions.ts
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
+
+export async function createProject(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    throw new Error('Not authenticated')
+  }
+
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({
+      name: formData.get('name') as string,
+      description: formData.get('description') as string,
+      owner_id: user.id,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  revalidatePath('/projects')
+  redirect(`/projects/${data.id}`)
+}
+```
+
+
+### Complex Form (React Hook Form + Zod)
+
+```typescript
+// components/forms/project-form.tsx
+'use client'
+
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
+
+const projectSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(100),
+  description: z.string().max(500).optional(),
+  budget: z.coerce.number().min(0).optional(),
+  deadline: z.string().optional(),
+})
+
+type ProjectFormValues = z.infer<typeof projectSchema>
+
+interface ProjectFormProps {
+  defaultValues?: Partial<ProjectFormValues>
+  onSubmit: (data: ProjectFormValues) => Promise<void>
+  submitLabel?: string
+}
+
+export function ProjectForm({ 
+  defaultValues, 
+  onSubmit, 
+  submitLabel = 'Save' 
+}: ProjectFormProps) {
+  const form = useForm<ProjectFormValues>({
+    resolver: zodResolver(projectSchema),
+    defaultValues: {
+      name: '',
+      description: '',
+      ...defaultValues,
+    },
+  })
+
+  const handleSubmit = async (data: ProjectFormValues) => {
+    try {
+      await onSubmit(data)
+    } catch (error) {
+      // Handle error (see error-handling.mdc)
+    }
+  }
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Project Name</FormLabel>
+              <FormControl>
+                <Input placeholder="My Project" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Description</FormLabel>
+              <FormControl>
+                <Textarea 
+                  placeholder="What's this project about?" 
+                  {...field} 
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <Button type="submit" disabled={form.formState.isSubmitting}>
+          {form.formState.isSubmitting ? 'Saving...' : submitLabel}
+        </Button>
+      </form>
+    </Form>
+  )
+}
+```
+
+
+## Data Tables
+
+```typescript
+// components/projects/project-table.tsx
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import { formatDate } from '@/lib/utils'
+
+interface Project {
+  id: string
+  name: string
+  status: string
+  created_at: string
+}
+
+export function ProjectTable({ projects }: { projects: Project[] }) {
+  if (projects.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        No projects yet. Create your first project to get started.
+      </div>
+    )
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Created</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {projects.map((project) => (
+          <TableRow key={project.id}>
+            <TableCell className="font-medium">{project.name}</TableCell>
+            <TableCell>
+              <Badge variant={project.status === 'active' ? 'default' : 'secondary'}>
+                {project.status}
+              </Badge>
+            </TableCell>
+            <TableCell>{formatDate(project.created_at)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+```
+
+
+## Passing Server Data to Client Components
+
+```typescript
+// Server Component fetches data
+export default async function ProjectPage({ params }: Props) {
+  const project = await getProject(params.id)
+  
+  return (
+    <div>
+      <h1>{project.name}</h1>
+      {/* Pass serializable data to Client Component */}
+      <ProjectActions projectId={project.id} projectName={project.name} />
+    </div>
+  )
+}
+
+// Client Component receives props
+'use client'
+
+export function ProjectActions({ 
+  projectId, 
+  projectName 
+}: { 
+  projectId: string
+  projectName: string 
+}) {
+  const handleDelete = async () => {
+    // Client-side logic with the passed data
+  }
+  
+  return <Button onClick={handleDelete}>Delete {projectName}</Button>
+}
+```
+
+
+## Key Conventions
+
+- **Server Components by default** - Add 'use client' only when needed
+- **Fetch in Server Components** - Keep data fetching on the server
+- **Suspense for loading** - Wrap async components in Suspense
+- **File-based error handling** - Use error.tsx and loading.tsx
+- **Server Actions for mutations** - Use 'use server' for data changes
+- **Validate with Zod** - For complex forms with React Hook Form
+- **Revalidate after mutations** - Call revalidatePath() or revalidateTag()
+- **Type everything** - Use TypeScript interfaces for props

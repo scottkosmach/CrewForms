@@ -1,0 +1,462 @@
+---
+description: Entity-based access control, page restrictions, element visibility
+globs: ["**/lib/auth/**", "**/app/**"]
+alwaysApply: false
+---
+3 character code: acc
+
+
+# Access Control Rules
+
+## Overview
+
+This file defines the **entity-based authorization architecture** for controlling access to specific resources (projects, organizations, documents, etc.). It covers three layers of access control.
+
+**Key Principle:** Defense in depth—check access at multiple layers.
+
+
+## Three-Layer Model
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 1: PAGE ACCESS                                       │
+│  "Can the user navigate to this page at all?"               │
+│  Check: Server Component / Layout                           │
+│  Result: Show page OR redirect to Access Denied             │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 2: ELEMENT VISIBILITY                                │
+│  "Can the user see certain UI sections/elements?"           │
+│  Check: Conditional rendering based on permissions          │
+│  Result: Show element OR hide element                       │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 3: ACTION PERMISSIONS                                │
+│  "Can the user perform this specific action?"               │
+│  Check: Server Action / API route validation                │
+│  Result: Allow action OR return error                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+
+## Access Check Functions
+
+Create a centralized access control module:
+
+```typescript
+// src/lib/auth/access.ts
+import { createClient } from '@/lib/supabase/server'
+
+// Layer 1: Page access checks
+export async function canAccessProject(projectId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) return false
+
+  const { data } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .single()
+
+  // RLS will filter—if we get data, user has access
+  return !!data
+}
+
+export async function canAccessOrganization(orgId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) return false
+
+  const { data } = await supabase
+    .from('organization_members')
+    .select('id')
+    .eq('organization_id', orgId)
+    .eq('user_id', user.id)
+    .single()
+
+  return !!data
+}
+
+// Layer 2: Element visibility checks
+export async function canManageProjectMembers(projectId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) return false
+
+  const { data } = await supabase
+    .from('project_members')
+    .select('role')
+    .eq('project_id', projectId)
+    .eq('user_id', user.id)
+    .single()
+
+  return data?.role === 'owner' || data?.role === 'admin'
+}
+
+export async function canEditProject(projectId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) return false
+
+  const { data } = await supabase
+    .from('project_members')
+    .select('role')
+    .eq('project_id', projectId)
+    .eq('user_id', user.id)
+    .single()
+
+  return ['owner', 'admin', 'editor'].includes(data?.role ?? '')
+}
+```
+
+
+## Pattern 1: Page Access Check
+
+**Every entity detail page MUST check access before rendering.**
+
+```typescript
+// app/projects/[id]/page.tsx
+import { canAccessProject } from '@/lib/auth/access'
+import { notFound, redirect } from 'next/navigation'
+import { AccessDenied } from '@/components/access-denied'
+
+interface Props {
+  params: { id: string }
+}
+
+export default async function ProjectPage({ params }: Props) {
+  const hasAccess = await canAccessProject(params.id)
+
+  if (!hasAccess) {
+    return <AccessDenied 
+      message="You don't have access to this project."
+      backUrl="/projects"
+    />
+  }
+
+  // Safe to load and display project data
+  const project = await getProject(params.id)
+
+  if (!project) {
+    notFound()
+  }
+
+  return <ProjectDetail project={project} />
+}
+```
+
+
+## Pattern 2: Access Denied Component
+
+```typescript
+// src/components/access-denied.tsx
+import Link from 'next/link'
+import { ShieldX, ArrowLeft } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+
+interface AccessDeniedProps {
+  message?: string
+  backUrl?: string
+  showRequestAccess?: boolean
+  onRequestAccess?: () => void
+}
+
+export function AccessDenied({
+  message = "You don't have access to this resource.",
+  backUrl = '/',
+  showRequestAccess = false,
+  onRequestAccess,
+}: AccessDeniedProps) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] text-center p-8">
+      <ShieldX className="h-16 w-16 text-muted-foreground mb-4" />
+      <h1 className="text-2xl font-semibold mb-2">Access Denied</h1>
+      <p className="text-muted-foreground mb-6 max-w-md">{message}</p>
+      
+      <div className="flex gap-3">
+        <Button variant="outline" asChild>
+          <Link href={backUrl}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Go Back
+          </Link>
+        </Button>
+        
+        {showRequestAccess && (
+          <Button onClick={onRequestAccess}>
+            Request Access
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+```
+
+
+## Pattern 3: Element Visibility
+
+**Hide UI elements the user cannot interact with.**
+
+```typescript
+// app/projects/[id]/page.tsx
+import { canAccessProject, canManageProjectMembers, canEditProject } from '@/lib/auth/access'
+
+export default async function ProjectPage({ params }: Props) {
+  // Layer 1: Page access
+  const hasAccess = await canAccessProject(params.id)
+  if (!hasAccess) return <AccessDenied />
+
+  // Layer 2: Element visibility permissions
+  const [canManageMembers, canEdit] = await Promise.all([
+    canManageProjectMembers(params.id),
+    canEditProject(params.id),
+  ])
+
+  const project = await getProject(params.id)
+
+  return (
+    <div>
+      <header className="flex justify-between items-center">
+        <h1>{project.name}</h1>
+        
+        {/* Only show edit button if user can edit */}
+        {canEdit && (
+          <Button asChild>
+            <Link href={`/projects/${params.id}/edit`}>Edit Project</Link>
+          </Button>
+        )}
+      </header>
+
+      {/* Only show member management if user can manage */}
+      {canManageMembers && (
+        <section>
+          <h2>Team Members</h2>
+          <MemberManagement projectId={params.id} />
+        </section>
+      )}
+    </div>
+  )
+}
+```
+
+
+## Pattern 4: Action Permission Checks
+
+**Server Actions MUST verify permissions before executing.**
+
+```typescript
+// app/projects/[id]/actions.ts
+'use server'
+
+import { canEditProject, canManageProjectMembers } from '@/lib/auth/access'
+import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+
+export async function updateProject(projectId: string, data: ProjectUpdate) {
+  // Layer 3: Action permission check
+  const canEdit = await canEditProject(projectId)
+  
+  if (!canEdit) {
+    throw new Error('You do not have permission to edit this project')
+  }
+
+  const supabase = await createClient()
+  
+  const { error } = await supabase
+    .from('projects')
+    .update(data)
+    .eq('id', projectId)
+
+  if (error) throw new Error(error.message)
+
+  revalidatePath(`/projects/${projectId}`)
+}
+
+export async function addProjectMember(projectId: string, userId: string) {
+  const canManage = await canManageProjectMembers(projectId)
+  
+  if (!canManage) {
+    throw new Error('You do not have permission to manage members')
+  }
+
+  // ... add member logic
+}
+```
+
+
+## Pattern 5: Loading Permissions Together
+
+**Batch permission checks to avoid multiple round trips.**
+
+```typescript
+// src/lib/auth/access.ts
+export async function getProjectPermissions(projectId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return {
+      canAccess: false,
+      canEdit: false,
+      canManageMembers: false,
+      canDelete: false,
+    }
+  }
+
+  // Single query to get membership and role
+  const { data: membership } = await supabase
+    .from('project_members')
+    .select('role')
+    .eq('project_id', projectId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!membership) {
+    return {
+      canAccess: false,
+      canEdit: false,
+      canManageMembers: false,
+      canDelete: false,
+    }
+  }
+
+  const role = membership.role
+
+  return {
+    canAccess: true,
+    canEdit: ['owner', 'admin', 'editor'].includes(role),
+    canManageMembers: ['owner', 'admin'].includes(role),
+    canDelete: role === 'owner',
+  }
+}
+
+// Usage in page
+export default async function ProjectPage({ params }: Props) {
+  const permissions = await getProjectPermissions(params.id)
+
+  if (!permissions.canAccess) {
+    return <AccessDenied />
+  }
+
+  return (
+    <ProjectDetail 
+      projectId={params.id}
+      canEdit={permissions.canEdit}
+      canManageMembers={permissions.canManageMembers}
+      canDelete={permissions.canDelete}
+    />
+  )
+}
+```
+
+
+## Pattern 6: Client-Side Permission Context
+
+**For Client Components that need permission info:**
+
+```typescript
+// src/components/providers/permissions-provider.tsx
+'use client'
+
+import { createContext, useContext } from 'react'
+
+interface Permissions {
+  canEdit: boolean
+  canManageMembers: boolean
+  canDelete: boolean
+}
+
+const PermissionsContext = createContext<Permissions>({
+  canEdit: false,
+  canManageMembers: false,
+  canDelete: false,
+})
+
+export function PermissionsProvider({
+  children,
+  permissions,
+}: {
+  children: React.ReactNode
+  permissions: Permissions
+}) {
+  return (
+    <PermissionsContext.Provider value={permissions}>
+      {children}
+    </PermissionsContext.Provider>
+  )
+}
+
+export function usePermissions() {
+  return useContext(PermissionsContext)
+}
+```
+
+```typescript
+// In Server Component, wrap with permissions
+export default async function ProjectPage({ params }: Props) {
+  const permissions = await getProjectPermissions(params.id)
+
+  return (
+    <PermissionsProvider permissions={permissions}>
+      <ProjectDetail projectId={params.id} />
+    </PermissionsProvider>
+  )
+}
+
+// In Client Component, consume permissions
+'use client'
+
+export function DeleteButton({ projectId }: { projectId: string }) {
+  const { canDelete } = usePermissions()
+
+  if (!canDelete) return null
+
+  return <Button variant="destructive">Delete Project</Button>
+}
+```
+
+
+## Entity Access Hierarchy Example
+
+```
+Organization
+    │
+    └──► Project (via project_members)
+            │
+            ├──► Task (inherits from project)
+            │
+            └──► Document (inherits from project)
+```
+
+```typescript
+// Hierarchical access check
+export async function canAccessTask(taskId: string): Promise<boolean> {
+  const supabase = await createClient()
+  
+  // Get task's project
+  const { data: task } = await supabase
+    .from('tasks')
+    .select('project_id')
+    .eq('id', taskId)
+    .single()
+
+  if (!task) return false
+
+  // Check project access (RLS handles this)
+  return canAccessProject(task.project_id)
+}
+```
+
+
+## Key Conventions
+
+1. **Check access FIRST** - Before loading any sensitive data
+2. **Never expose data in Access Denied** - Don't load entity data if user lacks access
+3. **Batch permission checks** - Use single query when possible
+4. **Defense in depth** - UI checks + Server Action checks + RLS
+5. **Fail secure** - If unsure, deny access (return false)
+6. **Cache permission results** - Within a request, don't re-check repeatedly
+7. **Log access denials** - Track unauthorized access attempts

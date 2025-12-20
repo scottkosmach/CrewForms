@@ -1,0 +1,413 @@
+---
+description: Vercel deployment and Supabase production setup
+globs: ["**/vercel.json", "**/.env*", "**/next.config.*"]
+alwaysApply: false
+---
+3 character code: dep
+
+
+# Deployment Rules
+
+## Overview
+
+This stack deploys to:
+- **Frontend/API:** Vercel (Next.js)
+- **Database/Auth/Storage:** Supabase (managed)
+
+Both services have generous free tiers and scale automatically.
+
+
+## Environment Variables
+
+### Local Development (`.env.local`)
+
+```bash
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...  # Only for server-side admin operations
+
+# App
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+### Vercel Production
+
+Set these in Vercel Dashboard → Project → Settings → Environment Variables:
+
+| Variable | Value | Environment |
+|----------|-------|-------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL | All |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key | All |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | Production only |
+| `NEXT_PUBLIC_SITE_URL` | Your production URL | Production |
+
+**Important:** Never commit `.env.local` to git. It's in `.gitignore` by default.
+
+
+## Vercel Deployment
+
+### Initial Setup
+
+1. **Connect Repository**
+   ```bash
+   # Push your code to GitHub
+   git push origin main
+   ```
+
+2. **Import to Vercel**
+   - Go to [vercel.com/new](https://vercel.com/new)
+   - Import your GitHub repository
+   - Vercel auto-detects Next.js
+
+3. **Configure Environment Variables**
+   - Add all env vars before first deploy
+   - Use "Production", "Preview", and "Development" scopes appropriately
+
+4. **Deploy**
+   - Click "Deploy"
+   - Vercel builds and deploys automatically
+
+### Automatic Deployments
+
+After initial setup:
+- **Push to `main`** → Production deployment
+- **Push to other branches** → Preview deployment
+- **Pull requests** → Preview deployment with unique URL
+
+
+### vercel.json (Optional)
+
+```json
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "regions": ["iad1"],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
+  ]
+}
+```
+
+
+## Supabase Production Setup
+
+### 1. Create Production Project
+
+- Go to [supabase.com/dashboard](https://supabase.com/dashboard)
+- Click "New Project"
+- Choose organization and region (pick closest to your users)
+- Note the project URL and keys
+
+### 2. Link Local to Production
+
+```bash
+# Link your local project to production
+supabase link --project-ref <your-project-ref>
+
+# Project ref is in URL: supabase.com/project/<project-ref>
+```
+
+### 3. Push Migrations to Production
+
+```bash
+# Push all migrations to production database
+supabase db push
+
+# Or generate SQL and run manually
+supabase db diff --schema public > migration.sql
+```
+
+### 4. Set Up Auth
+
+In Supabase Dashboard → Authentication → URL Configuration:
+
+| Setting | Value |
+|---------|-------|
+| Site URL | `https://your-domain.com` |
+| Redirect URLs | `https://your-domain.com/**` |
+
+For email templates, customize in Authentication → Email Templates.
+
+
+## Database Migrations Workflow
+
+### Development → Production
+
+```bash
+# 1. Make changes locally
+# Edit files in supabase/migrations/
+
+# 2. Test locally
+supabase db reset  # Resets and runs all migrations
+
+# 3. Commit migrations
+git add supabase/migrations/
+git commit -m "Add new table"
+
+# 4. Push to production
+supabase db push
+
+# 5. Deploy app
+git push origin main  # Triggers Vercel deploy
+```
+
+### Rolling Back
+
+```sql
+-- Create a new migration that undoes the change
+-- supabase/migrations/20240120_rollback_feature.sql
+
+DROP TABLE IF EXISTS feature_table;
+ALTER TABLE other_table DROP COLUMN IF EXISTS new_column;
+```
+
+Then push: `supabase db push`
+
+
+## CI/CD with GitHub Actions
+
+### Basic Deploy Workflow
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+```
+
+### With Supabase Migrations
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase Project
+        run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Push Database Migrations
+        run: supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+  deploy:
+    needs: migrate
+    runs-on: ubuntu-latest
+    steps:
+      # ... Vercel deployment steps
+```
+
+
+## Domain Configuration
+
+### Vercel Custom Domain
+
+1. Go to Vercel Dashboard → Project → Settings → Domains
+2. Add your domain
+3. Update DNS records as instructed
+
+### Supabase Custom Domain (Pro Plan)
+
+1. Go to Supabase Dashboard → Project → Settings → Custom Domains
+2. Follow the setup wizard
+
+
+## Performance Optimization
+
+### Next.js Config
+
+```typescript
+// next.config.ts
+import type { NextConfig } from 'next'
+
+const nextConfig: NextConfig = {
+  // Enable static optimization where possible
+  output: 'standalone',
+  
+  // Image optimization
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
+      },
+    ],
+  },
+  
+  // Reduce bundle size
+  experimental: {
+    optimizePackageImports: ['lucide-react'],
+  },
+}
+
+export default nextConfig
+```
+
+### Caching Headers
+
+```typescript
+// For API routes that can be cached
+export async function GET() {
+  const data = await fetchData()
+  
+  return Response.json(data, {
+    headers: {
+      'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+    },
+  })
+}
+```
+
+
+## Monitoring
+
+### Vercel Analytics
+
+```typescript
+// app/layout.tsx
+import { Analytics } from '@vercel/analytics/react'
+import { SpeedInsights } from '@vercel/speed-insights/next'
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        {children}
+        <Analytics />
+        <SpeedInsights />
+      </body>
+    </html>
+  )
+}
+```
+
+### Supabase Dashboard
+
+Monitor in Supabase Dashboard:
+- **Database** → Query performance, connections
+- **Auth** → User signups, active users
+- **Storage** → Bandwidth, storage used
+- **Edge Functions** → Invocations, errors
+
+
+## Checklist: Before Going Live
+
+### Security
+- [ ] RLS enabled on all tables
+- [ ] Service role key only on server
+- [ ] Auth redirect URLs configured
+- [ ] Rate limiting on API routes
+
+### Database
+- [ ] All migrations applied to production
+- [ ] Indexes added for common queries
+- [ ] Backups enabled (automatic on Supabase)
+
+### App
+- [ ] Environment variables set in Vercel
+- [ ] Error tracking configured
+- [ ] Analytics enabled
+- [ ] Custom domain configured
+- [ ] SSL certificate active (automatic)
+
+### Testing
+- [ ] Auth flows work (signup, login, logout)
+- [ ] Data operations work (CRUD)
+- [ ] File uploads work (if applicable)
+- [ ] Email sending works (if applicable)
+
+
+## Troubleshooting
+
+### Build Fails on Vercel
+
+```bash
+# Check build locally first
+npm run build
+
+# Common issues:
+# - TypeScript errors
+# - Missing environment variables
+# - Import errors
+```
+
+### Database Connection Issues
+
+```bash
+# Check Supabase status
+# https://status.supabase.com
+
+# Verify connection string
+supabase status
+
+# Check if migrations are in sync
+supabase db diff
+```
+
+### Auth Not Working
+
+1. Check Site URL in Supabase Dashboard
+2. Verify redirect URLs include your domain
+3. Check browser console for CORS errors
+4. Verify environment variables are set
+
+
+## Key Conventions
+
+- **Never commit secrets** - Use environment variables
+- **Migrate before deploy** - Database changes before app changes
+- **Use preview deployments** - Test changes before production
+- **Monitor after deploy** - Check logs and analytics
+- **Keep environments in sync** - Same migrations in dev and prod
