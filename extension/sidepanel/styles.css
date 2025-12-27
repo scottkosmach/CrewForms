@@ -1191,12 +1191,16 @@ body {
   flex: 2;
 }
 
-.keypress-entry input:nth-child(2) {
-  width: 40px;
-  text-align: center;
+.keypress-entry .keypress-key-select {
+  width: 100px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  background: var(--color-white);
 }
 
-.keypress-entry input:nth-child(3) {
+.keypress-entry .keypress-count {
   width: 50px;
   text-align: center;
 }

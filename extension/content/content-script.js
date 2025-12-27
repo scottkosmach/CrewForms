@@ -425,25 +425,27 @@ async function handleTestFillField(position, value, config) {
     
     const inputType = config.inputType || 'paste';
     
-    // Handle keypress navigation specially - just execute the keystrokes directly
+    // Handle keypress navigation specially - execute ALL keystrokes in sequence
     if (inputType === 'select-keypress' && config.keypressMap) {
       const keypressEntries = Object.entries(config.keypressMap);
       
       if (keypressEntries.length > 0) {
-        // Use the first entry's keystrokes
-        const [targetValue, keypressConfig] = keypressEntries[0];
-        
-        // Focus the field
+        // Focus the field first
         field.focus();
         field.click();
         await sleep(100);
         
-        // Execute the keystrokes with configurable delay
-        const { key, count } = keypressConfig;
         const delay = config.keypressDelay || 100; // Default 100ms if not specified
-        for (let i = 0; i < (count || 1); i++) {
-          await simulateKeypress(field, key);
-          await sleep(delay); // Configurable delay between keypresses
+        
+        // Execute ALL entries in sequence (each entry can have its own key and repeat count)
+        for (const [entryLabel, keypressConfig] of keypressEntries) {
+          const { key, count } = keypressConfig;
+          
+          // Execute this entry's keystrokes (repeat 'count' times)
+          for (let i = 0; i < (count || 1); i++) {
+            await simulateKeypress(field, key);
+            await sleep(delay); // Configurable delay between keypresses
+          }
         }
         
         triggerInputEvents(field);
@@ -704,6 +706,10 @@ async function fillSelectMatch(field, value) {
 
 /**
  * Fill a select dropdown using keypress navigation
+ * 
+ * Supports two modes:
+ * 1. Value-based: If value matches a key in keypressMap, play those keystrokes
+ * 2. Sequence: If no value match, play ALL entries in order (for static sequences)
  */
 async function fillSelectKeypress(field, value, config) {
   if (!config || !config.keypressMap) {
@@ -711,23 +717,37 @@ async function fillSelectKeypress(field, value, config) {
     return fillSelectMatch(field, value);
   }
   
-  const keypressConfig = config.keypressMap[value];
+  const delay = config.keypressDelay || 100; // Default 100ms if not specified
+  const keypressEntries = Object.entries(config.keypressMap);
   
-  if (!keypressConfig) {
-    // Value not in keypress map, try match
-    return fillSelectMatch(field, value);
-  }
+  // Check if value matches a specific entry
+  const keypressConfig = config.keypressMap[value];
   
   // Focus the select
   field.focus();
   
-  // Simulate keypresses with configurable delay
-  const { key, count } = keypressConfig;
-  const delay = config.keypressDelay || 100; // Default 100ms if not specified
-  
-  for (let i = 0; i < count; i++) {
-    await simulateKeypress(field, key);
-    await sleep(delay); // Configurable delay between keypresses
+  if (keypressConfig) {
+    // Mode 1: Value-based - play keystrokes for this specific value
+    const { key, count } = keypressConfig;
+    
+    for (let i = 0; i < count; i++) {
+      await simulateKeypress(field, key);
+      await sleep(delay);
+    }
+  } else if (keypressEntries.length > 0) {
+    // Mode 2: Sequence - play ALL entries in order
+    // This is used when the keypressMap is a sequence of steps, not a value lookup
+    for (const [entryLabel, entryConfig] of keypressEntries) {
+      const { key, count } = entryConfig;
+      
+      for (let i = 0; i < (count || 1); i++) {
+        await simulateKeypress(field, key);
+        await sleep(delay);
+      }
+    }
+  } else {
+    // No keypress config, try match method
+    return fillSelectMatch(field, value);
   }
   
   triggerInputEvents(field);
@@ -827,25 +847,43 @@ function triggerInputEvents(field) {
 
 /**
  * Simulate a keypress on an element
+ * Handles both regular keys (a-z) and special keys (Enter, Tab, Arrow keys, etc.)
  */
 async function simulateKeypress(element, key) {
-  const keydownEvent = new KeyboardEvent('keydown', {
-    key,
-    code: `Key${key.toUpperCase()}`,
-    bubbles: true
-  });
+  // Map special key names to their proper key/code values
+  const specialKeys = {
+    'Enter': { key: 'Enter', code: 'Enter' },
+    'Tab': { key: 'Tab', code: 'Tab' },
+    'Escape': { key: 'Escape', code: 'Escape' },
+    'Space': { key: ' ', code: 'Space' },
+    'Backspace': { key: 'Backspace', code: 'Backspace' },
+    'ArrowUp': { key: 'ArrowUp', code: 'ArrowUp' },
+    'ArrowDown': { key: 'ArrowDown', code: 'ArrowDown' },
+    'ArrowLeft': { key: 'ArrowLeft', code: 'ArrowLeft' },
+    'ArrowRight': { key: 'ArrowRight', code: 'ArrowRight' }
+  };
   
-  const keypressEvent = new KeyboardEvent('keypress', {
-    key,
-    code: `Key${key.toUpperCase()}`,
-    bubbles: true
-  });
+  // Determine key and code values
+  let keyValue, codeValue;
+  if (specialKeys[key]) {
+    keyValue = specialKeys[key].key;
+    codeValue = specialKeys[key].code;
+  } else {
+    // Regular letter key
+    keyValue = key;
+    codeValue = `Key${key.toUpperCase()}`;
+  }
   
-  const keyupEvent = new KeyboardEvent('keyup', {
-    key,
-    code: `Key${key.toUpperCase()}`,
-    bubbles: true
-  });
+  const eventOptions = {
+    key: keyValue,
+    code: codeValue,
+    bubbles: true,
+    cancelable: true
+  };
+  
+  const keydownEvent = new KeyboardEvent('keydown', eventOptions);
+  const keypressEvent = new KeyboardEvent('keypress', eventOptions);
+  const keyupEvent = new KeyboardEvent('keyup', eventOptions);
   
   element.dispatchEvent(keydownEvent);
   element.dispatchEvent(keypressEvent);

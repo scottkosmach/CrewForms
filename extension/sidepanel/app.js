@@ -1992,13 +1992,30 @@ function renderKeypressMapBuilder(position, keypressMap) {
     <div class="config-group">
       <label>Keypress Navigation Map</label>
       <div class="keypress-config">
-        <p>Define how to navigate to values using keystrokes:</p>
+        <p>Define keystroke sequence (executes all rows in order):</p>
         <div class="keypress-entries" data-position="${position}">
           ${entries.length > 0 ? entries.map(([value, config], index) => `
             <div class="keypress-entry" data-index="${index}">
-              <input type="text" class="keypress-value" value="${value}" placeholder="Value (e.g., United States)">
-              <input type="text" class="keypress-key" value="${config.key || ''}" placeholder="Key" maxlength="1">
-              <input type="number" class="keypress-count" value="${config.count || 1}" placeholder="#" min="1">
+              <input type="text" class="keypress-value" value="${value}" placeholder="Label (e.g., step1)">
+              <select class="keypress-key-select">
+                <option value="">-- Key --</option>
+                <optgroup label="Letters">
+                  ${['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z']
+                    .map(k => `<option value="${k}" ${config.key === k ? 'selected' : ''}>${k.toUpperCase()}</option>`).join('')}
+                </optgroup>
+                <optgroup label="Special Keys">
+                  <option value="Enter" ${config.key === 'Enter' ? 'selected' : ''}>Enter</option>
+                  <option value="Tab" ${config.key === 'Tab' ? 'selected' : ''}>Tab</option>
+                  <option value="ArrowDown" ${config.key === 'ArrowDown' ? 'selected' : ''}>Arrow Down</option>
+                  <option value="ArrowUp" ${config.key === 'ArrowUp' ? 'selected' : ''}>Arrow Up</option>
+                  <option value="ArrowLeft" ${config.key === 'ArrowLeft' ? 'selected' : ''}>Arrow Left</option>
+                  <option value="ArrowRight" ${config.key === 'ArrowRight' ? 'selected' : ''}>Arrow Right</option>
+                  <option value="Space" ${config.key === 'Space' || config.key === ' ' ? 'selected' : ''}>Space</option>
+                  <option value="Escape" ${config.key === 'Escape' ? 'selected' : ''}>Escape</option>
+                  <option value="Backspace" ${config.key === 'Backspace' ? 'selected' : ''}>Backspace</option>
+                </optgroup>
+              </select>
+              <input type="number" class="keypress-count" value="${config.count || 1}" placeholder="#" min="1" title="Repeat count">
               <button type="button" class="btn-remove-keypress" data-position="${position}" data-index="${index}">×</button>
             </div>
           `).join('') : ''}
@@ -2125,19 +2142,24 @@ function removeKeypressEntry(position, index) {
 
 /**
  * Collect keypress map values before saving
+ * Reads from the key select dropdown (supports special keys like Enter)
  */
 function collectKeypressMaps() {
   document.querySelectorAll('.keypress-entries').forEach(container => {
     const position = parseInt(container.dataset.position);
     const newMap = {};
     
-    container.querySelectorAll('.keypress-entry').forEach(entry => {
+    container.querySelectorAll('.keypress-entry').forEach((entry, index) => {
       const value = entry.querySelector('.keypress-value').value.trim();
-      const key = entry.querySelector('.keypress-key').value.trim();
+      // Read from select dropdown instead of text input
+      const keySelect = entry.querySelector('.keypress-key-select');
+      const key = keySelect ? keySelect.value : '';
       const count = parseInt(entry.querySelector('.keypress-count').value) || 1;
       
-      if (value && key) {
-        newMap[value] = { key, count };
+      if (key) {
+        // Use index-based key if no label provided (ensures all entries are captured)
+        const mapKey = value || `step_${index}`;
+        newMap[mapKey] = { key, count };
       }
     });
     
