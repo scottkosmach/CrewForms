@@ -1221,6 +1221,31 @@ body {
   padding: 4px 8px;
 }
 
+/* Keypress Delay Configuration */
+.keypress-delay-config {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-gray-200);
+}
+
+.keypress-delay-config label {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-600);
+  white-space: nowrap;
+}
+
+.keypress-delay-config input {
+  width: 80px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+
 /* Admin Empty State */
 .admin-empty-state {
   display: flex;

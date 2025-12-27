@@ -1696,7 +1696,8 @@ async function scanFormFields() {
           inputType: 'paste',
           fieldType: 'text', // Explicit field type: text, date, dropdown
           dateFormat: '',
-          keypressMap: {}
+          keypressMap: {},
+          keypressDelay: 100 // Default delay between keystrokes in ms
         };
       });
       
@@ -1805,6 +1806,15 @@ function renderFieldList() {
       const position = parseInt(btn.dataset.position);
       const index = parseInt(btn.dataset.index);
       removeKeypressEntry(position, index);
+    });
+  });
+  
+  // Add event listeners for keypress delay inputs
+  container.querySelectorAll('.keypress-delay').forEach(input => {
+    input.addEventListener('change', (e) => {
+      const position = parseInt(e.target.dataset.position);
+      const delay = parseInt(e.target.value) || 100;
+      state.fieldConfigs[position].keypressDelay = delay;
     });
   });
   
@@ -1975,6 +1985,8 @@ function renderFieldConfigDetails(field, config) {
  */
 function renderKeypressMapBuilder(position, keypressMap) {
   const entries = Object.entries(keypressMap);
+  // Get current delay from field config, default to 100ms
+  const currentDelay = state.fieldConfigs[position]?.keypressDelay || 100;
   
   return `
     <div class="config-group">
@@ -1992,6 +2004,18 @@ function renderKeypressMapBuilder(position, keypressMap) {
           `).join('') : ''}
         </div>
         <button type="button" class="btn btn-sm btn-secondary add-keypress">+ Add Entry</button>
+        <div class="keypress-delay-config">
+          <label for="keypressDelay-${position}">Delay between keystrokes (ms):</label>
+          <input type="number" 
+                 id="keypressDelay-${position}" 
+                 class="keypress-delay" 
+                 data-position="${position}"
+                 value="${currentDelay}" 
+                 placeholder="100" 
+                 min="0" 
+                 max="2000"
+                 step="50">
+        </div>
       </div>
     </div>
   `;
@@ -2172,7 +2196,10 @@ async function saveMapping() {
     }
     
     if (config.inputType === 'select-keypress' && Object.keys(config.keypressMap || {}).length > 0) {
-      fieldMapping.config = { keypressMap: config.keypressMap };
+      fieldMapping.config = { 
+        keypressMap: config.keypressMap,
+        keypressDelay: config.keypressDelay || 100 // Delay between keystrokes in ms
+      };
     }
     
     fields.push(fieldMapping);
@@ -2296,6 +2323,7 @@ async function testField(position) {
         inputType,
         dateFormat: config.dateFormat,
         keypressMap: config.keypressMap,
+        keypressDelay: config.keypressDelay || 100, // Delay between keystrokes in ms
         useKeystrokes // Flag to indicate keystrokes should be executed
       }
     });

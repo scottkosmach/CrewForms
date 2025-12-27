@@ -438,11 +438,12 @@ async function handleTestFillField(position, value, config) {
         field.click();
         await sleep(100);
         
-        // Execute the keystrokes
+        // Execute the keystrokes with configurable delay
         const { key, count } = keypressConfig;
+        const delay = config.keypressDelay || 100; // Default 100ms if not specified
         for (let i = 0; i < (count || 1); i++) {
           await simulateKeypress(field, key);
-          await sleep(100); // Delay between keypresses
+          await sleep(delay); // Configurable delay between keypresses
         }
         
         triggerInputEvents(field);
@@ -720,12 +721,13 @@ async function fillSelectKeypress(field, value, config) {
   // Focus the select
   field.focus();
   
-  // Simulate keypresses
+  // Simulate keypresses with configurable delay
   const { key, count } = keypressConfig;
+  const delay = config.keypressDelay || 100; // Default 100ms if not specified
   
   for (let i = 0; i < count; i++) {
     await simulateKeypress(field, key);
-    await sleep(50); // Small delay between keypresses
+    await sleep(delay); // Configurable delay between keypresses
   }
   
   triggerInputEvents(field);
