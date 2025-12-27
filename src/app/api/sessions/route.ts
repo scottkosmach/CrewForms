@@ -9,6 +9,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
 import { createClient } from '@/lib/supabase/server';
 
+// Force dynamic rendering - sessions must never be cached
+export const dynamic = 'force-dynamic';
+
 // ============================================================================
 // TYPES
 // ============================================================================
