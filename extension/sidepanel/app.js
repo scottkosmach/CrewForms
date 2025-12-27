@@ -1866,10 +1866,21 @@ async function editExistingMapping(mappingId) {
     });
     
     // Apply the saved mapping config to fields
+    console.log('Applying saved field configs:', mapping.fields);
+    
     mapping.fields.forEach(savedField => {
+      console.log('Loading field:', savedField.position, savedField);
+      
       if (state.fieldConfigs[savedField.position]) {
+        // Determine status: use saved status, or infer from data
+        let status = savedField.status;
+        if (!status) {
+          // Fallback: infer status if not explicitly saved
+          status = savedField.staticValue ? 'static' : (savedField.dataSource ? 'data' : 'unmapped');
+        }
+        
         state.fieldConfigs[savedField.position] = {
-          status: savedField.staticValue ? 'static' : (savedField.dataSource ? 'data' : 'unmapped'),
+          status: status,
           dataSource: savedField.dataSource || '',
           staticValue: savedField.staticValue || '',
           inputType: savedField.inputType || 'paste',
@@ -1878,6 +1889,10 @@ async function editExistingMapping(mappingId) {
           keypressMap: savedField.config?.keypressMap || {},
           keypressDelay: savedField.config?.keypressDelay || 100
         };
+        
+        console.log('Applied config for field', savedField.position, ':', state.fieldConfigs[savedField.position]);
+      } else {
+        console.warn('Field position not found in scanned fields:', savedField.position);
       }
     });
     
