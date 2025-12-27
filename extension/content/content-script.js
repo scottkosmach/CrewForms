@@ -604,10 +604,18 @@ function injectOverlayStyles() {
       cursor: grabbing;
     }
     
+    /* Pan wrapper - handles translation in screen space */
+    #crewforms-pan-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
     #crewforms-passport-image {
       max-width: 90vw;
       max-height: 90vh;
       object-fit: contain;
+      /* Only animate rotation and scale, not translation */
       transition: transform 0.2s ease;
       user-select: none;
       -webkit-user-drag: none;
@@ -726,9 +734,13 @@ function showImageOverlay(imageData) {
   imageOverlay = document.createElement('div');
   imageOverlay.id = 'crewforms-image-overlay';
   
+  // Structure: container > pan-wrapper (translate) > image (rotate/scale)
+  // This ensures panning works in screen coordinates regardless of rotation
   imageOverlay.innerHTML = `
     <div id="crewforms-image-container">
-      <img id="crewforms-passport-image" src="${imageData}" alt="Passport" draggable="false">
+      <div id="crewforms-pan-wrapper">
+        <img id="crewforms-passport-image" src="${imageData}" alt="Passport" draggable="false">
+      </div>
     </div>
     
     <div id="crewforms-overlay-hint">
@@ -853,8 +865,8 @@ function setupOverlayEventListeners() {
   overlayEventHandlers.mousemove = (e) => {
     if (overlayState.isPanning) {
       // Calculate mouse movement in screen coordinates
-      // No rotation adjustment needed because translate is applied in screen space
-      // (see updateImageTransform - translate comes first in the transform string)
+      // No rotation adjustment needed - translation is on a separate wrapper element
+      // that is unaffected by the image's rotation (see updateImageTransform)
       const dx = e.clientX - overlayState.panStart.x;
       const dy = e.clientY - overlayState.panStart.y;
       
@@ -923,21 +935,25 @@ function handleOverlayKeydown(e) {
 /**
  * Update the image transform based on current state
  * 
- * Transform order (CSS applies right-to-left):
- * - scale is applied first (to the image)
- * - rotate is applied second (rotates the scaled image)  
- * - translate is applied last (in screen coordinates)
+ * We use two separate elements for transforms:
+ * - pan-wrapper: handles translate (in screen coordinates)
+ * - image: handles rotate and scale
  * 
- * This order ensures panning works intuitively in screen space
- * regardless of the current rotation angle.
+ * This separation ensures panning always works in screen space,
+ * regardless of image rotation. Dragging right always moves right.
  */
 function updateImageTransform() {
+  const panWrapper = document.getElementById('crewforms-pan-wrapper');
   const image = document.getElementById('crewforms-passport-image');
-  if (!image) return;
+  if (!panWrapper || !image) return;
   
   const { rotation, zoom, panOffset } = overlayState;
-  // translate first in string = applied last = screen coordinates
-  image.style.transform = `translate(${panOffset.x}px, ${panOffset.y}px) rotate(${rotation}deg) scale(${zoom})`;
+  
+  // Apply translation to wrapper (screen coordinates - unaffected by rotation)
+  panWrapper.style.transform = `translate(${panOffset.x}px, ${panOffset.y}px)`;
+  
+  // Apply rotation and scale to image only
+  image.style.transform = `rotate(${rotation}deg) scale(${zoom})`;
 }
 
 /**
