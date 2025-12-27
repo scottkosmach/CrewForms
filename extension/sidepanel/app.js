@@ -132,6 +132,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Listen for messages from background
   chrome.runtime.onMessage.addListener(handleBackgroundMessage);
+  
+  // Check if current tab has a mapping (show/hide action bar)
+  await checkCurrentTabMapping();
+  
+  // Listen for tab changes to update action bar visibility
+  setupTabChangeListener();
 });
 
 /**
@@ -1412,6 +1418,105 @@ function updatePasteSourceOptions() {
         ${t.firstName} ${t.lastName} (Guest ${i + 1})
       </option>
     `).join('');
+}
+
+// ============================================================================
+// URL MAPPING DETECTION & ACTION BAR
+// ============================================================================
+
+/**
+ * Check if the current active tab URL has a matching field mapping.
+ * Shows or hides the action bar based on result.
+ */
+async function checkCurrentTabMapping() {
+  try {
+    // Get the active tab
+    const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
+    
+    if (!tabResult.success || !tabResult.tab || !tabResult.tab.url) {
+      console.log('No active tab found or no URL');
+      hideActionBar();
+      return;
+    }
+    
+    const currentUrl = tabResult.tab.url;
+    console.log('Checking mapping for URL:', currentUrl);
+    
+    // Skip chrome:// and extension pages
+    if (currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
+      console.log('Skipping internal page');
+      hideActionBar();
+      return;
+    }
+    
+    // Check if there's a mapping for this URL
+    const mappingResult = await sendMessage({
+      type: 'GET_MAPPING',
+      url: currentUrl
+    });
+    
+    if (mappingResult.success && mappingResult.mapping) {
+      console.log('Found mapping for URL:', mappingResult.mapping);
+      showActionBar();
+    } else {
+      console.log('No mapping found for URL');
+      hideActionBar();
+    }
+  } catch (error) {
+    console.error('Error checking tab mapping:', error);
+    hideActionBar();
+  }
+}
+
+/**
+ * Show the action bar footer
+ */
+function showActionBar() {
+  const actionBar = document.getElementById('actionBar');
+  if (actionBar) {
+    actionBar.classList.remove('hidden');
+    console.log('Action bar shown');
+  }
+}
+
+/**
+ * Hide the action bar footer
+ */
+function hideActionBar() {
+  const actionBar = document.getElementById('actionBar');
+  if (actionBar) {
+    actionBar.classList.add('hidden');
+    console.log('Action bar hidden');
+  }
+}
+
+/**
+ * Set up listener for tab changes to update action bar visibility.
+ * Uses chrome.tabs.onActivated and chrome.tabs.onUpdated events.
+ */
+function setupTabChangeListener() {
+  // Listen for tab activation (switching tabs)
+  chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    console.log('Tab activated:', activeInfo.tabId);
+    // Small delay to ensure tab info is available
+    setTimeout(() => checkCurrentTabMapping(), 100);
+  });
+  
+  // Listen for tab URL changes (navigation within a tab)
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    // Only check when the URL changes and loading is complete
+    if (changeInfo.status === 'complete') {
+      console.log('Tab updated:', tabId, changeInfo);
+      
+      // Check if this is the active tab
+      const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
+      if (tabResult.success && tabResult.tab && tabResult.tab.id === tabId) {
+        checkCurrentTabMapping();
+      }
+    }
+  });
+  
+  console.log('Tab change listeners set up');
 }
 
 // ============================================================================
