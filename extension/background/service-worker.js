@@ -228,6 +228,13 @@ async function handleMessage(message, sender) {
       console.log('Content script ready on:', message.url);
       return { success: true };
     
+    // Image overlay commands - forward to content script
+    case 'SHOW_IMAGE_OVERLAY':
+      return await showImageOverlayOnTab(message.imageData);
+    
+    case 'HIDE_IMAGE_OVERLAY':
+      return await hideImageOverlayOnTab();
+    
     default:
       console.log('Unknown message type:', message.type);
       return { success: false, error: `Unknown message type: ${message.type}` };
@@ -479,6 +486,88 @@ async function fillFormFields(tabId, data, mapping) {
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return { success: true, tab };
+}
+
+// ============================================================================
+// IMAGE OVERLAY FUNCTIONS
+// ============================================================================
+
+/**
+ * Show image overlay on the active tab
+ * Injects content script if needed, then sends the image data
+ */
+async function showImageOverlayOnTab(imageData) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    if (!tab?.id) {
+      return { success: false, error: 'No active tab found' };
+    }
+    
+    // Check if we can inject into this tab (not chrome:// or extension pages)
+    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+      console.log('Cannot inject into this page:', tab.url);
+      return { success: false, error: 'Cannot display overlay on this page type' };
+    }
+    
+    // Try to send message to content script
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        type: 'SHOW_IMAGE_OVERLAY',
+        imageData: imageData
+      });
+      return { success: true };
+    } catch (error) {
+      // Content script not loaded - inject it first
+      console.log('Content script not loaded, injecting...');
+      
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content/content-script.js']
+      });
+      
+      // Wait a moment for script to initialize
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Try again
+      await chrome.tabs.sendMessage(tab.id, {
+        type: 'SHOW_IMAGE_OVERLAY',
+        imageData: imageData
+      });
+      
+      return { success: true };
+    }
+  } catch (error) {
+    console.error('Failed to show image overlay:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Hide image overlay on the active tab
+ */
+async function hideImageOverlayOnTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    if (!tab?.id) {
+      return { success: true }; // No tab, nothing to hide
+    }
+    
+    // Try to send message - if content script isn't loaded, that's fine
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        type: 'HIDE_IMAGE_OVERLAY'
+      });
+    } catch (error) {
+      // Content script not loaded - nothing to hide
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to hide image overlay:', error);
+    return { success: false, error: error.message };
+  }
 }
 
 /**

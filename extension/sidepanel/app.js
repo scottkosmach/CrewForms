@@ -1247,41 +1247,30 @@ async function saveEditedTraveler(travelerId) {
 // ============================================================================
 
 /**
- * Send message to content script to show image overlay
+ * Send message to background to show image overlay on page
+ * Background script handles injecting content script if needed
  */
 async function showImageOverlayOnPage(imageData) {
   try {
-    // Get the active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) return;
-    
-    // Send message to content script
-    await chrome.tabs.sendMessage(tab.id, {
+    await sendMessage({
       type: 'SHOW_IMAGE_OVERLAY',
       imageData: imageData
     });
   } catch (error) {
     console.log('Could not show image overlay:', error.message);
-    // Content script might not be loaded on this page
   }
 }
 
 /**
- * Send message to content script to hide image overlay
+ * Send message to background to hide image overlay on page
  */
 async function hideImageOverlayOnPage() {
   try {
-    // Get the active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) return;
-    
-    // Send message to content script
-    await chrome.tabs.sendMessage(tab.id, {
+    await sendMessage({
       type: 'HIDE_IMAGE_OVERLAY'
     });
   } catch (error) {
     console.log('Could not hide image overlay:', error.message);
-    // Content script might not be loaded on this page
   }
 }
 
