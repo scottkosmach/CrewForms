@@ -11,6 +11,8 @@ alwaysApply: true
 
 All rule files begin with a 3 character code (e.g., 000). Prefix each response with the combined codes of the rule files you're using.
 
+ALWAYS UPDATE THE EXTENTION ZIP FILE
+
 
 ## Tech Stack Overview
 
