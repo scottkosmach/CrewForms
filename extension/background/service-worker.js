@@ -228,6 +228,11 @@ async function handleMessage(message, sender) {
       console.log('Content script ready on:', message.url);
       return { success: true };
     
+    // Focus changed notification from content script (ignore - side panel handles this)
+    case 'FOCUS_CHANGED':
+      // This is handled by side panel directly, just acknowledge
+      return { success: true };
+    
     // Image overlay commands - forward to content script
     case 'SHOW_IMAGE_OVERLAY':
       return await showImageOverlayOnTab(message.imageData);
@@ -320,111 +325,33 @@ async function checkSessionStatus(sessionId) {
   }
 }
 
-// Active polling intervals (keyed by sessionId)
-const activePollers = new Map();
+// Alarm name for polling
+const POLLING_ALARM_NAME = 'session-polling';
 
 /**
  * Start polling a session for uploaded images
+ * Uses chrome.alarms to persist across service worker restarts
  */
 async function startSessionPolling(sessionId) {
-  // Don't start if already polling
-  if (activePollers.has(sessionId)) {
-    console.log(`[Polling] Already polling session ${sessionId}`);
-    return { success: true, message: 'Already polling' };
-  }
+  console.log(`[Polling] Starting polling for session ${sessionId}`);
   
-  const settings = await chrome.storage.local.get('settings');
-  const serverUrl = settings.settings?.serverUrl || SERVER_URL;
+  // Store the active session ID so it persists across service worker restarts
+  await chrome.storage.local.set({ 
+    activePollingSession: sessionId,
+    pollingStartTime: Date.now()
+  });
   
-  console.log(`[Polling] Starting to poll session ${sessionId} at ${serverUrl}`);
+  // Create an alarm that fires every 2 seconds (minimum is 0.5 minutes for production,
+  // but we can use periodInMinutes: 0.033 for ~2 seconds in development)
+  // For reliability, we'll poll immediately and use a short alarm period
+  await chrome.alarms.create(POLLING_ALARM_NAME, {
+    periodInMinutes: 0.05  // ~3 seconds (minimum allowed is about 1 second in practice)
+  });
   
-  // Track poll count for debugging
-  let pollCount = 0;
+  console.log(`[Polling] Created alarm for session ${sessionId}`);
   
-  // Poll every 2 seconds
-  const intervalId = setInterval(async () => {
-    pollCount++;
-    
-    try {
-      // Check session status and get any pending images
-      const statusUrl = `${serverUrl}/api/sessions/${sessionId}`;
-      console.log(`[Polling #${pollCount}] Checking session status: ${statusUrl}`);
-      
-      const response = await fetch(statusUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Cache-Control': 'no-cache'
-        }
-      });
-      
-      console.log(`[Polling #${pollCount}] Status response: ${response.status}`);
-      
-      if (!response.ok) {
-        // Session expired or not found
-        console.log(`[Polling] Session ${sessionId} no longer valid (status ${response.status}), stopping polling`);
-        stopSessionPolling(sessionId);
-        notifySidePanel({ type: 'SESSION_EXPIRED', sessionId });
-        return;
-      }
-      
-      const status = await response.json();
-      console.log(`[Polling #${pollCount}] Session status:`, JSON.stringify(status));
-      
-      // If there are images, fetch and relay them
-      if (status.imageCount > 0) {
-        console.log(`[Polling] Found ${status.imageCount} images in session ${sessionId}, fetching...`);
-        
-        // Fetch images from a dedicated endpoint
-        const imagesUrl = `${serverUrl}/api/sessions/${sessionId}/images`;
-        console.log(`[Polling] Fetching images from: ${imagesUrl}`);
-        
-        const imagesResponse = await fetch(imagesUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'Cache-Control': 'no-cache'
-          }
-        });
-        
-        console.log(`[Polling] Images response: ${imagesResponse.status}`);
-        
-        if (imagesResponse.ok) {
-          const data = await imagesResponse.json();
-          console.log(`[Polling] Received ${data.images?.length || 0} images from server`);
-          
-          const images = data.images || [];
-          
-          // Send each image to the side panel
-          for (let i = 0; i < images.length; i++) {
-            const imageData = images[i];
-            console.log(`[Polling] Relaying image ${i + 1}/${images.length} to side panel (${imageData?.substring(0, 50)}...)`);
-            
-            notifySidePanel({ 
-              type: 'IMAGE_RECEIVED', 
-              imageData,
-              sessionId 
-            });
-          }
-          
-          if (images.length > 0) {
-            console.log(`[Polling] Successfully relayed ${images.length} image(s) to side panel`);
-          }
-        } else {
-          console.error(`[Polling] Failed to fetch images: ${imagesResponse.status}`);
-          const errorText = await imagesResponse.text();
-          console.error(`[Polling] Error response:`, errorText);
-        }
-      }
-      
-    } catch (error) {
-      console.error(`[Polling #${pollCount}] Error:`, error.message);
-      console.error('[Polling] Full error:', error);
-    }
-  }, 2000);
-  
-  activePollers.set(sessionId, intervalId);
-  console.log(`[Polling] Started polling interval for session ${sessionId}`);
+  // Do an immediate poll
+  await pollSessionForImages(sessionId);
   
   return { success: true };
 }
@@ -432,14 +359,126 @@ async function startSessionPolling(sessionId) {
 /**
  * Stop polling a session
  */
-function stopSessionPolling(sessionId) {
-  const intervalId = activePollers.get(sessionId);
-  if (intervalId) {
-    clearInterval(intervalId);
-    activePollers.delete(sessionId);
-    console.log(`Stopped polling session ${sessionId}`);
-  }
+async function stopSessionPolling(sessionId) {
+  console.log(`[Polling] Stopping polling for session ${sessionId}`);
+  
+  // Clear the alarm
+  await chrome.alarms.clear(POLLING_ALARM_NAME);
+  
+  // Clear stored session
+  await chrome.storage.local.remove(['activePollingSession', 'pollingStartTime']);
+  
+  console.log(`[Polling] Stopped polling session ${sessionId}`);
   return { success: true };
+}
+
+/**
+ * Handle alarm events - this fires even after service worker restarts
+ */
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === POLLING_ALARM_NAME) {
+    // Get the active session from storage
+    const data = await chrome.storage.local.get(['activePollingSession', 'pollingStartTime']);
+    
+    if (!data.activePollingSession) {
+      console.log('[Polling] No active session, clearing alarm');
+      await chrome.alarms.clear(POLLING_ALARM_NAME);
+      return;
+    }
+    
+    // Check if polling has been running too long (30 minutes max)
+    const maxPollingTime = 30 * 60 * 1000; // 30 minutes
+    if (data.pollingStartTime && (Date.now() - data.pollingStartTime > maxPollingTime)) {
+      console.log('[Polling] Polling timeout reached, stopping');
+      await stopSessionPolling(data.activePollingSession);
+      notifySidePanel({ type: 'SESSION_EXPIRED', sessionId: data.activePollingSession });
+      return;
+    }
+    
+    // Poll for images
+    await pollSessionForImages(data.activePollingSession);
+  }
+});
+
+/**
+ * Actually poll the server for images
+ */
+async function pollSessionForImages(sessionId) {
+  try {
+    const settings = await chrome.storage.local.get('settings');
+    const serverUrl = settings.settings?.serverUrl || SERVER_URL;
+    
+    // Check session status and get any pending images
+    const statusUrl = `${serverUrl}/api/sessions/${sessionId}`;
+    console.log(`[Polling] Checking session: ${statusUrl}`);
+    
+    const response = await fetch(statusUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache'
+      }
+    });
+    
+    console.log(`[Polling] Status response: ${response.status}`);
+    
+    if (!response.ok) {
+      // Session expired or not found
+      console.log(`[Polling] Session ${sessionId} no longer valid (status ${response.status}), stopping`);
+      await stopSessionPolling(sessionId);
+      notifySidePanel({ type: 'SESSION_EXPIRED', sessionId });
+      return;
+    }
+    
+    const status = await response.json();
+    console.log(`[Polling] Session status:`, JSON.stringify(status));
+    
+    // If there are images, fetch and relay them
+    if (status.imageCount > 0) {
+      console.log(`[Polling] Found ${status.imageCount} images, fetching...`);
+      
+      // Fetch images from a dedicated endpoint
+      const imagesUrl = `${serverUrl}/api/sessions/${sessionId}/images`;
+      
+      const imagesResponse = await fetch(imagesUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache'
+        }
+      });
+      
+      console.log(`[Polling] Images response: ${imagesResponse.status}`);
+      
+      if (imagesResponse.ok) {
+        const data = await imagesResponse.json();
+        console.log(`[Polling] Received ${data.images?.length || 0} images from server`);
+        
+        const images = data.images || [];
+        
+        // Send each image to the side panel
+        for (let i = 0; i < images.length; i++) {
+          const imageData = images[i];
+          console.log(`[Polling] Relaying image ${i + 1}/${images.length} to side panel`);
+          
+          notifySidePanel({ 
+            type: 'IMAGE_RECEIVED', 
+            imageData,
+            sessionId 
+          });
+        }
+        
+        if (images.length > 0) {
+          console.log(`[Polling] Successfully relayed ${images.length} image(s)`);
+        }
+      } else {
+        console.error(`[Polling] Failed to fetch images: ${imagesResponse.status}`);
+      }
+    }
+    
+  } catch (error) {
+    console.error(`[Polling] Error:`, error.message);
+  }
 }
 
 // ============================================================================
