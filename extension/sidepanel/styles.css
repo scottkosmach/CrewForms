@@ -916,6 +916,332 @@ body {
 }
 
 /* ============================================================================
+   ADMIN MODE - MAPPING ASSISTANT
+   ============================================================================ */
+
+.admin-info {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-gray-100);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.admin-info p {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-600);
+  margin: 0;
+}
+
+.admin-toolbar {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.admin-toolbar .btn {
+  flex: 1;
+}
+
+.admin-mapping-name {
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+}
+
+.admin-mapping-name .form-group {
+  margin-bottom: var(--spacing-sm);
+}
+
+.admin-mapping-name .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.admin-field-list {
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.field-list-header {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-gray-100);
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+.field-count {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-gray-700);
+}
+
+#fieldListContainer {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* Field Item */
+.field-item {
+  border-bottom: 1px solid var(--color-gray-200);
+  transition: background var(--transition-fast);
+}
+
+.field-item:last-child {
+  border-bottom: none;
+}
+
+.field-item:hover {
+  background: var(--color-gray-50);
+}
+
+.field-item.ignore {
+  opacity: 0.5;
+}
+
+.field-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+}
+
+.field-position {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 var(--spacing-xs);
+  background: var(--color-primary);
+  color: var(--color-white);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+}
+
+.field-label {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-gray-800);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.field-type {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+  padding: 2px 8px;
+  background: var(--color-gray-100);
+  border-radius: var(--radius-full);
+}
+
+.field-type.disabled {
+  background: var(--color-warning);
+  color: var(--color-white);
+}
+
+/* Field Config */
+.field-config {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-gray-50);
+  border-top: 1px solid var(--color-gray-200);
+}
+
+.field-config-row {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.field-config-row:last-child {
+  margin-bottom: 0;
+}
+
+.field-status {
+  flex: 1;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  background: var(--color-white);
+}
+
+.field-status:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/* Config Details (shown based on status) */
+.field-config-details {
+  margin-top: var(--spacing-sm);
+}
+
+.field-config-details.hidden {
+  display: none;
+}
+
+.config-group {
+  margin-bottom: var(--spacing-sm);
+}
+
+.config-group:last-child {
+  margin-bottom: 0;
+}
+
+.config-group label {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-600);
+  margin-bottom: 4px;
+}
+
+.config-group input,
+.config-group select {
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  background: var(--color-white);
+}
+
+.config-group input:focus,
+.config-group select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/* Data Source Selector */
+.data-source-select {
+  width: 100%;
+}
+
+/* Static Value Input */
+.static-value-input {
+  width: 100%;
+}
+
+/* Input Behavior Selector */
+.input-behavior-select {
+  width: 100%;
+}
+
+/* Date Format Selector */
+.date-format-select {
+  width: 100%;
+}
+
+/* Keypress Map Builder */
+.keypress-config {
+  padding: var(--spacing-sm);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-sm);
+}
+
+.keypress-config p {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-600);
+  margin-bottom: var(--spacing-sm);
+}
+
+.keypress-entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+}
+
+.keypress-entry {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+
+.keypress-entry input {
+  padding: 4px 8px;
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+}
+
+.keypress-entry input:first-child {
+  flex: 2;
+}
+
+.keypress-entry input:nth-child(2) {
+  width: 40px;
+  text-align: center;
+}
+
+.keypress-entry input:nth-child(3) {
+  width: 50px;
+  text-align: center;
+}
+
+.keypress-entry .btn-remove {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-error);
+  color: var(--color-white);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.add-keypress {
+  font-size: var(--font-size-xs);
+  padding: 4px 8px;
+}
+
+/* Admin Empty State */
+.admin-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--color-gray-500);
+}
+
+.admin-empty-state svg {
+  width: 48px;
+  height: 48px;
+  margin-bottom: var(--spacing-md);
+  opacity: 0.5;
+}
+
+.admin-empty-state p {
+  margin-bottom: var(--spacing-xs);
+}
+
+/* Success Button */
+.btn-success {
+  background: var(--color-success);
+  color: var(--color-white);
+}
+
+.btn-success:hover {
+  background: #059669;
+}
+
+.btn-success:disabled {
+  background: var(--color-gray-300);
+  cursor: not-allowed;
+}
+
+/* ============================================================================
    SCROLLBAR
    ============================================================================ */
 

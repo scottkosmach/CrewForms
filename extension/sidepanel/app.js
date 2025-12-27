@@ -102,7 +102,11 @@ const state = {
   travelerImages: {},
   currentTab: 'travelers',
   editingBoatId: null,
-  editingCompanyId: null
+  editingCompanyId: null,
+  // Admin mode state
+  adminMode: false,
+  scannedFields: [],
+  fieldConfigs: {} // Map of position -> config object
 };
 
 // ============================================================================
@@ -123,6 +127,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupTripForm();
   setupTravelerImport();
   setupPasteAction();
+  setupAdminMode();
   
   // Update UI
   renderAll();
@@ -1535,12 +1540,629 @@ function renderAll() {
 }
 
 // ============================================================================
+// ADMIN MODE - MAPPING ASSISTANT
+// ============================================================================
+
+/**
+ * Available data sources for field mapping
+ */
+const DATA_SOURCES = {
+  traveler: [
+    { value: 'traveler.firstName', label: 'First Name' },
+    { value: 'traveler.middleName', label: 'Middle Name' },
+    { value: 'traveler.lastName', label: 'Last Name' },
+    { value: 'traveler.passportNumber', label: 'Passport Number' },
+    { value: 'traveler.nationality', label: 'Nationality' },
+    { value: 'traveler.gender', label: 'Gender' },
+    { value: 'traveler.placeOfBirth', label: 'Place of Birth' },
+    { value: 'traveler.dateOfBirth.day', label: 'DOB - Day' },
+    { value: 'traveler.dateOfBirth.month', label: 'DOB - Month' },
+    { value: 'traveler.dateOfBirth.year', label: 'DOB - Year' },
+    { value: 'traveler.dateOfIssue.day', label: 'Issue Date - Day' },
+    { value: 'traveler.dateOfIssue.month', label: 'Issue Date - Month' },
+    { value: 'traveler.dateOfIssue.year', label: 'Issue Date - Year' },
+    { value: 'traveler.dateOfExpiry.day', label: 'Expiry Date - Day' },
+    { value: 'traveler.dateOfExpiry.month', label: 'Expiry Date - Month' },
+    { value: 'traveler.dateOfExpiry.year', label: 'Expiry Date - Year' },
+    { value: 'traveler.issuingAuthority', label: 'Issuing Authority' },
+    { value: 'traveler.passportType', label: 'Passport Type' }
+  ],
+  captain: [
+    { value: 'captain.firstName', label: 'First Name' },
+    { value: 'captain.middleName', label: 'Middle Name' },
+    { value: 'captain.lastName', label: 'Last Name' },
+    { value: 'captain.passportNumber', label: 'Passport Number' },
+    { value: 'captain.nationality', label: 'Nationality' },
+    { value: 'captain.licenseNumber', label: 'License Number' },
+    { value: 'captain.email', label: 'Email' },
+    { value: 'captain.phone', label: 'Phone' },
+    { value: 'captain.dateOfBirth.day', label: 'DOB - Day' },
+    { value: 'captain.dateOfBirth.month', label: 'DOB - Month' },
+    { value: 'captain.dateOfBirth.year', label: 'DOB - Year' }
+  ],
+  boat: [
+    { value: 'boat.vesselName', label: 'Vessel Name' },
+    { value: 'boat.registrationNumber', label: 'Registration Number' },
+    { value: 'boat.flagState', label: 'Flag State' },
+    { value: 'boat.homePort', label: 'Home Port' },
+    { value: 'boat.vesselType', label: 'Vessel Type' },
+    { value: 'boat.capacity', label: 'Capacity' }
+  ],
+  company: [
+    { value: 'company.companyName', label: 'Company Name' },
+    { value: 'company.registrationNumber', label: 'Registration Number' },
+    { value: 'company.address', label: 'Address' },
+    { value: 'company.email', label: 'Email' },
+    { value: 'company.phone', label: 'Phone' }
+  ],
+  trip: [
+    { value: 'trip.departurePort', label: 'Departure Port' },
+    { value: 'trip.destinationPorts', label: 'Destination Ports' },
+    { value: 'trip.purpose', label: 'Purpose' },
+    { value: 'trip.guestCount', label: 'Guest Count' },
+    { value: 'trip.departureDate.day', label: 'Departure - Day' },
+    { value: 'trip.departureDate.month', label: 'Departure - Month' },
+    { value: 'trip.departureDate.year', label: 'Departure - Year' },
+    { value: 'trip.returnDate.day', label: 'Return - Day' },
+    { value: 'trip.returnDate.month', label: 'Return - Month' },
+    { value: 'trip.returnDate.year', label: 'Return - Year' }
+  ]
+};
+
+/**
+ * Input behavior options for form fields
+ */
+const INPUT_BEHAVIORS = [
+  { value: 'paste', label: 'Direct Input (Paste)' },
+  { value: 'select-match', label: 'Dropdown - Match Text' },
+  { value: 'select-keypress', label: 'Dropdown - Keypress Navigation' },
+  { value: 'click-select', label: 'Dropdown - Click to Select' }
+];
+
+/**
+ * Date format options
+ */
+const DATE_FORMATS = [
+  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY (27/12/2025)' },
+  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY (12/27/2025)' },
+  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD (2025-12-27)' },
+  { value: 'DD-MM-YYYY', label: 'DD-MM-YYYY (27-12-2025)' },
+  { value: 'MM-DD-YYYY', label: 'MM-DD-YYYY (12-27-2025)' },
+  { value: 'DD.MM.YYYY', label: 'DD.MM.YYYY (27.12.2025)' }
+];
+
+/**
+ * Set up admin mode functionality
+ */
+function setupAdminMode() {
+  const scanBtn = document.getElementById('scanFieldsBtn');
+  const saveBtn = document.getElementById('saveMappingBtn');
+  
+  if (scanBtn) {
+    scanBtn.addEventListener('click', scanFormFields);
+  }
+  
+  if (saveBtn) {
+    saveBtn.addEventListener('click', saveMapping);
+  }
+}
+
+/**
+ * Scan form fields on the current page
+ */
+async function scanFormFields() {
+  console.log('Scanning form fields...');
+  
+  // Get the active tab
+  const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
+  
+  if (!tabResult.success || !tabResult.tab) {
+    showToast('Could not detect active tab', 'error');
+    return;
+  }
+  
+  // Check if we can scan this page
+  const url = tabResult.tab.url;
+  if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
+    showToast('Cannot scan this page type', 'warning');
+    return;
+  }
+  
+  try {
+    // Send scan message to content script via background
+    const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
+      type: 'SCAN_FORM_FIELDS'
+    });
+    
+    if (result.success && result.fields) {
+      state.scannedFields = result.fields;
+      state.fieldConfigs = {};
+      
+      // Initialize default configs for each field
+      result.fields.forEach(field => {
+        state.fieldConfigs[field.position] = {
+          status: 'unmapped',
+          dataSource: '',
+          staticValue: '',
+          inputType: 'paste',
+          dateFormat: '',
+          keypressMap: {}
+        };
+      });
+      
+      // Update URL pattern
+      const mappingUrl = document.getElementById('mappingUrl');
+      if (mappingUrl) {
+        // Extract base URL pattern
+        const urlObj = new URL(url);
+        mappingUrl.value = `${urlObj.origin}${urlObj.pathname}*`;
+      }
+      
+      // Show the field list and mapping name section
+      document.getElementById('adminEmptyState').classList.add('hidden');
+      document.getElementById('adminFieldList').classList.remove('hidden');
+      document.getElementById('mappingNameSection').classList.remove('hidden');
+      document.getElementById('saveMappingBtn').disabled = false;
+      
+      // Render the field list
+      renderFieldList();
+      
+      showToast(`Found ${result.fields.length} fields`, 'success');
+    } else {
+      showToast('No form fields found on this page', 'warning');
+    }
+  } catch (error) {
+    console.error('Scan error:', error);
+    // Content script might not be loaded, try injecting it
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabResult.tab.id },
+        files: ['content/content-script.js']
+      });
+      
+      // Wait a moment and retry
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
+        type: 'SCAN_FORM_FIELDS'
+      });
+      
+      if (result.success && result.fields) {
+        state.scannedFields = result.fields;
+        // ... same processing as above
+        showToast(`Found ${result.fields.length} fields`, 'success');
+        renderFieldList();
+      }
+    } catch (injectError) {
+      showToast('Could not scan page: ' + error.message, 'error');
+    }
+  }
+}
+
+/**
+ * Render the list of scanned fields
+ */
+function renderFieldList() {
+  const container = document.getElementById('fieldListContainer');
+  const countEl = document.getElementById('fieldCount');
+  
+  if (!container) return;
+  
+  const fields = state.scannedFields;
+  countEl.textContent = `${fields.length} fields found`;
+  
+  container.innerHTML = fields.map(field => renderFieldItem(field)).join('');
+  
+  // Add event listeners for field status changes
+  container.querySelectorAll('.field-status').forEach(select => {
+    select.addEventListener('change', handleFieldStatusChange);
+  });
+  
+  // Add event listeners for data source changes
+  container.querySelectorAll('.data-source-select').forEach(select => {
+    select.addEventListener('change', handleDataSourceChange);
+  });
+  
+  // Add event listeners for other config changes
+  container.querySelectorAll('.static-value-input').forEach(input => {
+    input.addEventListener('input', handleStaticValueChange);
+  });
+  
+  container.querySelectorAll('.input-behavior-select').forEach(select => {
+    select.addEventListener('change', handleInputBehaviorChange);
+  });
+  
+  container.querySelectorAll('.date-format-select').forEach(select => {
+    select.addEventListener('change', handleDateFormatChange);
+  });
+}
+
+/**
+ * Render a single field item
+ */
+function renderFieldItem(field) {
+  const config = state.fieldConfigs[field.position] || {};
+  const isDisabled = field.isDisabled;
+  
+  return `
+    <div class="field-item ${config.status === 'ignore' ? 'ignore' : ''}" data-position="${field.position}">
+      <div class="field-header">
+        <span class="field-position">#${field.position}</span>
+        <span class="field-label">${field.label || field.name || field.formControlName || 'Unlabeled'}</span>
+        <span class="field-type ${isDisabled ? 'disabled' : ''}">${field.type}${isDisabled ? ' (disabled)' : ''}</span>
+      </div>
+      <div class="field-config">
+        <div class="field-config-row">
+          <select class="field-status" data-position="${field.position}">
+            <option value="unmapped" ${config.status === 'unmapped' ? 'selected' : ''}>Unmapped</option>
+            <option value="ignore" ${config.status === 'ignore' ? 'selected' : ''}>Ignore</option>
+            <option value="data" ${config.status === 'data' ? 'selected' : ''}>Map to Data</option>
+            <option value="static" ${config.status === 'static' ? 'selected' : ''}>Static Value</option>
+          </select>
+        </div>
+        ${renderFieldConfigDetails(field, config)}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render configuration details based on field status
+ */
+function renderFieldConfigDetails(field, config) {
+  if (config.status === 'unmapped' || config.status === 'ignore') {
+    return '';
+  }
+  
+  let html = '<div class="field-config-details">';
+  
+  // Data source selector (for status = 'data')
+  if (config.status === 'data') {
+    html += `
+      <div class="config-group">
+        <label>Data Source</label>
+        <select class="data-source-select" data-position="${field.position}">
+          <option value="">-- Select Data Source --</option>
+          <optgroup label="Traveler">
+            ${DATA_SOURCES.traveler.map(s => 
+              `<option value="${s.value}" ${config.dataSource === s.value ? 'selected' : ''}>${s.label}</option>`
+            ).join('')}
+          </optgroup>
+          <optgroup label="Captain">
+            ${DATA_SOURCES.captain.map(s => 
+              `<option value="${s.value}" ${config.dataSource === s.value ? 'selected' : ''}>${s.label}</option>`
+            ).join('')}
+          </optgroup>
+          <optgroup label="Boat">
+            ${DATA_SOURCES.boat.map(s => 
+              `<option value="${s.value}" ${config.dataSource === s.value ? 'selected' : ''}>${s.label}</option>`
+            ).join('')}
+          </optgroup>
+          <optgroup label="Company">
+            ${DATA_SOURCES.company.map(s => 
+              `<option value="${s.value}" ${config.dataSource === s.value ? 'selected' : ''}>${s.label}</option>`
+            ).join('')}
+          </optgroup>
+          <optgroup label="Trip">
+            ${DATA_SOURCES.trip.map(s => 
+              `<option value="${s.value}" ${config.dataSource === s.value ? 'selected' : ''}>${s.label}</option>`
+            ).join('')}
+          </optgroup>
+        </select>
+      </div>
+    `;
+  }
+  
+  // Static value input (for status = 'static')
+  if (config.status === 'static') {
+    html += `
+      <div class="config-group">
+        <label>Static Value</label>
+        <input type="text" class="static-value-input" data-position="${field.position}" 
+               value="${config.staticValue || ''}" placeholder="Enter fixed value">
+      </div>
+    `;
+  }
+  
+  // Input behavior selector (for both data and static)
+  html += `
+    <div class="config-group">
+      <label>Input Behavior</label>
+      <select class="input-behavior-select" data-position="${field.position}">
+        ${INPUT_BEHAVIORS.map(b => 
+          `<option value="${b.value}" ${config.inputType === b.value ? 'selected' : ''}>${b.label}</option>`
+        ).join('')}
+      </select>
+    </div>
+  `;
+  
+  // Date format selector (only for date-related data sources)
+  const isDateField = config.dataSource && (
+    config.dataSource.includes('dateOfBirth') ||
+    config.dataSource.includes('dateOfIssue') ||
+    config.dataSource.includes('dateOfExpiry') ||
+    config.dataSource.includes('departureDate') ||
+    config.dataSource.includes('returnDate')
+  );
+  
+  // Also show date format if the field label suggests it's a date
+  const labelSuggestsDate = field.label && (
+    field.label.toLowerCase().includes('date') ||
+    field.label.toLowerCase().includes('birth') ||
+    field.label.toLowerCase().includes('expir') ||
+    field.label.toLowerCase().includes('issue')
+  );
+  
+  if (isDateField || labelSuggestsDate) {
+    html += `
+      <div class="config-group">
+        <label>Date Format</label>
+        <select class="date-format-select" data-position="${field.position}">
+          <option value="">-- Select Format --</option>
+          ${DATE_FORMATS.map(f => 
+            `<option value="${f.value}" ${config.dateFormat === f.value ? 'selected' : ''}>${f.label}</option>`
+          ).join('')}
+        </select>
+      </div>
+    `;
+  }
+  
+  // Keypress map builder (for select-keypress behavior)
+  if (config.inputType === 'select-keypress') {
+    html += renderKeypressMapBuilder(field.position, config.keypressMap || {});
+  }
+  
+  html += '</div>';
+  return html;
+}
+
+/**
+ * Render keypress map builder UI
+ */
+function renderKeypressMapBuilder(position, keypressMap) {
+  const entries = Object.entries(keypressMap);
+  
+  return `
+    <div class="config-group">
+      <label>Keypress Navigation Map</label>
+      <div class="keypress-config">
+        <p>Define how to navigate to values using keystrokes:</p>
+        <div class="keypress-entries" data-position="${position}">
+          ${entries.length > 0 ? entries.map(([value, config], index) => `
+            <div class="keypress-entry" data-index="${index}">
+              <input type="text" class="keypress-value" value="${value}" placeholder="Value (e.g., United States)">
+              <input type="text" class="keypress-key" value="${config.key || ''}" placeholder="Key" maxlength="1">
+              <input type="number" class="keypress-count" value="${config.count || 1}" placeholder="#" min="1">
+              <button type="button" class="btn-remove" onclick="removeKeypressEntry(${position}, ${index})">×</button>
+            </div>
+          `).join('') : ''}
+        </div>
+        <button type="button" class="btn btn-sm btn-secondary add-keypress" onclick="addKeypressEntry(${position})">+ Add Entry</button>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Handle field status change
+ */
+function handleFieldStatusChange(event) {
+  const position = parseInt(event.target.dataset.position);
+  const status = event.target.value;
+  
+  state.fieldConfigs[position].status = status;
+  
+  // Reset dependent values when status changes
+  if (status === 'unmapped' || status === 'ignore') {
+    state.fieldConfigs[position].dataSource = '';
+    state.fieldConfigs[position].staticValue = '';
+  }
+  
+  // Re-render the field list to update config details
+  renderFieldList();
+}
+
+/**
+ * Handle data source change
+ */
+function handleDataSourceChange(event) {
+  const position = parseInt(event.target.dataset.position);
+  state.fieldConfigs[position].dataSource = event.target.value;
+  
+  // Re-render to show/hide date format based on data source
+  renderFieldList();
+}
+
+/**
+ * Handle static value change
+ */
+function handleStaticValueChange(event) {
+  const position = parseInt(event.target.dataset.position);
+  state.fieldConfigs[position].staticValue = event.target.value;
+}
+
+/**
+ * Handle input behavior change
+ */
+function handleInputBehaviorChange(event) {
+  const position = parseInt(event.target.dataset.position);
+  state.fieldConfigs[position].inputType = event.target.value;
+  
+  // Re-render to show/hide keypress map builder
+  renderFieldList();
+}
+
+/**
+ * Handle date format change
+ */
+function handleDateFormatChange(event) {
+  const position = parseInt(event.target.dataset.position);
+  state.fieldConfigs[position].dateFormat = event.target.value;
+}
+
+/**
+ * Add a keypress entry
+ */
+window.addKeypressEntry = function(position) {
+  if (!state.fieldConfigs[position].keypressMap) {
+    state.fieldConfigs[position].keypressMap = {};
+  }
+  
+  // Add empty entry with unique key
+  const newKey = `value_${Date.now()}`;
+  state.fieldConfigs[position].keypressMap[newKey] = { key: '', count: 1 };
+  
+  renderFieldList();
+};
+
+/**
+ * Remove a keypress entry
+ */
+window.removeKeypressEntry = function(position, index) {
+  const entries = Object.entries(state.fieldConfigs[position].keypressMap || {});
+  if (entries[index]) {
+    delete state.fieldConfigs[position].keypressMap[entries[index][0]];
+  }
+  renderFieldList();
+};
+
+/**
+ * Collect keypress map values before saving
+ */
+function collectKeypressMaps() {
+  document.querySelectorAll('.keypress-entries').forEach(container => {
+    const position = parseInt(container.dataset.position);
+    const newMap = {};
+    
+    container.querySelectorAll('.keypress-entry').forEach(entry => {
+      const value = entry.querySelector('.keypress-value').value.trim();
+      const key = entry.querySelector('.keypress-key').value.trim();
+      const count = parseInt(entry.querySelector('.keypress-count').value) || 1;
+      
+      if (value && key) {
+        newMap[value] = { key, count };
+      }
+    });
+    
+    state.fieldConfigs[position].keypressMap = newMap;
+  });
+}
+
+/**
+ * Save the mapping to the server
+ */
+async function saveMapping() {
+  const mappingName = document.getElementById('mappingName').value.trim();
+  const mappingUrl = document.getElementById('mappingUrl').value.trim();
+  const formType = document.getElementById('mappingFormType').value;
+  
+  if (!mappingName) {
+    showToast('Please enter a mapping name', 'warning');
+    return;
+  }
+  
+  if (!mappingUrl) {
+    showToast('URL pattern is required', 'warning');
+    return;
+  }
+  
+  // Collect keypress map values from DOM
+  collectKeypressMaps();
+  
+  // Build the fields array from configs
+  const fields = [];
+  
+  for (const [posStr, config] of Object.entries(state.fieldConfigs)) {
+    const position = parseInt(posStr);
+    
+    // Skip unmapped and ignored fields
+    if (config.status === 'unmapped' || config.status === 'ignore') {
+      continue;
+    }
+    
+    const fieldMapping = {
+      position,
+      status: config.status,
+      inputType: config.inputType || 'paste'
+    };
+    
+    if (config.status === 'data') {
+      fieldMapping.dataSource = config.dataSource;
+    }
+    
+    if (config.status === 'static') {
+      fieldMapping.staticValue = config.staticValue;
+    }
+    
+    if (config.dateFormat) {
+      fieldMapping.dateFormat = config.dateFormat;
+    }
+    
+    if (config.inputType === 'select-keypress' && Object.keys(config.keypressMap || {}).length > 0) {
+      fieldMapping.config = { keypressMap: config.keypressMap };
+    }
+    
+    fields.push(fieldMapping);
+  }
+  
+  if (fields.length === 0) {
+    showToast('No fields mapped. Please map at least one field.', 'warning');
+    return;
+  }
+  
+  // Create the mapping object
+  const mapping = {
+    id: generateId(),
+    name: mappingName,
+    urlPattern: mappingUrl,
+    formType,
+    fields,
+    version: 1
+  };
+  
+  console.log('Saving mapping:', mapping);
+  
+  try {
+    // Send to the API
+    const response = await fetch('https://crewforms.vercel.app/api/mappings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(mapping)
+    });
+    
+    if (response.ok) {
+      showToast('Mapping saved successfully!', 'success');
+      
+      // Clear the form
+      state.scannedFields = [];
+      state.fieldConfigs = {};
+      document.getElementById('mappingName').value = '';
+      document.getElementById('mappingUrl').value = '';
+      document.getElementById('adminEmptyState').classList.remove('hidden');
+      document.getElementById('adminFieldList').classList.add('hidden');
+      document.getElementById('mappingNameSection').classList.add('hidden');
+      document.getElementById('saveMappingBtn').disabled = true;
+    } else {
+      const error = await response.json();
+      showToast('Failed to save: ' + (error.error || 'Unknown error'), 'error');
+    }
+  } catch (error) {
+    console.error('Save error:', error);
+    showToast('Failed to save mapping: ' + error.message, 'error');
+  }
+}
+
+// ============================================================================
 // EXPORT FOR DEBUGGING
 // ============================================================================
 
 window.crewforms = {
   state,
   loadAllData,
-  renderAll
+  renderAll,
+  scanFormFields,
+  DATA_SOURCES
 };
 

@@ -177,6 +177,13 @@ function handleMessage(message, sender, sendResponse) {
       sendResponse({ success: true });
       break;
     
+    case 'SCAN_FORM_FIELDS':
+      sendResponse({
+        success: true,
+        fields: scanAllFormFields()
+      });
+      break;
+    
     default:
       sendResponse({ success: false, error: 'Unknown message type' });
   }
@@ -219,6 +226,112 @@ function isElementVisible(element) {
 }
 
 // ============================================================================
+// ADMIN MODE - FIELD SCANNING
+// ============================================================================
+
+/**
+ * Scan all form fields on the page for admin mapping assistant
+ * Returns detailed info about each field including position, type, and label
+ */
+function scanAllFormFields() {
+  const form = document.querySelector('form') || document.body;
+  
+  // Extended selector to include Angular Material and custom dropdowns
+  const elements = form.querySelectorAll(
+    'input, select, textarea, mat-select, [role="combobox"], [role="listbox"]'
+  );
+  
+  return Array.from(elements).map((el, index) => ({
+    position: index + 1,
+    tagName: el.tagName.toLowerCase(),
+    type: el.type || el.getAttribute('role') || 'unknown',
+    id: el.id || null,
+    name: el.name || null,
+    formControlName: el.getAttribute('formcontrolname') || null,
+    placeholder: el.placeholder || null,
+    label: findLabelFor(el),
+    isRequired: el.required || el.getAttribute('aria-required') === 'true',
+    isDisabled: el.disabled || el.getAttribute('aria-disabled') === 'true',
+    classes: el.className,
+    visible: isElementVisible(el)
+  }));
+}
+
+/**
+ * Find the label text associated with a form element
+ * Checks multiple common patterns used in forms
+ */
+function findLabelFor(element) {
+  // 1. Check for label with matching 'for' attribute
+  if (element.id) {
+    const label = document.querySelector(`label[for="${element.id}"]`);
+    if (label) return label.textContent.trim().replace(/\*$/, '').trim();
+  }
+  
+  // 2. Check aria-label attribute
+  const ariaLabel = element.getAttribute('aria-label');
+  if (ariaLabel) return ariaLabel.trim();
+  
+  // 3. Check aria-labelledby attribute
+  const ariaLabelledBy = element.getAttribute('aria-labelledby');
+  if (ariaLabelledBy) {
+    const labelEl = document.getElementById(ariaLabelledBy);
+    if (labelEl) return labelEl.textContent.trim().replace(/\*$/, '').trim();
+  }
+  
+  // 4. Check for parent label element (wrapping pattern)
+  const parentLabel = element.closest('label');
+  if (parentLabel) {
+    // Get text content but exclude the input's own content
+    const clone = parentLabel.cloneNode(true);
+    const inputs = clone.querySelectorAll('input, select, textarea');
+    inputs.forEach(i => i.remove());
+    const text = clone.textContent.trim().replace(/\*$/, '').trim();
+    if (text) return text;
+  }
+  
+  // 5. Check for Angular Material mat-label
+  const formField = element.closest('mat-form-field, .mat-form-field');
+  if (formField) {
+    const matLabel = formField.querySelector('mat-label');
+    if (matLabel) return matLabel.textContent.trim().replace(/\*$/, '').trim();
+  }
+  
+  // 6. Check for Bootstrap/common form-group pattern
+  const formGroup = element.closest('.form-group, .form-row');
+  if (formGroup) {
+    const label = formGroup.querySelector('label, .control-label, .form-label');
+    if (label) return label.textContent.trim().replace(/\*$/, '').trim();
+  }
+  
+  // 7. Check previous sibling for label
+  let prevSibling = element.previousElementSibling;
+  while (prevSibling) {
+    if (prevSibling.tagName === 'LABEL' || prevSibling.classList.contains('label')) {
+      return prevSibling.textContent.trim().replace(/\*$/, '').trim();
+    }
+    prevSibling = prevSibling.previousElementSibling;
+  }
+  
+  // 8. Use placeholder as fallback
+  if (element.placeholder && element.placeholder !== '--Select--') {
+    return element.placeholder;
+  }
+  
+  // 9. Use name attribute as last resort
+  if (element.name) {
+    // Convert camelCase or snake_case to readable text
+    return element.name
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/_/g, ' ')
+      .trim()
+      .replace(/^\w/, c => c.toUpperCase());
+  }
+  
+  return null;
+}
+
+// ============================================================================
 // FORM FILLING
 // ============================================================================
 
@@ -248,9 +361,16 @@ async function handleFillFields(data, mapping) {
       
       if (fieldIndex >= 0 && fieldIndex < fields.length) {
         const field = fields[fieldIndex];
-        const value = getValueFromData(data, fieldMapping.dataSource);
         
-        if (value !== undefined && value !== null) {
+        // Get value based on field status (data vs static)
+        let value;
+        if (fieldMapping.status === 'static') {
+          value = fieldMapping.staticValue;
+        } else {
+          value = getValueFromData(data, fieldMapping.dataSource);
+        }
+        
+        if (value !== undefined && value !== null && value !== '') {
           await fillField(field, value, fieldMapping);
           filledCount++;
         }
@@ -336,9 +456,15 @@ function getValueFromData(data, dataSource) {
  * Fill a single field based on its input type
  */
 async function fillField(field, value, mapping) {
-  const inputType = mapping.inputType || 'text';
+  const inputType = mapping.inputType || 'paste';
+  
+  // Format date if dateFormat is specified and value is an object with date parts
+  if (mapping.dateFormat && typeof value === 'object' && (value.day || value.month || value.year)) {
+    value = formatDateWithConfig(value, mapping.dateFormat);
+  }
   
   switch (inputType) {
+    case 'paste':
     case 'text':
       await fillTextField(field, value);
       break;
@@ -349,6 +475,10 @@ async function fillField(field, value, mapping) {
     
     case 'select-keypress':
       await fillSelectKeypress(field, value, mapping.config);
+      break;
+    
+    case 'click-select':
+      await fillClickSelect(field, value, mapping.config);
       break;
     
     case 'date-text':
@@ -375,6 +505,65 @@ async function fillField(field, value, mapping) {
     default:
       await fillTextField(field, value);
   }
+}
+
+/**
+ * Format date object based on config format string
+ * @param {Object} dateObj - Object with day, month, year properties
+ * @param {string} format - Format string like 'DD/MM/YYYY', 'MM/DD/YYYY', etc.
+ */
+function formatDateWithConfig(dateObj, format) {
+  const day = String(dateObj.day || '').padStart(2, '0');
+  const month = String(dateObj.month || '').padStart(2, '0');
+  const year = String(dateObj.year || '');
+  
+  return format
+    .replace('DD', day)
+    .replace('MM', month)
+    .replace('YYYY', year);
+}
+
+/**
+ * Fill a dropdown using click-to-select approach
+ * This handles custom dropdown components that require clicking to open
+ */
+async function fillClickSelect(field, value, config) {
+  const delay = config?.openDelay || 100;
+  const optionSelector = config?.optionSelector || '[role="option"], .option, li';
+  
+  // Click to open the dropdown
+  field.click();
+  field.focus();
+  
+  // Wait for dropdown to open
+  await sleep(delay);
+  
+  // Look for the option to click
+  const searchValue = String(value).toLowerCase();
+  
+  // Try to find options in a nearby dropdown container
+  const dropdownContainer = document.querySelector(
+    '.dropdown-menu, .mat-select-panel, .ng-dropdown-panel, [role="listbox"], .select-options'
+  );
+  
+  if (dropdownContainer) {
+    const options = dropdownContainer.querySelectorAll(optionSelector);
+    
+    for (const option of options) {
+      const optionText = option.textContent.trim().toLowerCase();
+      
+      if (optionText === searchValue || optionText.includes(searchValue)) {
+        option.click();
+        await sleep(50);
+        triggerInputEvents(field);
+        return;
+      }
+    }
+  }
+  
+  // Fallback: try match approach
+  console.warn(`Click-select fallback for: ${value}`);
+  await fillSelectMatch(field, value);
 }
 
 // ============================================================================
