@@ -1,265 +1,249 @@
-# Project Setup Guide: Vercel + Supabase Template
+# CrewForms Setup Guide
 
-A step-by-step guide to duplicate the template project and create new Vercel + Supabase environments.
+Complete setup instructions for the CrewForms application.
+
+## Table of Contents
+
+1. [Prerequisites](#prerequisites)
+2. [Installation](#installation)
+3. [Chrome Extension Setup](#chrome-extension-setup)
+4. [Server Configuration](#server-configuration)
+5. [Testing](#testing)
+6. [Production Deployment](#production-deployment)
 
 ---
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) installed
-- [Supabase CLI](https://supabase.com/docs/guides/cli) installed (`npm install -g supabase`)
-- [Vercel CLI](https://vercel.com/docs/cli) installed (`npm install -g vercel`) - optional
-- GitHub account
-- Supabase account
-- Vercel account
+- **Node.js** 18+ 
+- **npm** or **yarn**
+- **Chrome browser** (for extension)
+- **OpenAI API key** (for OCR functionality)
 
 ---
 
-## Step 1: Create New GitHub Repository
+## Installation
 
-### Option A: Copy from Template
-1. Copy the template folder to a new location
-2. Rename the folder to your project name
-
-### Option B: Clone Existing Repo
-```bash
-git clone https://github.com/scottkosmach/Template.git MyNewProject
-cd MyNewProject
-```
-
----
-
-## Step 2: Update Project References
-
-### 2.1 Update `package.json`
-Change the name from `template-app` to your project name:
-```json
-{
-  "name": "your-project-name",
-  ...
-}
-```
-
-### 2.2 Update `supabase/config.toml`
-Change the project_id:
-```toml
-project_id = "YourProjectName"
-```
-
----
-
-## Step 3: Create GitHub Repository
-
-1. Go to [github.com/new](https://github.com/new)
-2. Create a new empty repository (e.g., `YourProjectName`)
-3. Update the git remote and push:
+### 1. Clone and Install Dependencies
 
 ```bash
-# Remove old origin (if cloned from template)
-git remote set-url origin https://github.com/YOUR_USERNAME/YourProjectName.git
-
-# Or add new origin (if copied folder)
-git init
-git add -A
-git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR_USERNAME/YourProjectName.git
-git branch -M main
-
-# Push to GitHub
-git push -u origin main
+cd CrewForms
+npm install
 ```
 
----
+### 2. Environment Configuration
 
-## Step 4: Create Supabase Project
+Copy the example environment file and configure:
 
-### 4.1 Create Project
-1. Go to [supabase.com/dashboard](https://supabase.com/dashboard)
-2. Click **"New Project"**
-3. Fill in:
-   - **Name:** Your project name
-   - **Database Password:** Generate a strong password (save it!)
-   - **Region:** Choose closest to your users
-4. Click **"Create new project"**
-5. Wait for project to be ready (~2 minutes)
+```bash
+cp .env.example .env.local
+```
 
-### 4.2 Get Your Keys
-1. Go to **Settings** → **API**
-2. Copy these values:
-   - **Project URL** (e.g., `https://abcdefgh12345.supabase.co`)
-   - **anon public** key (starts with `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`)
-3. Note your **Project Reference ID** from the URL:
-   - URL: `https://supabase.com/dashboard/project/abcdefgh12345`
-   - Reference ID: `abcdefgh12345`
-
----
-
-## Step 5: Configure Local Environment
-
-### 5.1 Create `.env.local`
-Create a file named `.env.local` in your project root:
+Edit `.env.local` with your values:
 
 ```env
-# Supabase Configuration
-# Project: YourProjectName
-# Dashboard: https://supabase.com/dashboard/project/YOUR_PROJECT_REF/
+# Required for OCR
+OPENAI_API_KEY=sk-your-openai-api-key
 
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+# Application URL
+NEXT_PUBLIC_BASE_URL=http://localhost:3000
 ```
 
-> ⚠️ **Important:** Never commit `.env.local` to git! It should already be in `.gitignore`.
+### 3. Start Development Server
 
----
-
-## Step 6: Link Supabase CLI & Push Migrations
-
-### 6.1 Login to Supabase CLI
-```bash
-supabase login
-```
-This opens a browser to authenticate.
-
-### 6.2 Link to Your Project
-```bash
-supabase link --project-ref YOUR_PROJECT_REF
-```
-Replace `YOUR_PROJECT_REF` with your project reference ID (e.g., `abcdefgh12345`).
-
-### 6.3 Push Database Migrations
-```bash
-supabase db push
-```
-This creates all tables defined in `supabase/migrations/`.
-
----
-
-## Step 7: Test Locally
-
-### 7.1 Install Dependencies
-```bash
-npm install
-```
-
-### 7.2 Start Development Server
 ```bash
 npm run dev
 ```
 
-### 7.3 Verify Connection
-1. Open [http://localhost:3000](http://localhost:3000)
-2. Check that:
-   - ✅ Database shows "Connected"
-   - ✅ Environment variables show "Set"
-   - ✅ You can insert test records
+The server will start at `http://localhost:3000`.
 
 ---
 
-## Step 8: Deploy to Vercel
+## Chrome Extension Setup
 
-### 8.1 Connect GitHub to Vercel
-1. Go to [vercel.com/new](https://vercel.com/new)
-2. Click **"Import Git Repository"**
-3. Select your repository (e.g., `YourProjectName`)
-4. Click **"Import"**
+### 1. Generate Extension Icons
 
-### 8.2 Configure Environment Variables
-Before deploying, add these environment variables in Vercel:
+1. Open `extension/icons/generate-icons.html` in Chrome
+2. Right-click each canvas and "Save image as..."
+3. Save as `icon16.png`, `icon32.png`, `icon48.png`, `icon128.png` in the `extension/icons/` folder
 
-| Name | Value |
-|------|-------|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://YOUR_PROJECT_REF.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your anon key |
+### 2. Load Extension in Chrome
 
-### 8.3 Deploy
-Click **"Deploy"** and wait for the build to complete.
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable **Developer mode** (toggle in top right)
+3. Click **Load unpacked**
+4. Select the `extension` folder from this project
 
-### 8.4 Verify Production
-Visit your Vercel URL and verify everything works.
+### 3. Test the Extension
+
+1. Click the CrewForms icon in your Chrome toolbar
+2. The side panel should open
+3. Try adding captain, boat, and company information
 
 ---
 
-## Step 9: Enable Auto-Deployments
+## Server Configuration
 
-Once connected, Vercel automatically deploys on every push to `main`:
+### API Endpoints
+
+The server provides these API endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/sessions` | POST | Create upload session |
+| `/api/sessions/[id]` | GET | Get session status |
+| `/api/sessions/[id]/upload` | POST | Upload images |
+| `/api/ocr` | POST | Process passport image |
+| `/api/mappings` | GET/POST/PUT/DELETE | Manage field mappings |
+
+### Admin Interface
+
+Access the admin panel at `http://localhost:3000/admin` to:
+
+- View all field mappings
+- Create new mappings
+- Edit existing mappings
+- Delete mappings
+
+### Mobile Upload Page
+
+When a captain clicks "Import Guests" in the extension:
+
+1. A QR code is generated with a unique session URL
+2. Scanning opens `http://localhost:3000/upload/[sessionId]`
+3. The mobile page allows multi-image upload
+4. Images are relayed to the extension in real-time
+
+---
+
+## Testing
+
+### Test the Extension
+
+1. Open a webpage
+2. Click the CrewForms extension icon
+3. Navigate through tabs (Travelers, Captain, Boat, Company, Trip)
+4. Enter and save data
+5. Data should persist across browser sessions
+
+### Test OCR (requires OpenAI API key)
+
+1. Click "Import Guests" in the extension
+2. A QR code should appear
+3. Scan with your phone or navigate to the URL manually
+4. Upload a passport image
+5. The OCR should extract data and display it in the extension
+
+### Test Form Filling
+
+1. Navigate to a website matching a mapping URL pattern
+2. Focus on a form field
+3. Select a data source in the extension
+4. Click "Paste"
+5. Fields should be filled according to the mapping
+
+---
+
+## Production Deployment
+
+### 1. Build the Application
 
 ```bash
-git add -A
-git commit -m "Your changes"
-git push
+npm run build
 ```
 
-Vercel will automatically build and deploy!
-
----
-
-## Quick Reference: All Keys & Where They Go
-
-| Key | Where to Get | Where to Put |
-|-----|--------------|--------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard → Settings → API | `.env.local` + Vercel |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Settings → API | `.env.local` + Vercel |
-| Project Reference ID | Supabase Dashboard URL | `supabase link` command |
-
----
-
-## File Checklist
-
-| File | Update Required |
-|------|-----------------|
-| `package.json` | Change `"name"` field |
-| `supabase/config.toml` | Change `project_id` |
-| `.env.local` | Create with Supabase keys |
-| Git remote | Point to new GitHub repo |
-
----
-
-## Command Summary
+### 2. Deploy to Vercel (Recommended)
 
 ```bash
-# 1. Update git remote
-git remote set-url origin https://github.com/USERNAME/PROJECT.git
-
-# 2. Push to GitHub
-git add -A && git commit -m "Initial commit" && git push -u origin main
-
-# 3. Link Supabase
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-
-# 4. Push migrations
-supabase db push
-
-# 5. Install & run locally
-npm install
-npm run dev
-
-# 6. Deploy to Vercel (via CLI, optional)
-vercel link
-vercel env add NEXT_PUBLIC_SUPABASE_URL
-vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
-vercel --prod
+npx vercel
 ```
+
+Or connect your Git repository to Vercel for automatic deployments.
+
+### 3. Configure Production Environment
+
+Set environment variables in your deployment platform:
+
+- `OPENAI_API_KEY` - Your OpenAI API key
+- `NEXT_PUBLIC_BASE_URL` - Your production URL
+
+### 4. Update Extension Server URL
+
+Edit `extension/background/service-worker.js`:
+
+```javascript
+const SERVER_URL = 'https://your-production-url.com';
+```
+
+### 5. Package Extension for Distribution
+
+1. Zip the `extension` folder
+2. Upload to Chrome Web Store (requires developer account)
+3. Or distribute the zip file directly for sideloading
 
 ---
 
 ## Troubleshooting
 
-### "next is not recognized"
-Run `npm install` first to install dependencies.
+### Extension not loading
 
-### Database not connecting
-- Verify `.env.local` exists and has correct values
-- Restart the dev server after creating `.env.local`
+- Ensure all icon files exist in `extension/icons/`
+- Check Chrome's extension error console for details
+- Verify manifest.json is valid JSON
 
-### Migrations not applying
-- Check you're linked to the correct project: `supabase link --project-ref YOUR_REF`
-- Verify migrations exist in `supabase/migrations/`
+### QR code not generating
+
+- Check browser console for errors
+- Verify server is running at configured URL
+- Check network connectivity
+
+### OCR not working
+
+- Verify `OPENAI_API_KEY` is set correctly
+- Check server logs for API errors
+- Ensure image is clear and passport is visible
+
+### Form filling not working
+
+- Verify mapping exists for current URL
+- Check that fields are visible and enabled
+- Ensure focus is on a form field before clicking Paste
 
 ---
 
-## Created By
-This guide documents the setup process for duplicating Vercel + Supabase template projects.
+## Project Structure
 
-Last updated: December 2024
+```
+CrewForms/
+├── extension/               # Chrome extension
+│   ├── manifest.json        # Extension manifest
+│   ├── background/          # Service worker
+│   ├── content/             # Content script
+│   ├── sidepanel/           # Side panel UI
+│   └── icons/               # Extension icons
+├── src/
+│   └── app/
+│       ├── api/             # API routes
+│       │   ├── sessions/    # Session management
+│       │   ├── ocr/         # OCR proxy
+│       │   └── mappings/    # Field mappings
+│       ├── admin/           # Admin interface
+│       └── upload/          # Mobile upload page
+├── .env.example             # Environment template
+├── package.json
+└── SETUP_GUIDE.md           # This file
+```
 
+---
+
+## Support
+
+For issues or questions:
+
+1. Check the troubleshooting section above
+2. Review browser console logs
+3. Check server logs for API errors
+
+---
+
+*Last updated: December 2024*

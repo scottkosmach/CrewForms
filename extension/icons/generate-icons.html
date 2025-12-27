@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate CrewForms Icons</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    canvas { border: 1px solid #ccc; margin: 10px; }
+    .download-links a { display: block; margin: 5px 0; }
+  </style>
+</head>
+<body>
+  <h1>CrewForms Icon Generator</h1>
+  <p>Right-click each canvas and "Save image as..." with the specified filename.</p>
+  
+  <div id="canvases"></div>
+  <div class="download-links" id="links"></div>
+
+  <script>
+    const sizes = [16, 32, 48, 128];
+    
+    sizes.forEach(size => {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      canvas.title = `icon${size}.png`;
+      
+      const ctx = canvas.getContext('2d');
+      
+      // Background gradient - maritime navy
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#1e3a5f');
+      gradient.addColorStop(1, '#0f1f33');
+      
+      // Draw rounded rectangle background
+      const radius = size * 0.15;
+      ctx.beginPath();
+      ctx.moveTo(radius, 0);
+      ctx.lineTo(size - radius, 0);
+      ctx.quadraticCurveTo(size, 0, size, radius);
+      ctx.lineTo(size, size - radius);
+      ctx.quadraticCurveTo(size, size, size - radius, size);
+      ctx.lineTo(radius, size);
+      ctx.quadraticCurveTo(0, size, 0, size - radius);
+      ctx.lineTo(0, radius);
+      ctx.quadraticCurveTo(0, 0, radius, 0);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+      
+      // Draw wave pattern (bottom)
+      ctx.beginPath();
+      const waveY = size * 0.7;
+      ctx.moveTo(0, waveY);
+      ctx.bezierCurveTo(size * 0.25, waveY - size * 0.1, size * 0.5, waveY + size * 0.1, size * 0.75, waveY);
+      ctx.bezierCurveTo(size, waveY - size * 0.05, size, waveY + size * 0.1, size, waveY + size * 0.15);
+      ctx.lineTo(size, size);
+      ctx.lineTo(0, size);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(8, 145, 178, 0.3)';
+      ctx.fill();
+      
+      // Draw boat/document icon
+      ctx.strokeStyle = '#22d3ee';
+      ctx.lineWidth = Math.max(1, size * 0.08);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      // Document outline
+      const docX = size * 0.25;
+      const docY = size * 0.15;
+      const docW = size * 0.5;
+      const docH = size * 0.55;
+      
+      ctx.beginPath();
+      ctx.moveTo(docX, docY);
+      ctx.lineTo(docX + docW - size * 0.12, docY);
+      ctx.lineTo(docX + docW, docY + size * 0.12);
+      ctx.lineTo(docX + docW, docY + docH);
+      ctx.lineTo(docX, docY + docH);
+      ctx.closePath();
+      ctx.stroke();
+      
+      // Document fold
+      ctx.beginPath();
+      ctx.moveTo(docX + docW - size * 0.12, docY);
+      ctx.lineTo(docX + docW - size * 0.12, docY + size * 0.12);
+      ctx.lineTo(docX + docW, docY + size * 0.12);
+      ctx.stroke();
+      
+      // Lines on document
+      if (size >= 32) {
+        ctx.lineWidth = Math.max(1, size * 0.04);
+        const lineStart = docX + size * 0.08;
+        const lineEnd = docX + docW - size * 0.08;
+        
+        [0.35, 0.45, 0.55].forEach(y => {
+          ctx.beginPath();
+          ctx.moveTo(lineStart, size * y);
+          ctx.lineTo(lineEnd, size * y);
+          ctx.stroke();
+        });
+      }
+      
+      const container = document.createElement('div');
+      container.style.display = 'inline-block';
+      container.style.textAlign = 'center';
+      container.innerHTML = `<p>icon${size}.png</p>`;
+      container.insertBefore(canvas, container.firstChild);
+      document.getElementById('canvases').appendChild(container);
+      
+      // Create download link
+      const link = document.createElement('a');
+      link.download = `icon${size}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.textContent = `Download icon${size}.png`;
+      document.getElementById('links').appendChild(link);
+    });
+  </script>
+</body>
+</html>
+

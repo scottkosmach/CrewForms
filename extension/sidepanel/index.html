@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrewForms</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+        <span class="logo-text">CrewForms</span>
+      </div>
+      <button class="btn-icon" id="settingsBtn" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="travelers">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span>Travelers</span>
+      </button>
+      <button class="tab" data-tab="captain">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        <span>Captain</span>
+      </button>
+      <button class="tab" data-tab="boat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>
+          <path d="M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"/>
+          <path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/>
+          <path d="M12 10v4"/>
+          <path d="M12 2v3"/>
+        </svg>
+        <span>Boat</span>
+      </button>
+      <button class="tab" data-tab="company">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 21h18"/>
+          <path d="M9 8h1"/>
+          <path d="M9 12h1"/>
+          <path d="M9 16h1"/>
+          <path d="M14 8h1"/>
+          <path d="M14 12h1"/>
+          <path d="M14 16h1"/>
+          <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/>
+        </svg>
+        <span>Company</span>
+      </button>
+      <button class="tab" data-tab="trip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        <span>Trip</span>
+      </button>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="content">
+      
+      <!-- Travelers Tab -->
+      <section class="tab-content active" id="travelers-tab">
+        <div class="section-header">
+          <h2>Travelers</h2>
+          <button class="btn btn-primary" id="importGuestsBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Import Guests
+          </button>
+        </div>
+        
+        <!-- QR Code Modal (hidden by default) -->
+        <div class="qr-modal hidden" id="qrModal">
+          <div class="qr-content">
+            <h3>Scan to Upload Passports</h3>
+            <div class="qr-code" id="qrCode">
+              <!-- QR code will be generated here -->
+              <div class="qr-placeholder">Generating...</div>
+            </div>
+            <p class="qr-instruction">Scan with your phone camera to upload passport images</p>
+            <button class="btn btn-secondary" id="closeQrBtn">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Traveler List -->
+        <div class="list" id="travelerList">
+          <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <p>No travelers imported yet</p>
+            <p class="text-muted">Click "Import Guests" to scan passport images</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Captain Tab -->
+      <section class="tab-content" id="captain-tab">
+        <div class="section-header">
+          <h2>Captain Information</h2>
+        </div>
+        
+        <form class="form" id="captainForm">
+          <div class="form-group">
+            <label for="captainFirstName">First Name</label>
+            <input type="text" id="captainFirstName" name="firstName" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="captainMiddleName">Middle Name(s)</label>
+            <input type="text" id="captainMiddleName" name="middleName">
+          </div>
+          
+          <div class="form-group">
+            <label for="captainLastName">Last Name</label>
+            <input type="text" id="captainLastName" name="lastName" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="captainPassportNumber">Passport Number</label>
+            <input type="text" id="captainPassportNumber" name="passportNumber">
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="captainDobDay">Date of Birth</label>
+              <div class="date-inputs">
+                <input type="number" id="captainDobDay" name="dobDay" placeholder="DD" min="1" max="31">
+                <input type="number" id="captainDobMonth" name="dobMonth" placeholder="MM" min="1" max="12">
+                <input type="number" id="captainDobYear" name="dobYear" placeholder="YYYY" min="1900" max="2100">
+              </div>
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="captainPassportExpDay">Passport Expiry</label>
+              <div class="date-inputs">
+                <input type="number" id="captainPassportExpDay" name="passportExpDay" placeholder="DD" min="1" max="31">
+                <input type="number" id="captainPassportExpMonth" name="passportExpMonth" placeholder="MM" min="1" max="12">
+                <input type="number" id="captainPassportExpYear" name="passportExpYear" placeholder="YYYY" min="1900" max="2100">
+              </div>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="captainNationality">Nationality</label>
+            <input type="text" id="captainNationality" name="nationality">
+          </div>
+          
+          <div class="form-group">
+            <label for="captainLicenseNumber">License Number</label>
+            <input type="text" id="captainLicenseNumber" name="licenseNumber">
+          </div>
+          
+          <div class="form-group">
+            <label for="captainEmail">Email</label>
+            <input type="email" id="captainEmail" name="email">
+          </div>
+          
+          <div class="form-group">
+            <label for="captainPhone">Phone</label>
+            <input type="tel" id="captainPhone" name="phone">
+          </div>
+          
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Captain Info</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Boat Tab -->
+      <section class="tab-content" id="boat-tab">
+        <div class="section-header">
+          <h2>Boats</h2>
+          <button class="btn btn-primary" id="addBoatBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add Boat
+          </button>
+        </div>
+        
+        <!-- Boat List -->
+        <div class="list" id="boatList">
+          <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>
+              <path d="M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"/>
+              <path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/>
+            </svg>
+            <p>No boats added yet</p>
+            <p class="text-muted">Click "Add Boat" to register a vessel</p>
+          </div>
+        </div>
+        
+        <!-- Boat Form (hidden by default) -->
+        <div class="form-modal hidden" id="boatFormModal">
+          <form class="form" id="boatForm">
+            <h3 id="boatFormTitle">Add Boat</h3>
+            <input type="hidden" id="boatId" name="id">
+            
+            <div class="form-group">
+              <label for="boatName">Vessel Name</label>
+              <input type="text" id="boatName" name="vesselName" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="boatRegistration">Registration Number</label>
+              <input type="text" id="boatRegistration" name="registrationNumber">
+            </div>
+            
+            <div class="form-group">
+              <label for="boatFlagState">Flag State</label>
+              <input type="text" id="boatFlagState" name="flagState">
+            </div>
+            
+            <div class="form-group">
+              <label for="boatHomePort">Home Port</label>
+              <input type="text" id="boatHomePort" name="homePort">
+            </div>
+            
+            <div class="form-group">
+              <label for="boatType">Vessel Type</label>
+              <input type="text" id="boatType" name="vesselType" placeholder="e.g., Motor Yacht, Sailing Yacht">
+            </div>
+            
+            <div class="form-group">
+              <label for="boatCapacity">Capacity (guests)</label>
+              <input type="number" id="boatCapacity" name="capacity" min="1">
+            </div>
+            
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" id="cancelBoatBtn">Cancel</button>
+              <button type="submit" class="btn btn-primary">Save Boat</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Company Tab -->
+      <section class="tab-content" id="company-tab">
+        <div class="section-header">
+          <h2>Companies</h2>
+          <button class="btn btn-primary" id="addCompanyBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add Company
+          </button>
+        </div>
+        
+        <!-- Company List -->
+        <div class="list" id="companyList">
+          <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 21h18"/>
+              <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/>
+            </svg>
+            <p>No companies added yet</p>
+            <p class="text-muted">Click "Add Company" to register a company</p>
+          </div>
+        </div>
+        
+        <!-- Company Form (hidden by default) -->
+        <div class="form-modal hidden" id="companyFormModal">
+          <form class="form" id="companyForm">
+            <h3 id="companyFormTitle">Add Company</h3>
+            <input type="hidden" id="companyId" name="id">
+            
+            <div class="form-group">
+              <label for="companyName">Company Name</label>
+              <input type="text" id="companyName" name="companyName" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="companyRegistration">Registration Number</label>
+              <input type="text" id="companyRegistration" name="registrationNumber">
+            </div>
+            
+            <div class="form-group">
+              <label for="companyAddress">Address</label>
+              <textarea id="companyAddress" name="address" rows="3"></textarea>
+            </div>
+            
+            <div class="form-group">
+              <label for="companyEmail">Email</label>
+              <input type="email" id="companyEmail" name="email">
+            </div>
+            
+            <div class="form-group">
+              <label for="companyPhone">Phone</label>
+              <input type="tel" id="companyPhone" name="phone">
+            </div>
+            
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" id="cancelCompanyBtn">Cancel</button>
+              <button type="submit" class="btn btn-primary">Save Company</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Trip Tab -->
+      <section class="tab-content" id="trip-tab">
+        <div class="section-header">
+          <h2>Current Trip</h2>
+        </div>
+        
+        <form class="form" id="tripForm">
+          <div class="form-group">
+            <label for="tripBoat">Select Boat</label>
+            <select id="tripBoat" name="boatId" required>
+              <option value="">-- Select a Boat --</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="tripCompany">Select Company</label>
+            <select id="tripCompany" name="companyId" required>
+              <option value="">-- Select a Company --</option>
+            </select>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="tripDepartureDay">Departure Date</label>
+              <div class="date-inputs">
+                <input type="number" id="tripDepartureDay" name="departureDay" placeholder="DD" min="1" max="31">
+                <input type="number" id="tripDepartureMonth" name="departureMonth" placeholder="MM" min="1" max="12">
+                <input type="number" id="tripDepartureYear" name="departureYear" placeholder="YYYY" min="2020" max="2100">
+              </div>
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="tripReturnDay">Return Date</label>
+              <div class="date-inputs">
+                <input type="number" id="tripReturnDay" name="returnDay" placeholder="DD" min="1" max="31">
+                <input type="number" id="tripReturnMonth" name="returnMonth" placeholder="MM" min="1" max="12">
+                <input type="number" id="tripReturnYear" name="returnYear" placeholder="YYYY" min="2020" max="2100">
+              </div>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="tripDeparturePort">Departure Port</label>
+            <input type="text" id="tripDeparturePort" name="departurePort">
+          </div>
+          
+          <div class="form-group">
+            <label for="tripDestinationPorts">Destination Port(s)</label>
+            <input type="text" id="tripDestinationPorts" name="destinationPorts" placeholder="Separate multiple ports with commas">
+          </div>
+          
+          <div class="form-group">
+            <label for="tripPurpose">Purpose of Voyage</label>
+            <input type="text" id="tripPurpose" name="purpose" placeholder="e.g., Charter, Private">
+          </div>
+          
+          <div class="form-group">
+            <label for="tripGuestCount">Number of Guests</label>
+            <input type="number" id="tripGuestCount" name="guestCount" min="0">
+          </div>
+          
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" id="clearTripBtn">Clear Trip</button>
+            <button type="submit" class="btn btn-primary">Save Trip</button>
+          </div>
+        </form>
+        
+        <div class="trip-expiry-notice" id="tripExpiryNotice">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <span>Trip data expires in <strong id="tripExpiryTime">--</strong></span>
+        </div>
+      </section>
+    </main>
+
+    <!-- Paste Action Bar (shown when on supported site) -->
+    <footer class="action-bar hidden" id="actionBar">
+      <div class="action-info">
+        <span class="action-label">Paste data from:</span>
+        <select id="pasteSource">
+          <option value="">-- Select Source --</option>
+          <optgroup label="Travelers" id="pasteSourceTravelers">
+          </optgroup>
+          <optgroup label="Other">
+            <option value="captain">Captain Info</option>
+            <option value="boat">Current Boat</option>
+            <option value="company">Current Company</option>
+            <option value="trip">Current Trip</option>
+          </optgroup>
+        </select>
+      </div>
+      <button class="btn btn-accent" id="pasteBtn" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+        </svg>
+        Paste
+      </button>
+    </footer>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- QR Code Library -->
+  <script src="qrcode.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+
