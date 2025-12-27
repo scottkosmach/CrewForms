@@ -919,6 +919,121 @@ body {
    ADMIN MODE - MAPPING ASSISTANT
    ============================================================================ */
 
+/* Existing Mappings Section */
+.existing-mappings-section {
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+}
+
+.existing-mappings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+.existing-mappings-header h3 {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-gray-700);
+  margin: 0;
+}
+
+.existing-mappings-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.existing-mapping-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm);
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-sm);
+}
+
+.existing-mapping-item:hover {
+  background: var(--color-gray-100);
+  border-color: var(--color-primary);
+}
+
+.mapping-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mapping-name {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-gray-800);
+  margin-bottom: 2px;
+}
+
+.mapping-meta {
+  display: flex;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+  margin-bottom: 2px;
+}
+
+.mapping-fields {
+  color: var(--color-primary);
+}
+
+.mapping-version {
+  color: var(--color-gray-400);
+}
+
+.mapping-url {
+  font-size: 10px;
+  color: var(--color-gray-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.mapping-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: var(--spacing-sm);
+}
+
+.mapping-actions .btn-sm {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.existing-mappings-empty,
+.existing-mappings-loading {
+  text-align: center;
+  padding: var(--spacing-md);
+  color: var(--color-gray-500);
+  font-size: var(--font-size-sm);
+}
+
+.existing-mappings-empty p,
+.existing-mappings-loading p {
+  margin: 0;
+}
+
+.admin-divider {
+  height: 1px;
+  background: var(--color-gray-200);
+  margin: var(--spacing-md) 0;
+}
+
 .admin-info {
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--color-gray-100);

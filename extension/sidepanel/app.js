@@ -1646,6 +1646,7 @@ const FIELD_TYPES = [
 function setupAdminMode() {
   const scanBtn = document.getElementById('scanFieldsBtn');
   const saveBtn = document.getElementById('saveMappingBtn');
+  const refreshBtn = document.getElementById('refreshMappingsBtn');
   
   if (scanBtn) {
     scanBtn.addEventListener('click', scanFormFields);
@@ -1653,6 +1654,270 @@ function setupAdminMode() {
   
   if (saveBtn) {
     saveBtn.addEventListener('click', saveMapping);
+  }
+  
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', loadExistingMappings);
+  }
+  
+  // Load existing mappings when admin tab is shown
+  loadExistingMappings();
+}
+
+/**
+ * Load existing mappings for the current page URL
+ */
+async function loadExistingMappings() {
+  const listContainer = document.getElementById('existingMappingsList');
+  const emptyState = document.getElementById('existingMappingsEmpty');
+  const loadingState = document.getElementById('existingMappingsLoading');
+  
+  if (!listContainer) return;
+  
+  // Show loading state
+  listContainer.innerHTML = '';
+  emptyState?.classList.add('hidden');
+  loadingState?.classList.remove('hidden');
+  
+  try {
+    // Get current tab URL
+    const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
+    const currentUrl = tabResult.tab?.url || '';
+    
+    // Fetch all mappings from the server
+    const response = await fetch('https://crewforms.vercel.app/api/mappings');
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch mappings');
+    }
+    
+    const data = await response.json();
+    const allMappings = data.mappings || [];
+    
+    // Filter mappings that match the current URL
+    const matchingMappings = allMappings.filter(mapping => 
+      urlMatchesPattern(currentUrl, mapping.urlPattern)
+    );
+    
+    loadingState?.classList.add('hidden');
+    
+    if (matchingMappings.length === 0) {
+      emptyState?.classList.remove('hidden');
+      return;
+    }
+    
+    // Render the matching mappings
+    renderExistingMappings(matchingMappings, currentUrl);
+    
+  } catch (error) {
+    console.error('Failed to load mappings:', error);
+    loadingState?.classList.add('hidden');
+    emptyState?.classList.remove('hidden');
+    showToast('Failed to load existing mappings', 'error');
+  }
+}
+
+/**
+ * Check if a URL matches a pattern (supports * wildcards)
+ * Same logic as server-side matching
+ */
+function urlMatchesPattern(url, pattern) {
+  if (!url || !pattern) return false;
+  
+  // Convert pattern to regex
+  const regexPattern = pattern
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*');
+  
+  const regex = new RegExp(`^${regexPattern}$`, 'i');
+  return regex.test(url);
+}
+
+/**
+ * Render the list of existing mappings
+ */
+function renderExistingMappings(mappings, currentUrl) {
+  const listContainer = document.getElementById('existingMappingsList');
+  if (!listContainer) return;
+  
+  listContainer.innerHTML = mappings.map(mapping => `
+    <div class="existing-mapping-item" data-id="${mapping.id}">
+      <div class="mapping-info">
+        <div class="mapping-name">${escapeHtml(mapping.name)}</div>
+        <div class="mapping-meta">
+          <span class="mapping-fields">${mapping.fieldCount} fields</span>
+          <span class="mapping-version">v${mapping.version}</span>
+        </div>
+        <div class="mapping-url" title="${escapeHtml(mapping.urlPattern)}">${escapeHtml(mapping.urlPattern)}</div>
+      </div>
+      <div class="mapping-actions">
+        <button class="btn btn-sm btn-secondary btn-edit-mapping" data-id="${mapping.id}" title="Edit">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
+        <button class="btn btn-sm btn-danger btn-delete-mapping" data-id="${mapping.id}" data-name="${escapeHtml(mapping.name)}" title="Delete">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  `).join('');
+  
+  // Add event listeners for edit/delete buttons
+  listContainer.querySelectorAll('.btn-edit-mapping').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mappingId = btn.dataset.id;
+      editExistingMapping(mappingId);
+    });
+  });
+  
+  listContainer.querySelectorAll('.btn-delete-mapping').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mappingId = btn.dataset.id;
+      const mappingName = btn.dataset.name;
+      deleteExistingMapping(mappingId, mappingName);
+    });
+  });
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text || '';
+  return div.innerHTML;
+}
+
+/**
+ * Edit an existing mapping - loads it into the editor
+ */
+async function editExistingMapping(mappingId) {
+  try {
+    showToast('Loading mapping...', 'info');
+    
+    // Fetch the full mapping details
+    const response = await fetch(`https://crewforms.vercel.app/api/mappings?id=${mappingId}`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch mapping');
+    }
+    
+    const mapping = await response.json();
+    
+    // First scan the fields to get current page structure
+    const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
+    if (!tabResult.success || !tabResult.tab) {
+      showToast('Could not detect active tab', 'error');
+      return;
+    }
+    
+    const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
+      type: 'SCAN_FORM_FIELDS'
+    });
+    
+    if (!result.success || !result.fields) {
+      showToast('Could not scan form fields', 'error');
+      return;
+    }
+    
+    // Store scanned fields
+    state.scannedFields = result.fields;
+    state.fieldConfigs = {};
+    state.editingMappingId = mappingId; // Track that we're editing an existing mapping
+    
+    // Initialize field configs with defaults
+    result.fields.forEach(field => {
+      state.fieldConfigs[field.position] = {
+        status: 'unmapped',
+        dataSource: '',
+        staticValue: '',
+        inputType: 'paste',
+        fieldType: 'text',
+        dateFormat: '',
+        keypressMap: {},
+        keypressDelay: 100
+      };
+    });
+    
+    // Apply the saved mapping config to fields
+    mapping.fields.forEach(savedField => {
+      if (state.fieldConfigs[savedField.position]) {
+        state.fieldConfigs[savedField.position] = {
+          status: savedField.staticValue ? 'static' : (savedField.dataSource ? 'data' : 'unmapped'),
+          dataSource: savedField.dataSource || '',
+          staticValue: savedField.staticValue || '',
+          inputType: savedField.inputType || 'paste',
+          fieldType: savedField.fieldType || 'text',
+          dateFormat: savedField.dateFormat || '',
+          keypressMap: savedField.config?.keypressMap || {},
+          keypressDelay: savedField.config?.keypressDelay || 100
+        };
+      }
+    });
+    
+    // Update URL pattern and mapping name
+    const mappingUrl = document.getElementById('mappingUrl');
+    const mappingName = document.getElementById('mappingName');
+    const mappingFormType = document.getElementById('mappingFormType');
+    
+    if (mappingUrl) mappingUrl.value = mapping.urlPattern;
+    if (mappingName) mappingName.value = mapping.name;
+    if (mappingFormType) mappingFormType.value = mapping.formType;
+    
+    // Show the field list UI
+    document.getElementById('adminEmptyState')?.classList.add('hidden');
+    document.getElementById('adminFieldList')?.classList.remove('hidden');
+    document.getElementById('mappingNameSection')?.classList.remove('hidden');
+    document.getElementById('saveMappingBtn').disabled = false;
+    
+    // Update field count
+    const fieldCount = document.getElementById('fieldCount');
+    if (fieldCount) {
+      fieldCount.textContent = `${result.fields.length} fields found`;
+    }
+    
+    // Render the field list with the loaded configs
+    renderFieldList();
+    
+    showToast(`Loaded mapping: ${mapping.name}`, 'success');
+    
+  } catch (error) {
+    console.error('Failed to edit mapping:', error);
+    showToast('Failed to load mapping for editing', 'error');
+  }
+}
+
+/**
+ * Delete an existing mapping
+ */
+async function deleteExistingMapping(mappingId, mappingName) {
+  // Confirm deletion
+  if (!confirm(`Are you sure you want to delete the mapping "${mappingName}"?\n\nThis action cannot be undone.`)) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`https://crewforms.vercel.app/api/mappings?id=${mappingId}`, {
+      method: 'DELETE'
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to delete mapping');
+    }
+    
+    showToast(`Deleted mapping: ${mappingName}`, 'success');
+    
+    // Refresh the list
+    loadExistingMappings();
+    
+  } catch (error) {
+    console.error('Failed to delete mapping:', error);
+    showToast('Failed to delete mapping', 'error');
   }
 }
 
@@ -2232,22 +2497,24 @@ async function saveMapping() {
     return;
   }
   
+  // Check if we're editing an existing mapping or creating new
+  const isEditing = !!state.editingMappingId;
+  
   // Create the mapping object
   const mapping = {
-    id: generateId(),
+    id: isEditing ? state.editingMappingId : generateId(),
     name: mappingName,
     urlPattern: mappingUrl,
     formType,
-    fields,
-    version: 1
+    fields
   };
   
-  console.log('Saving mapping:', mapping);
+  console.log(isEditing ? 'Updating mapping:' : 'Saving mapping:', mapping);
   
   try {
-    // Send to the API
+    // Send to the API - use PUT for updates, POST for new
     const response = await fetch('https://crewforms.vercel.app/api/mappings', {
-      method: 'POST',
+      method: isEditing ? 'PUT' : 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
@@ -2255,17 +2522,21 @@ async function saveMapping() {
     });
     
     if (response.ok) {
-      showToast('Mapping saved successfully!', 'success');
+      showToast(isEditing ? 'Mapping updated successfully!' : 'Mapping saved successfully!', 'success');
       
-      // Clear the form
+      // Clear the form and editing state
       state.scannedFields = [];
       state.fieldConfigs = {};
+      state.editingMappingId = null; // Clear editing state
       document.getElementById('mappingName').value = '';
       document.getElementById('mappingUrl').value = '';
       document.getElementById('adminEmptyState').classList.remove('hidden');
       document.getElementById('adminFieldList').classList.add('hidden');
       document.getElementById('mappingNameSection').classList.add('hidden');
       document.getElementById('saveMappingBtn').disabled = true;
+      
+      // Refresh the existing mappings list
+      loadExistingMappings();
     } else {
       const error = await response.json();
       showToast('Failed to save: ' + (error.error || 'Unknown error'), 'error');
