@@ -27,7 +27,7 @@ interface EdgeFunctionResponse {
   error?: string
 }
 
-export function ConnectionTests({ supabaseUrl }: { supabaseUrl: string }) {
+export function ConnectionTests({ supabaseUrl, supabaseAnonKey }: { supabaseUrl: string; supabaseAnonKey: string }) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [response, setResponse] = useState<EdgeFunctionResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -43,6 +43,7 @@ export function ConnectionTests({ supabaseUrl }: { supabaseUrl: string }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
         },
       })
 

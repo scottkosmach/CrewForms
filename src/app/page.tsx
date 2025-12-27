@@ -98,7 +98,10 @@ export default async function HomePage() {
           </StatusCard>
 
           {/* Edge Function Status Card - Client Component */}
-          <ConnectionTests supabaseUrl={process.env.NEXT_PUBLIC_SUPABASE_URL || ''} />
+          <ConnectionTests 
+            supabaseUrl={process.env.NEXT_PUBLIC_SUPABASE_URL || ''} 
+            supabaseAnonKey={process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''}
+          />
         </div>
 
         {/* Interactive Test Section */}
