@@ -20,7 +20,7 @@ export async function GET(
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const { sessionId } = await params;
-  const session = getSession(sessionId);
+  const session = await getSession(sessionId);
   
   if (!session) {
     return NextResponse.json(
@@ -36,12 +36,14 @@ export async function GET(
   }
   
   // Return session status
+  const expiresAtMs = new Date(session.expires_at).getTime();
+  
   return NextResponse.json({
     id: session.id,
-    expiresAt: session.expiresAt,
+    expiresAt: expiresAtMs,
     imageCount: session.images.length,
     connected: session.connected,
-    timeRemaining: Math.max(0, session.expiresAt - Date.now())
+    timeRemaining: Math.max(0, expiresAtMs - Date.now())
   });
 }
 
@@ -54,7 +56,7 @@ export async function DELETE(
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const { sessionId } = await params;
-  deleteSession(sessionId);
+  await deleteSession(sessionId);
   
   return NextResponse.json({ success: true });
 }
@@ -67,51 +69,49 @@ export async function DELETE(
  * Handle Server-Sent Events connection for image relay
  */
 function handleSSE(sessionId: string, request: NextRequest): Response {
-  const session = getSession(sessionId);
-  
-  if (!session) {
-    return new Response('Session not found', { status: 404 });
-  }
-  
   // Create readable stream for SSE
   const stream = new ReadableStream({
-    start(controller) {
+    async start(controller) {
       console.log(`SSE connection started for session ${sessionId}`);
-      setSessionConnected(sessionId, true);
+      await setSessionConnected(sessionId, true);
       
       // Send initial connection confirmation
       const encoder = new TextEncoder();
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'connected', sessionId })}\n\n`));
       
-      // Poll for new images every second
-      const intervalId = setInterval(() => {
-        const currentSession = getSession(sessionId);
-        
-        // Check if session still exists
-        if (!currentSession) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'session_expired' })}\n\n`));
-          clearInterval(intervalId);
-          controller.close();
-          return;
+      // Poll for new images every 2 seconds (reduced frequency for Supabase)
+      const intervalId = setInterval(async () => {
+        try {
+          const currentSession = await getSession(sessionId);
+          
+          // Check if session still exists
+          if (!currentSession) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'session_expired' })}\n\n`));
+            clearInterval(intervalId);
+            controller.close();
+            return;
+          }
+          
+          // Check for pending images
+          const images = await getPendingImages(sessionId);
+          
+          for (const imageData of images) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'image', data: imageData })}\n\n`));
+          }
+          
+          // Send heartbeat to keep connection alive
+          controller.enqueue(encoder.encode(`: heartbeat\n\n`));
+          
+        } catch (error) {
+          console.error('SSE polling error:', error);
         }
-        
-        // Check for pending images
-        const images = getPendingImages(sessionId);
-        
-        for (const imageData of images) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'image', data: imageData })}\n\n`));
-        }
-        
-        // Send heartbeat to keep connection alive
-        controller.enqueue(encoder.encode(`: heartbeat\n\n`));
-        
-      }, 1000);
+      }, 2000);
       
       // Clean up on close
-      request.signal?.addEventListener('abort', () => {
+      request.signal?.addEventListener('abort', async () => {
         console.log(`SSE connection closed for session ${sessionId}`);
         clearInterval(intervalId);
-        setSessionConnected(sessionId, false);
+        await setSessionConnected(sessionId, false);
       });
     }
   });
@@ -124,7 +124,3 @@ function handleSSE(sessionId: string, request: NextRequest): Response {
     }
   });
 }
-
-// Note: We need a workaround for request.signal in Next.js App Router
-// The above code may need adjustment based on Next.js version
-

@@ -21,8 +21,8 @@ export async function POST(
 ) {
   const { sessionId } = await params;
   
-  // Verify session exists
-  const session = getSession(sessionId);
+  // Verify session exists (now async)
+  const session = await getSession(sessionId);
   
   if (!session) {
     return NextResponse.json(
@@ -31,8 +31,9 @@ export async function POST(
     );
   }
   
-  // Check if session has expired
-  if (session.expiresAt < Date.now()) {
+  // Check if session has expired (compare ISO strings)
+  const expiresAtMs = new Date(session.expires_at).getTime();
+  if (expiresAtMs < Date.now()) {
     return NextResponse.json(
       { error: 'Session has expired' },
       { status: 410 }
@@ -77,7 +78,8 @@ export async function POST(
       
       let uploadedCount = 0;
       for (const imageData of images) {
-        if (addImageToSession(sessionId, imageData)) {
+        // addImageToSession is now async
+        if (await addImageToSession(sessionId, imageData)) {
           uploadedCount++;
         }
       }
@@ -132,8 +134,8 @@ async function processFiles(sessionId: string, files: File[]): Promise<number> {
       const base64 = Buffer.from(arrayBuffer).toString('base64');
       const dataUrl = `data:${file.type};base64,${base64}`;
       
-      // Add to session
-      if (addImageToSession(sessionId, dataUrl)) {
+      // Add to session (now async)
+      if (await addImageToSession(sessionId, dataUrl)) {
         uploadedCount++;
         console.log(`Uploaded image ${file.name} to session ${sessionId}`);
       }
@@ -152,4 +154,3 @@ async function processFiles(sessionId: string, files: File[]): Promise<number> {
  */
 export const maxDuration = 60; // Allow up to 60 seconds for uploads
 export const dynamic = 'force-dynamic';
-

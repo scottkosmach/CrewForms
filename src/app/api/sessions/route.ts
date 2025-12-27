@@ -2,44 +2,27 @@
  * Session Management API
  * 
  * Creates and manages upload sessions for QR code-based image transfer.
- * Sessions are short-lived (5 minutes) and stored in memory.
+ * Sessions are short-lived (5 minutes) and stored in Supabase.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
+import { createClient } from '@/lib/supabase/server';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-interface Session {
+export interface Session {
   id: string;
-  createdAt: number;
-  expiresAt: number;
+  created_at: string;
+  expires_at: string;
   images: string[];  // Base64 images waiting to be relayed
   connected: boolean; // Is extension connected via SSE?
 }
 
-// ============================================================================
-// IN-MEMORY SESSION STORAGE
-// ============================================================================
-
-// In production, use Redis or similar
-const sessions = new Map<string, Session>();
-
 // Session expiry time (5 minutes)
 const SESSION_EXPIRY_MS = 5 * 60 * 1000;
-
-// Clean up expired sessions periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, session] of sessions.entries()) {
-    if (session.expiresAt < now) {
-      sessions.delete(id);
-      console.log(`Session ${id} expired and removed`);
-    }
-  }
-}, 60 * 1000); // Check every minute
 
 // ============================================================================
 // API HANDLERS
@@ -51,19 +34,28 @@ setInterval(() => {
  */
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
+    
     // Generate unique session ID
     const sessionId = nanoid(12);
     
-    // Create session
-    const session: Session = {
-      id: sessionId,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + SESSION_EXPIRY_MS,
-      images: [],
-      connected: false
-    };
+    // Calculate expiry time
+    const expiresAt = new Date(Date.now() + SESSION_EXPIRY_MS).toISOString();
     
-    sessions.set(sessionId, session);
+    // Create session in Supabase
+    const { error } = await supabase
+      .from('upload_sessions')
+      .insert({
+        id: sessionId,
+        expires_at: expiresAt,
+        images: [],
+        connected: false
+      });
+    
+    if (error) {
+      console.error('Failed to create session in Supabase:', error);
+      throw new Error('Failed to create session');
+    }
     
     // Build upload URL
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
@@ -75,7 +67,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       sessionId,
       uploadUrl,
-      expiresAt: session.expiresAt
+      expiresAt
     });
     
   } catch (error) {
@@ -92,65 +84,133 @@ export async function POST(request: NextRequest) {
  * List active sessions (for debugging)
  */
 export async function GET() {
-  const sessionList = Array.from(sessions.values()).map(s => ({
-    id: s.id,
-    createdAt: s.createdAt,
-    expiresAt: s.expiresAt,
-    imageCount: s.images.length,
-    connected: s.connected
-  }));
-  
-  return NextResponse.json({ sessions: sessionList });
+  try {
+    const supabase = await createClient();
+    
+    // Get all non-expired sessions
+    const { data: sessions, error } = await supabase
+      .from('upload_sessions')
+      .select('*')
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      throw error;
+    }
+    
+    const sessionList = (sessions || []).map(s => ({
+      id: s.id,
+      createdAt: s.created_at,
+      expiresAt: s.expires_at,
+      imageCount: (s.images as string[])?.length || 0,
+      connected: s.connected
+    }));
+    
+    return NextResponse.json({ sessions: sessionList });
+    
+  } catch (error) {
+    console.error('Failed to list sessions:', error);
+    return NextResponse.json(
+      { error: 'Failed to list sessions' },
+      { status: 500 }
+    );
+  }
 }
 
 // ============================================================================
-// EXPORTED UTILITIES
+// EXPORTED UTILITIES (for use by other API routes)
 // ============================================================================
 
 /**
  * Get a session by ID
  */
-export function getSession(sessionId: string): Session | undefined {
-  return sessions.get(sessionId);
+export async function getSession(sessionId: string): Promise<Session | null> {
+  const supabase = await createClient();
+  
+  const { data, error } = await supabase
+    .from('upload_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .gt('expires_at', new Date().toISOString())
+    .single();
+  
+  if (error || !data) {
+    return null;
+  }
+  
+  return {
+    id: data.id,
+    created_at: data.created_at,
+    expires_at: data.expires_at,
+    images: (data.images as string[]) || [],
+    connected: data.connected
+  };
 }
 
 /**
  * Add image to session for relay
  */
-export function addImageToSession(sessionId: string, imageData: string): boolean {
-  const session = sessions.get(sessionId);
+export async function addImageToSession(sessionId: string, imageData: string): Promise<boolean> {
+  const supabase = await createClient();
+  
+  // First get current images
+  const session = await getSession(sessionId);
   if (!session) return false;
   
-  session.images.push(imageData);
-  return true;
+  // Append new image
+  const updatedImages = [...session.images, imageData];
+  
+  const { error } = await supabase
+    .from('upload_sessions')
+    .update({ images: updatedImages })
+    .eq('id', sessionId);
+  
+  return !error;
 }
 
 /**
  * Get and clear pending images from session
  */
-export function getPendingImages(sessionId: string): string[] {
-  const session = sessions.get(sessionId);
+export async function getPendingImages(sessionId: string): Promise<string[]> {
+  const supabase = await createClient();
+  
+  // Get current session
+  const session = await getSession(sessionId);
   if (!session) return [];
   
   const images = [...session.images];
-  session.images = [];
+  
+  // Clear images if there are any
+  if (images.length > 0) {
+    await supabase
+      .from('upload_sessions')
+      .update({ images: [] })
+      .eq('id', sessionId);
+  }
+  
   return images;
 }
 
 /**
  * Mark session as connected
  */
-export function setSessionConnected(sessionId: string, connected: boolean): void {
-  const session = sessions.get(sessionId);
-  if (session) {
-    session.connected = connected;
-  }
+export async function setSessionConnected(sessionId: string, connected: boolean): Promise<void> {
+  const supabase = await createClient();
+  
+  await supabase
+    .from('upload_sessions')
+    .update({ connected })
+    .eq('id', sessionId);
 }
 
 /**
  * Delete a session
  */
-export function deleteSession(sessionId: string): void {
-  sessions.delete(sessionId);
+export async function deleteSession(sessionId: string): Promise<void> {
+  const supabase = await createClient();
+  
+  await supabase
+    .from('upload_sessions')
+    .delete()
+    .eq('id', sessionId);
 }
-
