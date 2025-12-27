@@ -14,11 +14,17 @@ import OpenAI from 'openai';
 // CONFIGURATION
 // ============================================================================
 
-// Initialize OpenAI client
-// Requires OPENAI_API_KEY environment variable
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// OpenAI client - lazily initialized to avoid build-time errors
+let openai: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (!openai) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
+  }
+  return openai;
+}
 
 // ============================================================================
 // TYPES
@@ -134,7 +140,8 @@ export async function POST(request: NextRequest) {
     console.log('Processing OCR request...');
     
     // Call OpenAI Vision API
-    const response = await openai.chat.completions.create({
+    const client = getOpenAIClient();
+    const response = await client.chat.completions.create({
       model: 'gpt-4o', // Use gpt-4o for vision capabilities
       messages: [
         {
