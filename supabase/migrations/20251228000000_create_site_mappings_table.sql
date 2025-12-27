@@ -39,26 +39,46 @@ ALTER TABLE site_mappings ENABLE ROW LEVEL SECURITY;
 
 -- Allow all operations (mappings are public by design)
 -- In production, you might want to restrict write access to admins
-CREATE POLICY "Allow read access to site_mappings"
-  ON site_mappings
-  FOR SELECT
-  USING (true);
-
-CREATE POLICY "Allow insert on site_mappings"
-  ON site_mappings
-  FOR INSERT
-  WITH CHECK (true);
-
-CREATE POLICY "Allow update on site_mappings"
-  ON site_mappings
-  FOR UPDATE
-  USING (true)
-  WITH CHECK (true);
-
-CREATE POLICY "Allow delete on site_mappings"
-  ON site_mappings
-  FOR DELETE
-  USING (true);
+-- Using DO block to handle "already exists" case gracefully
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE policyname = 'Allow read access to site_mappings'
+  ) THEN
+    CREATE POLICY "Allow read access to site_mappings"
+      ON site_mappings
+      FOR SELECT
+      USING (true);
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE policyname = 'Allow insert on site_mappings'
+  ) THEN
+    CREATE POLICY "Allow insert on site_mappings"
+      ON site_mappings
+      FOR INSERT
+      WITH CHECK (true);
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE policyname = 'Allow update on site_mappings'
+  ) THEN
+    CREATE POLICY "Allow update on site_mappings"
+      ON site_mappings
+      FOR UPDATE
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE policyname = 'Allow delete on site_mappings'
+  ) THEN
+    CREATE POLICY "Allow delete on site_mappings"
+      ON site_mappings
+      FOR DELETE
+      USING (true);
+  END IF;
+END $$;
 
 -- Comment for documentation
 COMMENT ON TABLE site_mappings IS 'Form field mappings for auto-filling passport data on supported websites.';

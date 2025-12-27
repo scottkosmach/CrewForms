@@ -43,6 +43,7 @@ interface SiteMappingRow {
   name: string;
   url_pattern: string;
   form_type: string;
+  fill_delay: number;
   fields: FieldMapping[];
   created_at: string;
   updated_at: string;
@@ -56,12 +57,13 @@ interface SiteMappingRow {
 /**
  * Convert database row to API response format (camelCase)
  */
-function rowToMapping(row: SiteMappingRow): SiteMapping {
+function rowToMapping(row: SiteMappingRow): SiteMapping & { fillDelay: number } {
   return {
     id: row.id,
     name: row.name,
     urlPattern: row.url_pattern,
     formType: row.form_type as 'static' | 'dynamic-guest-blocks',
+    fillDelay: row.fill_delay ?? 100, // Default 100ms if not set
     fields: row.fields,
     createdAt: new Date(row.created_at).getTime(),
     updatedAt: new Date(row.updated_at).getTime(),
@@ -238,6 +240,7 @@ export async function POST(request: NextRequest) {
         name: body.name,
         url_pattern: body.urlPattern,
         form_type: body.formType || 'static',
+        fill_delay: body.fillDelay ?? 100,
         fields: body.fields,
         version: 1
       })
@@ -303,6 +306,7 @@ export async function PUT(request: NextRequest) {
         name: body.name || existing.name,
         url_pattern: body.urlPattern || existing.url_pattern,
         form_type: body.formType || existing.form_type,
+        fill_delay: body.fillDelay ?? existing.fill_delay ?? 100,
         fields: body.fields || existing.fields,
         updated_at: new Date().toISOString(),
         version: existing.version + 1

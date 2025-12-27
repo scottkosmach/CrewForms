@@ -1397,6 +1397,10 @@ function setupPasteAction() {
       return;
     }
     
+    // Log data being sent for debugging
+    console.log('[SidePanel] Sending paste data:', JSON.stringify(data, null, 2));
+    console.log('[SidePanel] Using mapping:', mappingResult.mapping.name, 'with', mappingResult.mapping.fields?.length, 'fields');
+    
     // Send fill command
     const fillResult = await sendMessage({
       type: 'FILL_FORM',
@@ -1405,8 +1409,27 @@ function setupPasteAction() {
       mapping: mappingResult.mapping
     });
     
+    console.log('[SidePanel] Fill result:', fillResult);
+    
     if (fillResult.success) {
-      showToast(`Filled ${fillResult.filledCount} fields`, 'success');
+      // Show detailed feedback
+      let message = `Filled ${fillResult.filledCount}`;
+      if (fillResult.totalMapped) {
+        message += `/${fillResult.totalMapped}`;
+      }
+      message += ' fields';
+      
+      if (fillResult.skipped > 0) {
+        message += ` (${fillResult.skipped} skipped - no data)`;
+      }
+      
+      if (fillResult.filledCount === 0) {
+        showToast(message + ' - check console for details', 'warning');
+      } else if (fillResult.errors && fillResult.errors.length > 0) {
+        showToast(message + ' with some errors', 'warning');
+      } else {
+        showToast(message, 'success');
+      }
     } else {
       showToast('Failed to fill form: ' + fillResult.error, 'error');
     }
@@ -1900,10 +1923,12 @@ async function editExistingMapping(mappingId) {
     const mappingUrl = document.getElementById('mappingUrl');
     const mappingName = document.getElementById('mappingName');
     const mappingFormType = document.getElementById('mappingFormType');
+    const mappingFillDelay = document.getElementById('mappingFillDelay');
     
     if (mappingUrl) mappingUrl.value = mapping.urlPattern;
     if (mappingName) mappingName.value = mapping.name;
     if (mappingFormType) mappingFormType.value = mapping.formType;
+    if (mappingFillDelay) mappingFillDelay.value = mapping.fillDelay || 100;
     
     // Show the field list UI
     document.getElementById('adminEmptyState')?.classList.add('hidden');
@@ -2488,6 +2513,7 @@ async function saveMapping() {
   const mappingName = document.getElementById('mappingName').value.trim();
   const mappingUrl = document.getElementById('mappingUrl').value.trim();
   const formType = document.getElementById('mappingFormType').value;
+  const fillDelay = parseInt(document.getElementById('mappingFillDelay').value) || 100;
   
   if (!mappingName) {
     showToast('Please enter a mapping name', 'warning');
@@ -2555,6 +2581,7 @@ async function saveMapping() {
     name: mappingName,
     urlPattern: mappingUrl,
     formType,
+    fillDelay,
     fields
   };
   

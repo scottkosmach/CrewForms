@@ -366,6 +366,12 @@ body {
   color: var(--color-gray-400);
 }
 
+.form-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+  margin-top: var(--spacing-xs);
+}
+
 .form-row {
   display: flex;
   gap: var(--spacing-md);

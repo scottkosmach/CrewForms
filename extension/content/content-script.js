@@ -343,13 +343,22 @@ function findLabelFor(element) {
 
 /**
  * Fill form fields based on data and mapping
+ * 
+ * Added delay between fields to allow Angular/React forms to process changes.
+ * Default delay is 100ms but can be configured via mapping.fillDelay
  */
 async function handleFillFields(data, mapping) {
+  console.log('[CrewForms] handleFillFields called');
+  console.log('[CrewForms] Data received:', JSON.stringify(data, null, 2));
+  console.log('[CrewForms] Mapping fields count:', mapping?.fields?.length);
+  
   if (!focusedElement) {
-    return { success: false, error: 'No field is currently focused' };
+    console.error('[CrewForms] No field is currently focused');
+    return { success: false, error: 'No field is currently focused. Click on a form field first.' };
   }
   
   if (!mapping || !mapping.fields) {
+    console.error('[CrewForms] No field mapping provided');
     return { success: false, error: 'No field mapping provided' };
   }
   
@@ -357,39 +366,89 @@ async function handleFillFields(data, mapping) {
     // Find the form block starting from focused element
     // Pass formType to determine static vs dynamic-guest-blocks behavior
     const formBlock = findFormBlock(focusedElement, mapping.formType);
+    console.log('[CrewForms] Form block found:', formBlock.tagName, formBlock.className);
+    
     // Must match selector in scanAllFormFields() for consistent field positions!
     // Includes Angular Material mat-select and custom dropdown components.
     const fields = formBlock.querySelectorAll(
       'input, select, textarea, mat-select, [role="combobox"], [role="listbox"]'
     );
+    console.log('[CrewForms] Total fields in form block:', fields.length);
     
     let filledCount = 0;
+    const errors = [];
+    const skipped = [];
+    
+    // Delay between field fills (default 100ms for Angular/React forms)
+    // Can be configured per-mapping via mapping.fillDelay
+    const fillDelay = mapping.fillDelay || 100;
+    console.log('[CrewForms] Using fill delay:', fillDelay, 'ms');
     
     // Fill each mapped field
     for (const fieldMapping of mapping.fields) {
       const fieldIndex = fieldMapping.position - 1; // Convert 1-based to 0-based
       
-      if (fieldIndex >= 0 && fieldIndex < fields.length) {
-        const field = fields[fieldIndex];
+      if (fieldIndex < 0 || fieldIndex >= fields.length) {
+        const msg = `Field #${fieldMapping.position} not found (index ${fieldIndex}, total: ${fields.length})`;
+        console.warn('[CrewForms]', msg);
+        errors.push({ position: fieldMapping.position, error: msg });
+        continue;
+      }
+      
+      const field = fields[fieldIndex];
+      
+      // Get value based on field status (data vs static)
+      let value;
+      if (fieldMapping.status === 'static') {
+        value = fieldMapping.staticValue;
+        console.log(`[CrewForms] Field #${fieldMapping.position}: static value = "${value}"`);
+      } else {
+        value = getValueFromData(data, fieldMapping.dataSource);
+        console.log(`[CrewForms] Field #${fieldMapping.position}: dataSource = "${fieldMapping.dataSource}", value = "${value}"`);
+      }
+      
+      if (value === undefined || value === null || value === '') {
+        const msg = `No value for field #${fieldMapping.position} (dataSource: ${fieldMapping.dataSource})`;
+        console.log('[CrewForms]', msg);
+        skipped.push({ position: fieldMapping.position, reason: 'empty value', dataSource: fieldMapping.dataSource });
+        continue;
+      }
+      
+      try {
+        // Fill the field
+        await fillField(field, value, fieldMapping);
+        filledCount++;
+        console.log(`[CrewForms] ✓ Field #${fieldMapping.position} filled successfully`);
         
-        // Get value based on field status (data vs static)
-        let value;
-        if (fieldMapping.status === 'static') {
-          value = fieldMapping.staticValue;
-        } else {
-          value = getValueFromData(data, fieldMapping.dataSource);
+        // Add delay between fields to allow form frameworks to process changes
+        // This is critical for Angular Material and other reactive frameworks
+        if (fillDelay > 0) {
+          await sleep(fillDelay);
         }
-        
-        if (value !== undefined && value !== null && value !== '') {
-          await fillField(field, value, fieldMapping);
-          filledCount++;
-        }
+      } catch (fieldError) {
+        const msg = `Error filling field #${fieldMapping.position}: ${fieldError.message}`;
+        console.error('[CrewForms]', msg);
+        errors.push({ position: fieldMapping.position, error: fieldError.message });
       }
     }
     
-    return { success: true, filledCount };
+    console.log(`[CrewForms] Fill complete: ${filledCount}/${mapping.fields.length} fields filled`);
+    if (skipped.length > 0) {
+      console.log('[CrewForms] Skipped fields:', skipped);
+    }
+    if (errors.length > 0) {
+      console.log('[CrewForms] Errors:', errors);
+    }
+    
+    return { 
+      success: true, 
+      filledCount,
+      totalMapped: mapping.fields.length,
+      skipped: skipped.length,
+      errors: errors.length > 0 ? errors : undefined
+    };
   } catch (error) {
-    console.error('Error filling fields:', error);
+    console.error('[CrewForms] Error filling fields:', error);
     return { success: false, error: error.message };
   }
 }
@@ -666,8 +725,15 @@ async function fillClickSelect(field, value, config) {
 
 /**
  * Fill a text input field
+ * 
+ * Focuses the field first to ensure Angular/React forms recognize the change.
+ * Uses a small delay after focus for framework change detection.
  */
 async function fillTextField(field, value) {
+  // Focus the field first - critical for Angular reactive forms
+  field.focus();
+  await sleep(10);
+  
   // Clear existing value
   field.value = '';
   
@@ -676,14 +742,61 @@ async function fillTextField(field, value) {
   
   // Trigger events to notify any listeners
   triggerInputEvents(field);
+  
+  // Small delay after events for framework processing
+  await sleep(10);
 }
 
 /**
  * Fill a select dropdown by matching option text or value
+ * 
+ * Handles both native <select> elements and Angular Material mat-select.
  */
 async function fillSelectMatch(field, value) {
-  const options = field.options;
   const searchValue = String(value).toLowerCase();
+  console.log(`[CrewForms] fillSelectMatch: searching for "${value}"`);
+  
+  // Check if this is an Angular Material mat-select
+  if (field.tagName.toLowerCase() === 'mat-select' || field.getAttribute('role') === 'combobox') {
+    console.log('[CrewForms] Detected Angular Material mat-select');
+    
+    // Click to open the dropdown
+    field.click();
+    await sleep(200); // Wait for dropdown animation
+    
+    // Find the overlay panel with options
+    const panel = document.querySelector('.mat-select-panel, .cdk-overlay-pane [role="listbox"]');
+    if (panel) {
+      const options = panel.querySelectorAll('mat-option, [role="option"]');
+      console.log(`[CrewForms] Found ${options.length} options in mat-select panel`);
+      
+      for (const option of options) {
+        const optionText = option.textContent.trim().toLowerCase();
+        
+        if (optionText === searchValue || optionText.includes(searchValue)) {
+          console.log(`[CrewForms] Clicking option: "${option.textContent.trim()}"`);
+          option.click();
+          await sleep(50);
+          triggerInputEvents(field);
+          return;
+        }
+      }
+      
+      // If no match found, close the dropdown by pressing Escape
+      await simulateKeypress(field, 'Escape');
+      console.warn(`[CrewForms] No matching mat-option found for: ${value}`);
+    } else {
+      console.warn('[CrewForms] Could not find mat-select panel');
+    }
+    return;
+  }
+  
+  // Native <select> element handling
+  const options = field.options;
+  if (!options) {
+    console.warn('[CrewForms] Field has no options property');
+    return;
+  }
   
   // Try to find matching option
   for (let i = 0; i < options.length; i++) {
@@ -697,11 +810,12 @@ async function fillSelectMatch(field, value) {
         optionValue.includes(searchValue)) {
       field.selectedIndex = i;
       triggerInputEvents(field);
+      console.log(`[CrewForms] Selected option: "${option.text}"`);
       return;
     }
   }
   
-  console.warn(`No matching option found for: ${value}`);
+  console.warn(`[CrewForms] No matching option found for: ${value}`);
 }
 
 /**
@@ -1335,4 +1449,5 @@ function updateZoomDisplay() {
 // ============================================================================
 
 initialize();
+
 
