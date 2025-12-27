@@ -1,0 +1,89 @@
+---
+description: Choosing between Vercel and Supabase Edge Functions
+globs: ["**/app/api/**", "**/supabase/functions/**"]
+alwaysApply: false
+---
+3 character code: svl
+
+
+# Serverless Functions: Vercel vs Supabase Edge
+
+## Decision Guide
+
+**Choose the right serverless platform based on your use case:**
+
+| Use Case | Platform | Why |
+|----------|----------|-----|
+| App request/response flow | Vercel | Tight Next.js integration |
+| Complex business logic | Vercel | Full Node.js + npm ecosystem |
+| Form handling & mutations | Vercel | Server Actions support |
+| Database triggers | Supabase Edge | Direct DB event access |
+| Scheduled jobs (cron) | Supabase Edge | Built-in scheduling |
+| External webhooks | Supabase Edge | Decoupled from app |
+| Ultra-low latency globally | Supabase Edge | Edge runtime worldwide |
+
+
+## Rule of Thumb
+
+- **Part of app's request/response flow** → Vercel (Next.js API routes)
+- **Reacting to events** (DB changes, webhooks, cron) → Supabase Edge
+- **Need Node.js packages** → Vercel
+- **Need ultra-low latency globally** → Supabase Edge
+
+
+## Platform Comparison
+
+### Vercel (Next.js API Routes)
+
+**Location:** `src/app/api/`
+
+**Runtime:** Node.js
+
+**Best for:**
+- OCR processing, AI/ML calls (like our `/api/ocr`)
+- Session management tied to the app (like our `/api/sessions`)
+- Authenticated endpoints using Next.js middleware
+- Anything needing npm packages
+
+**Refer to:** `api-routes.mdc` for implementation patterns
+
+
+### Supabase Edge Functions
+
+**Location:** `supabase/functions/`
+
+**Runtime:** Deno (not Node.js)
+
+**Best for:**
+- Webhook receivers (Stripe, GitHub, etc.)
+- Scheduled cleanup tasks
+- Database-triggered actions
+- Standalone microservices
+
+**Refer to:** `supabase-functions.mdc` for implementation patterns
+
+
+## Current Project Usage
+
+| Route | Platform | Purpose |
+|-------|----------|---------|
+| `/api/sessions` | Vercel | QR code session management |
+| `/api/ocr` | Vercel | Passport OCR via OpenAI |
+| `/api/mappings` | Vercel | Form field mapping CRUD |
+| `hello-world` | Supabase Edge | Connectivity test only |
+
+
+## When to Add New Functions
+
+**Add to Vercel (`src/app/api/`) when:**
+- The function serves the Next.js frontend directly
+- You need to use npm packages (OpenAI, Stripe SDK, etc.)
+- The function is part of the user's request flow
+- You need Next.js features (cookies, headers, redirects)
+
+**Add to Supabase Edge (`supabase/functions/`) when:**
+- The function should run independently of the app
+- You're handling webhooks from external services
+- You need scheduled/cron execution
+- You want the function closer to users globally
+- The function reacts to database events

@@ -122,11 +122,12 @@ project/
 - Handling webhooks
 - Validating request data
 
-### Reference `supabase-functions.mdc` when:
-- Creating Edge Functions (Deno)
-- Implementing scheduled jobs
-- Building webhook handlers
-- Calling external APIs from the server
+### Reference `serverless-functions.mdc` when:
+- Deciding between Vercel API routes vs Supabase Edge Functions
+- Adding new serverless functionality
+- Understanding which platform fits your use case
+
+(Then follow its guidance to `api-routes.mdc` or `supabase-functions.mdc` for implementation details)
 
 ### Reference `supabase-storage.mdc` when:
 - Handling file uploads/downloads
