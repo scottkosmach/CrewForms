@@ -407,12 +407,20 @@ async function handleFillFields(data, mapping) {
         console.log(`[CrewForms] Field #${fieldMapping.position}: dataSource = "${fieldMapping.dataSource}", value = "${value}"`);
       }
       
-      if (value === undefined || value === null || value === '') {
+      // For select-keypress with a configured keypressMap, we execute keystrokes even if value is empty
+      // because the keystrokes themselves are the "value" (e.g., press 'p' then 'Enter' to select "Passenger")
+      const hasKeypressConfig = fieldMapping.inputType === 'select-keypress' && 
+                                fieldMapping.config?.keypressMap && 
+                                Object.keys(fieldMapping.config.keypressMap).length > 0;
+      
+      if ((value === undefined || value === null || value === '') && !hasKeypressConfig) {
         const msg = `No value for field #${fieldMapping.position} (dataSource: ${fieldMapping.dataSource})`;
         console.log('[CrewForms]', msg);
         skipped.push({ position: fieldMapping.position, reason: 'empty value', dataSource: fieldMapping.dataSource });
         continue;
       }
+      
+      console.log(`[CrewForms] Field #${fieldMapping.position}: hasKeypressConfig=${hasKeypressConfig}`);
       
       try {
         // Fill the field
