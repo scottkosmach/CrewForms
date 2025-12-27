@@ -12,8 +12,8 @@
 // CONSTANTS
 // ============================================================================
 
-// Server URL - update this when deploying
-const SERVER_URL = 'http://localhost:3000';
+// Server URL - points to the Vercel deployment
+const SERVER_URL = 'https://crewforms.vercel.app';
 
 // Data expiry time in milliseconds (12 hours)
 const DATA_EXPIRY_MS = 12 * 60 * 60 * 1000;
