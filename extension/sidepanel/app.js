@@ -2063,6 +2063,9 @@ function renderFieldList() {
   const fields = state.scannedFields;
   countEl.textContent = `${fields.length} fields found`;
   
+  // Debug: log field configs before rendering
+  console.log('Rendering field list. Field configs:', JSON.stringify(state.fieldConfigs, null, 2));
+  
   container.innerHTML = fields.map(field => renderFieldItem(field)).join('');
   
   // Add event listeners for field status changes
@@ -2138,11 +2141,21 @@ function renderFieldList() {
  */
 function renderFieldItem(field) {
   const config = state.fieldConfigs[field.position] || {};
+  // Ensure status has a default value
+  const status = config.status || 'unmapped';
   const isDisabled = field.isDisabled;
-  const isMapped = config.status === 'data' || config.status === 'static';
+  const isMapped = status === 'data' || status === 'static';
+  
+  // Debug log for each field being rendered
+  if (status !== 'unmapped') {
+    console.log(`Rendering field #${field.position} with status: ${status}`);
+  }
+  
+  // Pass the normalized status to config for renderFieldConfigDetails
+  const configWithStatus = { ...config, status };
   
   return `
-    <div class="field-item ${config.status === 'ignore' ? 'ignore' : ''}" data-position="${field.position}">
+    <div class="field-item ${status === 'ignore' ? 'ignore' : ''}" data-position="${field.position}">
       <div class="field-header">
         <span class="field-position">#${field.position}</span>
         <span class="field-label">${field.label || field.name || field.formControlName || 'Unlabeled'}</span>
@@ -2152,13 +2165,13 @@ function renderFieldItem(field) {
       <div class="field-config">
         <div class="field-config-row">
           <select class="field-status" data-position="${field.position}">
-            <option value="unmapped" ${config.status === 'unmapped' ? 'selected' : ''}>Unmapped</option>
-            <option value="ignore" ${config.status === 'ignore' ? 'selected' : ''}>Ignore</option>
-            <option value="data" ${config.status === 'data' ? 'selected' : ''}>Map to Data</option>
-            <option value="static" ${config.status === 'static' ? 'selected' : ''}>Static Value</option>
+            <option value="unmapped" ${status === 'unmapped' ? 'selected' : ''}>Unmapped</option>
+            <option value="ignore" ${status === 'ignore' ? 'selected' : ''}>Ignore</option>
+            <option value="data" ${status === 'data' ? 'selected' : ''}>Map to Data</option>
+            <option value="static" ${status === 'static' ? 'selected' : ''}>Static Value</option>
           </select>
         </div>
-        ${renderFieldConfigDetails(field, config)}
+        ${renderFieldConfigDetails(field, configWithStatus)}
       </div>
     </div>
   `;
