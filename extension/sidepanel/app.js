@@ -190,6 +190,16 @@ function handleBackgroundMessage(message) {
       // OCR processing complete
       handleOcrComplete(message.travelerId, message.data);
       break;
+    
+    case 'IMAGE_OVERLAY_CLOSED':
+      // Image overlay was closed by user, collapse expanded card
+      const expandedCard = document.querySelector('.traveler-card.expanded');
+      if (expandedCard) {
+        expandedCard.classList.remove('expanded');
+        const btn = expandedCard.querySelector('.toggle-traveler');
+        if (btn) btn.textContent = 'Details';
+      }
+      break;
   }
 }
 
@@ -894,62 +904,110 @@ function renderTravelerList() {
             <button class="btn btn-sm btn-secondary toggle-traveler" data-id="${traveler.id}">
               ${traveler.expanded ? 'Hide' : 'Details'}
             </button>
-            <button class="btn btn-sm btn-danger delete-traveler" data-id="${traveler.id}">×</button>
           </div>
         </div>
         <div class="traveler-card-body">
-          ${imageData ? `<img class="traveler-image-full" src="${imageData.data}" alt="Passport">` : ''}
-          <div class="traveler-fields">
+          <div class="traveler-details-actions">
+            <button class="btn btn-sm btn-secondary edit-traveler" data-id="${traveler.id}">✎ Edit</button>
+            <button class="btn btn-sm btn-success save-traveler hidden" data-id="${traveler.id}">Save</button>
+            <button class="btn btn-sm btn-secondary cancel-edit hidden" data-id="${traveler.id}">Cancel</button>
+          </div>
+          <div class="traveler-fields" data-id="${traveler.id}">
             <div class="traveler-field">
               <div class="traveler-field-label">First Name</div>
-              <div class="traveler-field-value">${traveler.firstName || '-'}</div>
+              <div class="traveler-field-value" data-field="firstName">${traveler.firstName || '-'}</div>
+              <input class="traveler-field-input hidden" data-field="firstName" type="text" value="${traveler.firstName || ''}">
+            </div>
+            <div class="traveler-field">
+              <div class="traveler-field-label">Middle Name</div>
+              <div class="traveler-field-value" data-field="middleName">${traveler.middleName || '-'}</div>
+              <input class="traveler-field-input hidden" data-field="middleName" type="text" value="${traveler.middleName || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Last Name</div>
-              <div class="traveler-field-value">${traveler.lastName || '-'}</div>
+              <div class="traveler-field-value" data-field="lastName">${traveler.lastName || '-'}</div>
+              <input class="traveler-field-input hidden" data-field="lastName" type="text" value="${traveler.lastName || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Passport #</div>
-              <div class="traveler-field-value">${traveler.passportNumber || '-'}</div>
+              <div class="traveler-field-value" data-field="passportNumber">${traveler.passportNumber || '-'}</div>
+              <input class="traveler-field-input hidden" data-field="passportNumber" type="text" value="${traveler.passportNumber || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Nationality</div>
-              <div class="traveler-field-value">${traveler.nationality || '-'}</div>
+              <div class="traveler-field-value" data-field="nationality">${traveler.nationality || '-'}</div>
+              <input class="traveler-field-input hidden" data-field="nationality" type="text" value="${traveler.nationality || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Birth</div>
-              <div class="traveler-field-value">
+              <div class="traveler-field-value" data-field="dateOfBirth">
                 ${formatDateObj(traveler.dateOfBirth)}
+              </div>
+              <div class="traveler-date-inputs hidden" data-field="dateOfBirth">
+                <input class="traveler-field-input date-part" data-part="day" type="text" placeholder="DD" maxlength="2" value="${traveler.dateOfBirth?.day || ''}">
+                <span>/</span>
+                <input class="traveler-field-input date-part" data-part="month" type="text" placeholder="MM" maxlength="2" value="${traveler.dateOfBirth?.month || ''}">
+                <span>/</span>
+                <input class="traveler-field-input date-part" data-part="year" type="text" placeholder="YYYY" maxlength="4" value="${traveler.dateOfBirth?.year || ''}">
               </div>
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Gender</div>
-              <div class="traveler-field-value">${traveler.gender || '-'}</div>
+              <div class="traveler-field-value" data-field="gender">${traveler.gender || '-'}</div>
+              <select class="traveler-field-input hidden" data-field="gender">
+                <option value="" ${!traveler.gender ? 'selected' : ''}>-</option>
+                <option value="M" ${traveler.gender === 'M' ? 'selected' : ''}>M</option>
+                <option value="F" ${traveler.gender === 'F' ? 'selected' : ''}>F</option>
+              </select>
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Issue</div>
-              <div class="traveler-field-value">
+              <div class="traveler-field-value" data-field="dateOfIssue">
                 ${formatDateObj(traveler.dateOfIssue || {})}
+              </div>
+              <div class="traveler-date-inputs hidden" data-field="dateOfIssue">
+                <input class="traveler-field-input date-part" data-part="day" type="text" placeholder="DD" maxlength="2" value="${traveler.dateOfIssue?.day || ''}">
+                <span>/</span>
+                <input class="traveler-field-input date-part" data-part="month" type="text" placeholder="MM" maxlength="2" value="${traveler.dateOfIssue?.month || ''}">
+                <span>/</span>
+                <input class="traveler-field-input date-part" data-part="year" type="text" placeholder="YYYY" maxlength="4" value="${traveler.dateOfIssue?.year || ''}">
               </div>
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Expiry</div>
-              <div class="traveler-field-value">
+              <div class="traveler-field-value" data-field="dateOfExpiry">
                 ${formatDateObj(traveler.dateOfExpiry || {})}
+              </div>
+              <div class="traveler-date-inputs hidden" data-field="dateOfExpiry">
+                <input class="traveler-field-input date-part" data-part="day" type="text" placeholder="DD" maxlength="2" value="${traveler.dateOfExpiry?.day || ''}">
+                <span>/</span>
+                <input class="traveler-field-input date-part" data-part="month" type="text" placeholder="MM" maxlength="2" value="${traveler.dateOfExpiry?.month || ''}">
+                <span>/</span>
+                <input class="traveler-field-input date-part" data-part="year" type="text" placeholder="YYYY" maxlength="4" value="${traveler.dateOfExpiry?.year || ''}">
               </div>
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Place of Birth</div>
-              <div class="traveler-field-value">${traveler.placeOfBirth || '-'}</div>
+              <div class="traveler-field-value" data-field="placeOfBirth">${traveler.placeOfBirth || '-'}</div>
+              <input class="traveler-field-input hidden" data-field="placeOfBirth" type="text" value="${traveler.placeOfBirth || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Issuing Authority</div>
-              <div class="traveler-field-value">${traveler.issuingAuthority || '-'}</div>
+              <div class="traveler-field-value" data-field="issuingAuthority">${traveler.issuingAuthority || '-'}</div>
+              <input class="traveler-field-input hidden" data-field="issuingAuthority" type="text" value="${traveler.issuingAuthority || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Passport Type</div>
-              <div class="traveler-field-value">${traveler.passportType || '-'}</div>
+              <div class="traveler-field-value" data-field="passportType">${traveler.passportType || '-'}</div>
+              <select class="traveler-field-input hidden" data-field="passportType">
+                <option value="" ${!traveler.passportType ? 'selected' : ''}>-</option>
+                <option value="passport" ${traveler.passportType === 'passport' ? 'selected' : ''}>Passport</option>
+                <option value="passport card" ${traveler.passportType === 'passport card' ? 'selected' : ''}>Passport Card</option>
+              </select>
             </div>
+          </div>
+          <div class="traveler-delete-section">
+            <button class="btn btn-danger delete-traveler-bottom" data-id="${traveler.id}">🗑 Delete Traveler</button>
           </div>
         </div>
       </div>
@@ -964,10 +1022,37 @@ function renderTravelerList() {
     });
   });
   
-  list.querySelectorAll('.delete-traveler').forEach(btn => {
+  // Delete button (now at bottom of details)
+  list.querySelectorAll('.delete-traveler-bottom').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      deleteTraveler(btn.dataset.id);
+      if (confirm('Are you sure you want to delete this traveler?')) {
+        deleteTraveler(btn.dataset.id);
+      }
+    });
+  });
+  
+  // Edit button
+  list.querySelectorAll('.edit-traveler').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      enterEditMode(btn.dataset.id);
+    });
+  });
+  
+  // Save button
+  list.querySelectorAll('.save-traveler').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      saveEditedTraveler(btn.dataset.id);
+    });
+  });
+  
+  // Cancel button
+  list.querySelectorAll('.cancel-edit').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      exitEditMode(btn.dataset.id);
     });
   });
   
@@ -996,14 +1081,37 @@ function formatDateObj(dateObj) {
 function toggleTravelerCard(id) {
   const card = document.querySelector(`.traveler-card[data-id="${id}"]`);
   if (card) {
+    const wasExpanded = card.classList.contains('expanded');
+    
+    // Collapse all other cards first
+    document.querySelectorAll('.traveler-card.expanded').forEach(c => {
+      if (c !== card) {
+        c.classList.remove('expanded');
+        c.querySelector('.toggle-traveler').textContent = 'Details';
+      }
+    });
+    
+    // Toggle this card
     card.classList.toggle('expanded');
+    const isExpanded = card.classList.contains('expanded');
     const btn = card.querySelector('.toggle-traveler');
-    btn.textContent = card.classList.contains('expanded') ? 'Hide' : 'Details';
+    btn.textContent = isExpanded ? 'Hide' : 'Details';
+    
+    // Show/hide image overlay based on expanded state
+    if (isExpanded) {
+      const imageData = state.travelerImages[id];
+      if (imageData) {
+        showImageOverlayOnPage(imageData.data);
+      }
+    } else {
+      hideImageOverlayOnPage();
+    }
   }
 }
 
 async function deleteTraveler(id) {
-  if (!confirm('Are you sure you want to delete this traveler?')) return;
+  // Hide image overlay when deleting
+  hideImageOverlayOnPage();
   
   state.travelers = state.travelers.filter(t => t.id !== id);
   delete state.travelerImages[id];
@@ -1016,6 +1124,165 @@ async function deleteTraveler(id) {
   renderTravelerList();
   updatePasteSourceOptions();
   showToast('Traveler deleted', 'success');
+}
+
+// ============================================================================
+// EDIT MODE
+// ============================================================================
+
+/**
+ * Enter edit mode for a traveler
+ */
+function enterEditMode(travelerId) {
+  const card = document.querySelector(`.traveler-card[data-id="${travelerId}"]`);
+  if (!card) return;
+  
+  // Show/hide appropriate buttons
+  card.querySelector('.edit-traveler').classList.add('hidden');
+  card.querySelector('.save-traveler').classList.remove('hidden');
+  card.querySelector('.cancel-edit').classList.remove('hidden');
+  
+  // Show inputs, hide values
+  const fieldsContainer = card.querySelector('.traveler-fields');
+  fieldsContainer.querySelectorAll('.traveler-field-value').forEach(el => {
+    el.classList.add('hidden');
+  });
+  fieldsContainer.querySelectorAll('.traveler-field-input').forEach(el => {
+    el.classList.remove('hidden');
+  });
+  fieldsContainer.querySelectorAll('.traveler-date-inputs').forEach(el => {
+    el.classList.remove('hidden');
+  });
+  
+  // Add editing class to card
+  card.classList.add('editing');
+}
+
+/**
+ * Exit edit mode without saving
+ */
+function exitEditMode(travelerId) {
+  const card = document.querySelector(`.traveler-card[data-id="${travelerId}"]`);
+  if (!card) return;
+  
+  // Show/hide appropriate buttons
+  card.querySelector('.edit-traveler').classList.remove('hidden');
+  card.querySelector('.save-traveler').classList.add('hidden');
+  card.querySelector('.cancel-edit').classList.add('hidden');
+  
+  // Hide inputs, show values
+  const fieldsContainer = card.querySelector('.traveler-fields');
+  fieldsContainer.querySelectorAll('.traveler-field-value').forEach(el => {
+    el.classList.remove('hidden');
+  });
+  fieldsContainer.querySelectorAll('.traveler-field-input').forEach(el => {
+    el.classList.add('hidden');
+  });
+  fieldsContainer.querySelectorAll('.traveler-date-inputs').forEach(el => {
+    el.classList.add('hidden');
+  });
+  
+  // Remove editing class
+  card.classList.remove('editing');
+  
+  // Re-render to reset any input values
+  renderTravelerList();
+}
+
+/**
+ * Save edited traveler data
+ */
+async function saveEditedTraveler(travelerId) {
+  const card = document.querySelector(`.traveler-card[data-id="${travelerId}"]`);
+  if (!card) return;
+  
+  const traveler = state.travelers.find(t => t.id === travelerId);
+  if (!traveler) return;
+  
+  const fieldsContainer = card.querySelector('.traveler-fields');
+  
+  // Collect simple text fields
+  const simpleFields = ['firstName', 'middleName', 'lastName', 'passportNumber', 'nationality', 'placeOfBirth', 'issuingAuthority'];
+  simpleFields.forEach(field => {
+    const input = fieldsContainer.querySelector(`input[data-field="${field}"]`);
+    if (input) {
+      traveler[field] = input.value.trim() || '';
+    }
+  });
+  
+  // Collect select fields
+  const selectFields = ['gender', 'passportType'];
+  selectFields.forEach(field => {
+    const select = fieldsContainer.querySelector(`select[data-field="${field}"]`);
+    if (select) {
+      traveler[field] = select.value || '';
+    }
+  });
+  
+  // Collect date fields
+  const dateFields = ['dateOfBirth', 'dateOfIssue', 'dateOfExpiry'];
+  dateFields.forEach(field => {
+    const dateInputs = fieldsContainer.querySelector(`.traveler-date-inputs[data-field="${field}"]`);
+    if (dateInputs) {
+      const day = dateInputs.querySelector('input[data-part="day"]')?.value.trim() || '';
+      const month = dateInputs.querySelector('input[data-part="month"]')?.value.trim() || '';
+      const year = dateInputs.querySelector('input[data-part="year"]')?.value.trim() || '';
+      traveler[field] = { day, month, year };
+    }
+  });
+  
+  // Save to storage
+  await setStorage({ travelers: state.travelers });
+  
+  // Exit edit mode and re-render
+  exitEditMode(travelerId);
+  renderTravelerList();
+  updatePasteSourceOptions();
+  
+  showToast('Traveler data saved', 'success');
+}
+
+// ============================================================================
+// IMAGE OVERLAY MESSAGING
+// ============================================================================
+
+/**
+ * Send message to content script to show image overlay
+ */
+async function showImageOverlayOnPage(imageData) {
+  try {
+    // Get the active tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+    
+    // Send message to content script
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'SHOW_IMAGE_OVERLAY',
+      imageData: imageData
+    });
+  } catch (error) {
+    console.log('Could not show image overlay:', error.message);
+    // Content script might not be loaded on this page
+  }
+}
+
+/**
+ * Send message to content script to hide image overlay
+ */
+async function hideImageOverlayOnPage() {
+  try {
+    // Get the active tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+    
+    // Send message to content script
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'HIDE_IMAGE_OVERLAY'
+    });
+  } catch (error) {
+    console.log('Could not hide image overlay:', error.message);
+    // Content script might not be loaded on this page
+  }
 }
 
 /**

@@ -18,6 +18,16 @@ let focusedElement = null;
 // Current field mapping for this page (if any)
 let currentMapping = null;
 
+// Image overlay state
+let imageOverlay = null;
+let overlayState = {
+  rotation: 0,      // Current rotation in degrees (0, 90, 180, 270)
+  zoom: 1,          // Current zoom level (1x to 5x)
+  isPanning: false, // Currently panning the image
+  panStart: { x: 0, y: 0 },
+  panOffset: { x: 0, y: 0 }
+};
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -145,6 +155,16 @@ function handleMessage(message, sender, sendResponse) {
     
     case 'SET_MAPPING':
       currentMapping = message.mapping;
+      sendResponse({ success: true });
+      break;
+    
+    case 'SHOW_IMAGE_OVERLAY':
+      showImageOverlay(message.imageData);
+      sendResponse({ success: true });
+      break;
+    
+    case 'HIDE_IMAGE_OVERLAY':
+      hideImageOverlay();
       sendResponse({ success: true });
       break;
     
@@ -536,6 +556,354 @@ async function simulateKeypress(element, key) {
  */
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ============================================================================
+// IMAGE OVERLAY
+// ============================================================================
+
+/**
+ * Inject overlay styles into the page
+ */
+function injectOverlayStyles() {
+  if (document.getElementById('crewforms-overlay-styles')) return;
+  
+  const styles = document.createElement('style');
+  styles.id = 'crewforms-overlay-styles';
+  styles.textContent = `
+    #crewforms-image-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 2147483646;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    
+    #crewforms-image-container {
+      position: relative;
+      max-width: 90vw;
+      max-height: 90vh;
+      overflow: hidden;
+      cursor: grab;
+    }
+    
+    #crewforms-image-container.panning {
+      cursor: grabbing;
+    }
+    
+    #crewforms-passport-image {
+      max-width: 90vw;
+      max-height: 90vh;
+      object-fit: contain;
+      transition: transform 0.2s ease;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    
+    #crewforms-overlay-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      background: rgba(30, 58, 95, 0.95);
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      z-index: 2147483647;
+    }
+    
+    .crewforms-overlay-btn {
+      width: 44px;
+      height: 44px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, transform 0.1s;
+    }
+    
+    .crewforms-overlay-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    
+    .crewforms-overlay-btn:active {
+      transform: scale(0.95);
+    }
+    
+    #crewforms-zoom-display {
+      min-width: 50px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 0 8px;
+    }
+    
+    #crewforms-close-overlay {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 48px;
+      height: 48px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(239, 68, 68, 0.9);
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2147483647;
+      transition: background 0.2s, transform 0.1s;
+    }
+    
+    #crewforms-close-overlay:hover {
+      background: rgba(220, 38, 38, 1);
+      transform: scale(1.05);
+    }
+    
+    #crewforms-overlay-hint {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      padding: 10px 16px;
+      background: rgba(30, 58, 95, 0.9);
+      color: white;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 2147483647;
+    }
+  `;
+  document.head.appendChild(styles);
+}
+
+/**
+ * Show the image overlay with passport image
+ */
+function showImageOverlay(imageData) {
+  // Remove existing overlay if present
+  hideImageOverlay();
+  
+  // Inject styles
+  injectOverlayStyles();
+  
+  // Reset state
+  overlayState = {
+    rotation: 0,
+    zoom: 1,
+    isPanning: false,
+    panStart: { x: 0, y: 0 },
+    panOffset: { x: 0, y: 0 }
+  };
+  
+  // Create overlay container
+  imageOverlay = document.createElement('div');
+  imageOverlay.id = 'crewforms-image-overlay';
+  
+  imageOverlay.innerHTML = `
+    <div id="crewforms-image-container">
+      <img id="crewforms-passport-image" src="${imageData}" alt="Passport" draggable="false">
+    </div>
+    
+    <div id="crewforms-overlay-hint">
+      Scroll to zoom • Drag to pan when zoomed
+    </div>
+    
+    <div id="crewforms-overlay-controls">
+      <button class="crewforms-overlay-btn" id="crewforms-rotate-left" title="Rotate Left">↺</button>
+      <button class="crewforms-overlay-btn" id="crewforms-rotate-right" title="Rotate Right">↻</button>
+      <button class="crewforms-overlay-btn" id="crewforms-zoom-out" title="Zoom Out">−</button>
+      <span id="crewforms-zoom-display">1x</span>
+      <button class="crewforms-overlay-btn" id="crewforms-zoom-in" title="Zoom In">+</button>
+      <button class="crewforms-overlay-btn" id="crewforms-zoom-reset" title="Reset">⟲</button>
+    </div>
+    
+    <button id="crewforms-close-overlay" title="Close">×</button>
+  `;
+  
+  document.body.appendChild(imageOverlay);
+  
+  // Set up event listeners
+  setupOverlayEventListeners();
+  
+  console.log('CrewForms: Image overlay shown');
+}
+
+/**
+ * Hide and remove the image overlay
+ */
+function hideImageOverlay() {
+  if (imageOverlay) {
+    imageOverlay.remove();
+    imageOverlay = null;
+    console.log('CrewForms: Image overlay hidden');
+  }
+}
+
+/**
+ * Set up all event listeners for the overlay
+ */
+function setupOverlayEventListeners() {
+  const container = document.getElementById('crewforms-image-container');
+  const image = document.getElementById('crewforms-passport-image');
+  
+  // Close button
+  document.getElementById('crewforms-close-overlay').addEventListener('click', () => {
+    hideImageOverlay();
+    // Notify side panel that overlay was closed
+    chrome.runtime.sendMessage({ type: 'IMAGE_OVERLAY_CLOSED' }).catch(() => {});
+  });
+  
+  // Rotation buttons
+  document.getElementById('crewforms-rotate-left').addEventListener('click', () => {
+    overlayState.rotation = (overlayState.rotation - 90 + 360) % 360;
+    updateImageTransform();
+  });
+  
+  document.getElementById('crewforms-rotate-right').addEventListener('click', () => {
+    overlayState.rotation = (overlayState.rotation + 90) % 360;
+    updateImageTransform();
+  });
+  
+  // Zoom buttons
+  document.getElementById('crewforms-zoom-in').addEventListener('click', () => {
+    overlayState.zoom = Math.min(5, overlayState.zoom + 0.5);
+    updateImageTransform();
+    updateZoomDisplay();
+  });
+  
+  document.getElementById('crewforms-zoom-out').addEventListener('click', () => {
+    overlayState.zoom = Math.max(0.5, overlayState.zoom - 0.5);
+    updateImageTransform();
+    updateZoomDisplay();
+  });
+  
+  // Reset button
+  document.getElementById('crewforms-zoom-reset').addEventListener('click', () => {
+    overlayState.rotation = 0;
+    overlayState.zoom = 1;
+    overlayState.panOffset = { x: 0, y: 0 };
+    updateImageTransform();
+    updateZoomDisplay();
+  });
+  
+  // Mouse wheel zoom
+  container.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.25 : 0.25;
+    overlayState.zoom = Math.max(0.5, Math.min(5, overlayState.zoom + delta));
+    updateImageTransform();
+    updateZoomDisplay();
+  }, { passive: false });
+  
+  // Pan/drag functionality
+  container.addEventListener('mousedown', (e) => {
+    if (overlayState.zoom > 1) {
+      overlayState.isPanning = true;
+      overlayState.panStart = { x: e.clientX, y: e.clientY };
+      container.classList.add('panning');
+    }
+  });
+  
+  document.addEventListener('mousemove', (e) => {
+    if (overlayState.isPanning) {
+      const dx = e.clientX - overlayState.panStart.x;
+      const dy = e.clientY - overlayState.panStart.y;
+      overlayState.panOffset.x += dx;
+      overlayState.panOffset.y += dy;
+      overlayState.panStart = { x: e.clientX, y: e.clientY };
+      updateImageTransform();
+    }
+  });
+  
+  document.addEventListener('mouseup', () => {
+    if (overlayState.isPanning) {
+      overlayState.isPanning = false;
+      const container = document.getElementById('crewforms-image-container');
+      if (container) container.classList.remove('panning');
+    }
+  });
+  
+  // Keyboard shortcuts
+  document.addEventListener('keydown', handleOverlayKeydown);
+}
+
+/**
+ * Handle keyboard shortcuts for overlay
+ */
+function handleOverlayKeydown(e) {
+  if (!imageOverlay) return;
+  
+  switch (e.key) {
+    case 'Escape':
+      hideImageOverlay();
+      chrome.runtime.sendMessage({ type: 'IMAGE_OVERLAY_CLOSED' }).catch(() => {});
+      break;
+    case 'r':
+    case 'R':
+      overlayState.rotation = (overlayState.rotation + 90) % 360;
+      updateImageTransform();
+      break;
+    case '+':
+    case '=':
+      overlayState.zoom = Math.min(5, overlayState.zoom + 0.5);
+      updateImageTransform();
+      updateZoomDisplay();
+      break;
+    case '-':
+    case '_':
+      overlayState.zoom = Math.max(0.5, overlayState.zoom - 0.5);
+      updateImageTransform();
+      updateZoomDisplay();
+      break;
+    case '0':
+      overlayState.rotation = 0;
+      overlayState.zoom = 1;
+      overlayState.panOffset = { x: 0, y: 0 };
+      updateImageTransform();
+      updateZoomDisplay();
+      break;
+  }
+}
+
+/**
+ * Update the image transform based on current state
+ */
+function updateImageTransform() {
+  const image = document.getElementById('crewforms-passport-image');
+  if (!image) return;
+  
+  const { rotation, zoom, panOffset } = overlayState;
+  image.style.transform = `rotate(${rotation}deg) scale(${zoom}) translate(${panOffset.x / zoom}px, ${panOffset.y / zoom}px)`;
+}
+
+/**
+ * Update the zoom display text
+ */
+function updateZoomDisplay() {
+  const display = document.getElementById('crewforms-zoom-display');
+  if (display) {
+    display.textContent = `${overlayState.zoom.toFixed(1)}x`;
+  }
 }
 
 // ============================================================================

@@ -218,8 +218,19 @@ async function handleMessage(message, sender) {
     case 'GET_ACTIVE_TAB':
       return await getActiveTab();
     
+    // Forward image overlay closed event to side panel
+    case 'IMAGE_OVERLAY_CLOSED':
+      notifySidePanel({ type: 'IMAGE_OVERLAY_CLOSED' });
+      return { success: true };
+    
+    // Content script ready notification (ignore)
+    case 'CONTENT_SCRIPT_READY':
+      console.log('Content script ready on:', message.url);
+      return { success: true };
+    
     default:
-      throw new Error(`Unknown message type: ${message.type}`);
+      console.log('Unknown message type:', message.type);
+      return { success: false, error: `Unknown message type: ${message.type}` };
   }
 }
 
