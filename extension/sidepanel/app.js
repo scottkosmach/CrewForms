@@ -847,6 +847,9 @@ function handleOcrComplete(travelerId, data) {
 function renderTravelerList() {
   const list = document.getElementById('travelerList');
   
+  // Debug: Log to verify new code is running
+  console.log('renderTravelerList: Rendering travelers with new fields support');
+  
   if (state.travelers.length === 0) {
     list.innerHTML = `
       <div class="empty-state">
@@ -926,13 +929,13 @@ function renderTravelerList() {
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Issue</div>
               <div class="traveler-field-value">
-                ${formatDateObj(traveler.dateOfIssue)}
+                ${formatDateObj(traveler.dateOfIssue || {})}
               </div>
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Expiry</div>
               <div class="traveler-field-value">
-                ${formatDateObj(traveler.dateOfExpiry)}
+                ${formatDateObj(traveler.dateOfExpiry || {})}
               </div>
             </div>
             <div class="traveler-field">
