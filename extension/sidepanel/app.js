@@ -705,24 +705,15 @@ function displayQrCode(url) {
     
     // Create a wrapper div for the QR code
     const qrWrapper = document.createElement('div');
-    qrWrapper.style.cssText = 'display: flex; align-items: center; justify-content: center;';
+    qrWrapper.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center;';
     qrContainer.appendChild(qrWrapper);
     
     // Generate QR code using the QRCode library
-    new QRCode(qrWrapper, {
-      text: url,
-      width: 180,
-      height: 180,
-      colorDark: '#1e3a5f',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M
-    });
-    
-    // Remove any text elements the library might have added (some versions add the URL as text)
-    setTimeout(() => {
-      const textElements = qrWrapper.querySelectorAll('div:not(:first-child), p, span');
-      textElements.forEach(el => el.remove());
-    }, 50);
+    // This library uses: QRCode(text, size) and returns an object with createImgTag()
+    const qr = QRCode(url, 180);
+    const img = qr.createImgTag('Scan to upload passports');
+    img.style.cssText = 'border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);';
+    qrWrapper.appendChild(img);
     
     console.log('QR code generated for:', url);
   } catch (error) {
