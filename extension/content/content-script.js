@@ -759,24 +759,25 @@ function showImageOverlay(imageData) {
  * Hide and remove the image overlay
  */
 function hideImageOverlay() {
+  // Always clean up document-level event listeners (even if overlay is null)
+  // This prevents listener accumulation if something goes wrong
+  if (overlayEventHandlers.mousemove) {
+    document.removeEventListener('mousemove', overlayEventHandlers.mousemove);
+    overlayEventHandlers.mousemove = null;
+  }
+  if (overlayEventHandlers.mouseup) {
+    document.removeEventListener('mouseup', overlayEventHandlers.mouseup);
+    overlayEventHandlers.mouseup = null;
+  }
+  if (overlayEventHandlers.keydown) {
+    document.removeEventListener('keydown', overlayEventHandlers.keydown);
+    overlayEventHandlers.keydown = null;
+  }
+  
+  // Remove the overlay DOM element
   if (imageOverlay) {
     imageOverlay.remove();
     imageOverlay = null;
-    
-    // Remove document-level event listeners to prevent accumulation
-    if (overlayEventHandlers.mousemove) {
-      document.removeEventListener('mousemove', overlayEventHandlers.mousemove);
-      overlayEventHandlers.mousemove = null;
-    }
-    if (overlayEventHandlers.mouseup) {
-      document.removeEventListener('mouseup', overlayEventHandlers.mouseup);
-      overlayEventHandlers.mouseup = null;
-    }
-    if (overlayEventHandlers.keydown) {
-      document.removeEventListener('keydown', overlayEventHandlers.keydown);
-      overlayEventHandlers.keydown = null;
-    }
-    
     console.log('CrewForms: Image overlay hidden');
   }
 }
@@ -796,13 +797,15 @@ function setupOverlayEventListeners() {
   });
   
   // Rotation buttons
+  // Note: We don't use modulo (% 360) to avoid CSS animation jumping backwards
+  // CSS handles rotation values > 360° fine, and this ensures smooth animation
   document.getElementById('crewforms-rotate-left').addEventListener('click', () => {
-    overlayState.rotation = (overlayState.rotation - 90 + 360) % 360;
+    overlayState.rotation -= 90;
     updateImageTransform();
   });
   
   document.getElementById('crewforms-rotate-right').addEventListener('click', () => {
-    overlayState.rotation = (overlayState.rotation + 90) % 360;
+    overlayState.rotation += 90;
     updateImageTransform();
   });
   
@@ -849,34 +852,14 @@ function setupOverlayEventListeners() {
   // Store reference to mousemove handler for cleanup
   overlayEventHandlers.mousemove = (e) => {
     if (overlayState.isPanning) {
-      // Calculate raw mouse movement
+      // Calculate mouse movement in screen coordinates
+      // No rotation adjustment needed because translate is applied in screen space
+      // (see updateImageTransform - translate comes first in the transform string)
       const dx = e.clientX - overlayState.panStart.x;
       const dy = e.clientY - overlayState.panStart.y;
       
-      // Adjust pan offset based on rotation to keep drag direction intuitive
-      // When image is rotated, we need to transform the drag vector
-      // to match screen coordinates instead of rotated image coordinates
-      const rotation = overlayState.rotation;
-      let adjustedDx = dx;
-      let adjustedDy = dy;
-      
-      if (rotation === 90) {
-        // 90° rotation: swap and negate
-        adjustedDx = dy;
-        adjustedDy = -dx;
-      } else if (rotation === 180) {
-        // 180° rotation: negate both
-        adjustedDx = -dx;
-        adjustedDy = -dy;
-      } else if (rotation === 270) {
-        // 270° rotation: swap and negate opposite
-        adjustedDx = -dy;
-        adjustedDy = dx;
-      }
-      // 0° rotation: no adjustment needed
-      
-      overlayState.panOffset.x += adjustedDx;
-      overlayState.panOffset.y += adjustedDy;
+      overlayState.panOffset.x += dx;
+      overlayState.panOffset.y += dy;
       overlayState.panStart = { x: e.clientX, y: e.clientY };
       updateImageTransform();
     }
@@ -911,7 +894,8 @@ function handleOverlayKeydown(e) {
       break;
     case 'r':
     case 'R':
-      overlayState.rotation = (overlayState.rotation + 90) % 360;
+      // Don't use modulo to avoid CSS animation jumping backwards
+      overlayState.rotation += 90;
       updateImageTransform();
       break;
     case '+':
@@ -938,13 +922,22 @@ function handleOverlayKeydown(e) {
 
 /**
  * Update the image transform based on current state
+ * 
+ * Transform order (CSS applies right-to-left):
+ * - scale is applied first (to the image)
+ * - rotate is applied second (rotates the scaled image)  
+ * - translate is applied last (in screen coordinates)
+ * 
+ * This order ensures panning works intuitively in screen space
+ * regardless of the current rotation angle.
  */
 function updateImageTransform() {
   const image = document.getElementById('crewforms-passport-image');
   if (!image) return;
   
   const { rotation, zoom, panOffset } = overlayState;
-  image.style.transform = `rotate(${rotation}deg) scale(${zoom}) translate(${panOffset.x / zoom}px, ${panOffset.y / zoom}px)`;
+  // translate first in string = applied last = screen coordinates
+  image.style.transform = `translate(${panOffset.x}px, ${panOffset.y}px) rotate(${rotation}deg) scale(${zoom})`;
 }
 
 /**
