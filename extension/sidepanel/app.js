@@ -1815,6 +1815,11 @@ function renderFieldList() {
       testField(position);
     });
   });
+  
+  // Add event listeners for test value inputs
+  container.querySelectorAll('.test-value-input').forEach(input => {
+    input.addEventListener('input', handleTestValueChange);
+  });
 }
 
 /**
@@ -1945,6 +1950,17 @@ function renderFieldConfigDetails(field, config) {
     `;
   }
   
+  // Test value input (for paste behavior - allows manual test value entry)
+  if (config.inputType === 'paste' || !config.inputType) {
+    html += `
+      <div class="config-group">
+        <label>Test Value (for testing paste)</label>
+        <input type="text" class="test-value-input" data-position="${field.position}" 
+               value="${config.testValue || ''}" placeholder="Enter a value to test with">
+      </div>
+    `;
+  }
+  
   // Keypress map builder (for select-keypress behavior)
   if (config.inputType === 'select-keypress') {
     html += renderKeypressMapBuilder(field.position, config.keypressMap || {});
@@ -2047,6 +2063,14 @@ function handleFieldTypeChange(event) {
   
   // Re-render to show/hide date format picker
   renderFieldList();
+}
+
+/**
+ * Handle test value change
+ */
+function handleTestValueChange(event) {
+  const position = parseInt(event.target.dataset.position);
+  state.fieldConfigs[position].testValue = event.target.value;
 }
 
 /**
@@ -2222,19 +2246,43 @@ async function testField(position) {
     return;
   }
   
-  // Determine the value to fill
-  let value;
+  // Collect any unsaved keypress map values from the DOM
+  collectKeypressMaps();
   
-  if (config.status === 'static') {
+  const inputType = config.inputType || 'paste';
+  
+  // Determine the value to fill based on input behavior
+  let value = null;
+  let useKeystrokes = false;
+  
+  if (inputType === 'select-keypress') {
+    // For keypress navigation, just execute the keystrokes directly
+    const keypressEntries = Object.entries(config.keypressMap || {});
+    if (keypressEntries.length > 0) {
+      useKeystrokes = true;
+      // Value is optional for keypress - we just execute the keystrokes
+      value = keypressEntries[0][0]; // Pass the target value for reference
+    } else {
+      showToast('Add at least one keypress entry to test', 'warning');
+      return;
+    }
+  } else if (config.status === 'static') {
+    // Static value
     value = config.staticValue;
+  } else if (inputType === 'paste' || inputType === 'text') {
+    // For paste behavior, use the test value input
+    value = config.testValue;
+    if (!value) {
+      // Fallback to data source
+      value = getTestDataForField(config.dataSource);
+    }
   } else {
-    // Get value from current data (first traveler or other source)
-    const testData = getTestDataForField(config.dataSource);
-    value = testData;
+    // For select-match, click-select, use test value or data source
+    value = config.testValue || getTestDataForField(config.dataSource);
   }
   
-  if (value === undefined || value === null || value === '') {
-    showToast('No test data available for this field', 'warning');
+  if (!useKeystrokes && (value === undefined || value === null || value === '')) {
+    showToast('Enter a test value to test this field', 'warning');
     return;
   }
   
@@ -2245,9 +2293,10 @@ async function testField(position) {
       position,
       value,
       config: {
-        inputType: config.inputType || 'paste',
+        inputType,
         dateFormat: config.dateFormat,
-        keypressMap: config.keypressMap
+        keypressMap: config.keypressMap,
+        useKeystrokes // Flag to indicate keystrokes should be executed
       }
     });
     

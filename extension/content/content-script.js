@@ -408,20 +408,49 @@ async function handleTestFillField(position, value, config) {
     
     const field = fields[fieldIndex];
     
-    // Create a minimal mapping object for fillField
-    const fieldMapping = {
-      inputType: config.inputType || 'paste',
-      dateFormat: config.dateFormat,
-      config: {
-        keypressMap: config.keypressMap
-      }
-    };
-    
-    // Fill the field
-    await fillField(field, value, fieldMapping);
-    
-    // Scroll field into view and highlight briefly
+    // Scroll field into view first
     field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await sleep(300); // Wait for scroll
+    
+    const inputType = config.inputType || 'paste';
+    
+    // Handle keypress navigation specially - just execute the keystrokes directly
+    if (inputType === 'select-keypress' && config.keypressMap) {
+      const keypressEntries = Object.entries(config.keypressMap);
+      
+      if (keypressEntries.length > 0) {
+        // Use the first entry's keystrokes
+        const [targetValue, keypressConfig] = keypressEntries[0];
+        
+        // Focus the field
+        field.focus();
+        field.click();
+        await sleep(100);
+        
+        // Execute the keystrokes
+        const { key, count } = keypressConfig;
+        for (let i = 0; i < (count || 1); i++) {
+          await simulateKeypress(field, key);
+          await sleep(100); // Delay between keypresses
+        }
+        
+        triggerInputEvents(field);
+      }
+    } else {
+      // Create a minimal mapping object for fillField
+      const fieldMapping = {
+        inputType,
+        dateFormat: config.dateFormat,
+        config: {
+          keypressMap: config.keypressMap
+        }
+      };
+      
+      // Fill the field using standard method
+      await fillField(field, value, fieldMapping);
+    }
+    
+    // Highlight briefly
     const originalOutline = field.style.outline;
     field.style.outline = '3px solid #10b981';
     setTimeout(() => {
