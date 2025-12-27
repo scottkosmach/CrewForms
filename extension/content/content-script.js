@@ -357,7 +357,11 @@ async function handleFillFields(data, mapping) {
     // Find the form block starting from focused element
     // Pass formType to determine static vs dynamic-guest-blocks behavior
     const formBlock = findFormBlock(focusedElement, mapping.formType);
-    const fields = formBlock.querySelectorAll('input, select, textarea');
+    // Must match selector in scanAllFormFields() for consistent field positions!
+    // Includes Angular Material mat-select and custom dropdown components.
+    const fields = formBlock.querySelectorAll(
+      'input, select, textarea, mat-select, [role="combobox"], [role="listbox"]'
+    );
     
     let filledCount = 0;
     
@@ -393,12 +397,19 @@ async function handleFillFields(data, mapping) {
 /**
  * Test fill a single field by position (used by admin panel)
  * Unlike handleFillFields, this targets a specific field position directly
+ * 
+ * IMPORTANT: Must use the same selector as scanAllFormFields() to ensure
+ * field positions match between scanning and testing. This includes
+ * Angular Material mat-select and custom dropdown components.
  */
 async function handleTestFillField(position, value, config) {
   try {
     // Find all form fields on the page
+    // Must match selector in scanAllFormFields() for consistent field positions!
     const form = document.querySelector('form') || document.body;
-    const fields = form.querySelectorAll('input, select, textarea');
+    const fields = form.querySelectorAll(
+      'input, select, textarea, mat-select, [role="combobox"], [role="listbox"]'
+    );
     
     const fieldIndex = position - 1; // Convert 1-based to 0-based
     
