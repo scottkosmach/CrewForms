@@ -1632,6 +1632,15 @@ const DATE_FORMATS = [
 ];
 
 /**
+ * Field types for explicit admin selection
+ */
+const FIELD_TYPES = [
+  { value: 'text', label: 'Text Input' },
+  { value: 'date', label: 'Date (show format options)' },
+  { value: 'dropdown', label: 'Dropdown/Select' }
+];
+
+/**
  * Set up admin mode functionality
  */
 function setupAdminMode() {
@@ -1685,6 +1694,7 @@ async function scanFormFields() {
           dataSource: '',
           staticValue: '',
           inputType: 'paste',
+          fieldType: 'text', // Explicit field type: text, date, dropdown
           dateFormat: '',
           keypressMap: {}
         };
@@ -1775,6 +1785,36 @@ function renderFieldList() {
   container.querySelectorAll('.date-format-select').forEach(select => {
     select.addEventListener('change', handleDateFormatChange);
   });
+  
+  // Add event listeners for field type selector
+  container.querySelectorAll('.field-type-select').forEach(select => {
+    select.addEventListener('change', handleFieldTypeChange);
+  });
+  
+  // Add event listeners for keypress map builder buttons (using event delegation)
+  container.querySelectorAll('.add-keypress').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const entriesContainer = btn.closest('.keypress-config').querySelector('.keypress-entries');
+      const position = parseInt(entriesContainer.dataset.position);
+      addKeypressEntry(position);
+    });
+  });
+  
+  container.querySelectorAll('.btn-remove-keypress').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const position = parseInt(btn.dataset.position);
+      const index = parseInt(btn.dataset.index);
+      removeKeypressEntry(position, index);
+    });
+  });
+  
+  // Add event listeners for test buttons
+  container.querySelectorAll('.btn-test').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const position = parseInt(btn.dataset.position);
+      testField(position);
+    });
+  });
 }
 
 /**
@@ -1783,6 +1823,7 @@ function renderFieldList() {
 function renderFieldItem(field) {
   const config = state.fieldConfigs[field.position] || {};
   const isDisabled = field.isDisabled;
+  const isMapped = config.status === 'data' || config.status === 'static';
   
   return `
     <div class="field-item ${config.status === 'ignore' ? 'ignore' : ''}" data-position="${field.position}">
@@ -1790,6 +1831,7 @@ function renderFieldItem(field) {
         <span class="field-position">#${field.position}</span>
         <span class="field-label">${field.label || field.name || field.formControlName || 'Unlabeled'}</span>
         <span class="field-type ${isDisabled ? 'disabled' : ''}">${field.type}${isDisabled ? ' (disabled)' : ''}</span>
+        ${isMapped ? `<button class="btn btn-sm btn-test" data-position="${field.position}" title="Test this field">Test</button>` : ''}
       </div>
       <div class="field-config">
         <div class="field-config-row">
@@ -1864,6 +1906,18 @@ function renderFieldConfigDetails(field, config) {
     `;
   }
   
+  // Field type selector (explicit admin selection)
+  html += `
+    <div class="config-group">
+      <label>Field Type</label>
+      <select class="field-type-select" data-position="${field.position}">
+        ${FIELD_TYPES.map(t => 
+          `<option value="${t.value}" ${config.fieldType === t.value ? 'selected' : ''}>${t.label}</option>`
+        ).join('')}
+      </select>
+    </div>
+  `;
+  
   // Input behavior selector (for both data and static)
   html += `
     <div class="config-group">
@@ -1876,24 +1930,8 @@ function renderFieldConfigDetails(field, config) {
     </div>
   `;
   
-  // Date format selector (only for date-related data sources)
-  const isDateField = config.dataSource && (
-    config.dataSource.includes('dateOfBirth') ||
-    config.dataSource.includes('dateOfIssue') ||
-    config.dataSource.includes('dateOfExpiry') ||
-    config.dataSource.includes('departureDate') ||
-    config.dataSource.includes('returnDate')
-  );
-  
-  // Also show date format if the field label suggests it's a date
-  const labelSuggestsDate = field.label && (
-    field.label.toLowerCase().includes('date') ||
-    field.label.toLowerCase().includes('birth') ||
-    field.label.toLowerCase().includes('expir') ||
-    field.label.toLowerCase().includes('issue')
-  );
-  
-  if (isDateField || labelSuggestsDate) {
+  // Date format selector (only when fieldType is 'date')
+  if (config.fieldType === 'date') {
     html += `
       <div class="config-group">
         <label>Date Format</label>
@@ -1933,11 +1971,11 @@ function renderKeypressMapBuilder(position, keypressMap) {
               <input type="text" class="keypress-value" value="${value}" placeholder="Value (e.g., United States)">
               <input type="text" class="keypress-key" value="${config.key || ''}" placeholder="Key" maxlength="1">
               <input type="number" class="keypress-count" value="${config.count || 1}" placeholder="#" min="1">
-              <button type="button" class="btn-remove" onclick="removeKeypressEntry(${position}, ${index})">×</button>
+              <button type="button" class="btn-remove-keypress" data-position="${position}" data-index="${index}">×</button>
             </div>
           `).join('') : ''}
         </div>
-        <button type="button" class="btn btn-sm btn-secondary add-keypress" onclick="addKeypressEntry(${position})">+ Add Entry</button>
+        <button type="button" class="btn btn-sm btn-secondary add-keypress">+ Add Entry</button>
       </div>
     </div>
   `;
@@ -2001,9 +2039,20 @@ function handleDateFormatChange(event) {
 }
 
 /**
+ * Handle field type change
+ */
+function handleFieldTypeChange(event) {
+  const position = parseInt(event.target.dataset.position);
+  state.fieldConfigs[position].fieldType = event.target.value;
+  
+  // Re-render to show/hide date format picker
+  renderFieldList();
+}
+
+/**
  * Add a keypress entry
  */
-window.addKeypressEntry = function(position) {
+function addKeypressEntry(position) {
   if (!state.fieldConfigs[position].keypressMap) {
     state.fieldConfigs[position].keypressMap = {};
   }
@@ -2013,18 +2062,18 @@ window.addKeypressEntry = function(position) {
   state.fieldConfigs[position].keypressMap[newKey] = { key: '', count: 1 };
   
   renderFieldList();
-};
+}
 
 /**
  * Remove a keypress entry
  */
-window.removeKeypressEntry = function(position, index) {
+function removeKeypressEntry(position, index) {
   const entries = Object.entries(state.fieldConfigs[position].keypressMap || {});
   if (entries[index]) {
     delete state.fieldConfigs[position].keypressMap[entries[index][0]];
   }
   renderFieldList();
-};
+}
 
 /**
  * Collect keypress map values before saving
@@ -2152,6 +2201,112 @@ async function saveMapping() {
     console.error('Save error:', error);
     showToast('Failed to save mapping: ' + error.message, 'error');
   }
+}
+
+/**
+ * Test filling a single field
+ */
+async function testField(position) {
+  const config = state.fieldConfigs[position];
+  
+  if (!config || (config.status !== 'data' && config.status !== 'static')) {
+    showToast('Field is not mapped', 'warning');
+    return;
+  }
+  
+  // Get the active tab
+  const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
+  
+  if (!tabResult.success || !tabResult.tab) {
+    showToast('Could not detect active tab', 'error');
+    return;
+  }
+  
+  // Determine the value to fill
+  let value;
+  
+  if (config.status === 'static') {
+    value = config.staticValue;
+  } else {
+    // Get value from current data (first traveler or other source)
+    const testData = getTestDataForField(config.dataSource);
+    value = testData;
+  }
+  
+  if (value === undefined || value === null || value === '') {
+    showToast('No test data available for this field', 'warning');
+    return;
+  }
+  
+  try {
+    // Send test fill message to content script
+    const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
+      type: 'TEST_FILL_FIELD',
+      position,
+      value,
+      config: {
+        inputType: config.inputType || 'paste',
+        dateFormat: config.dateFormat,
+        keypressMap: config.keypressMap
+      }
+    });
+    
+    if (result.success) {
+      showToast(`Field #${position} filled successfully`, 'success');
+    } else {
+      showToast('Failed to fill field: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch (error) {
+    console.error('Test fill error:', error);
+    showToast('Could not test field: ' + error.message, 'error');
+  }
+}
+
+/**
+ * Get test data for a data source path
+ * Uses current state (travelers, captain, boat, etc.)
+ */
+function getTestDataForField(dataSource) {
+  if (!dataSource) return null;
+  
+  const parts = dataSource.split('.');
+  const sourceType = parts[0]; // traveler, captain, boat, etc.
+  const fieldPath = parts.slice(1).join('.');
+  
+  let sourceData;
+  
+  switch (sourceType) {
+    case 'traveler':
+      // Use first traveler as test data
+      sourceData = state.travelers[0];
+      break;
+    case 'captain':
+      sourceData = state.captain;
+      break;
+    case 'boat':
+      // Use first boat or selected boat from trip
+      sourceData = state.boats[0];
+      break;
+    case 'company':
+      sourceData = state.companies[0];
+      break;
+    case 'trip':
+      sourceData = state.trips[0];
+      break;
+    default:
+      return null;
+  }
+  
+  if (!sourceData) return null;
+  
+  // Navigate the field path
+  let value = sourceData;
+  for (const part of fieldPath.split('.')) {
+    if (value === null || value === undefined) return null;
+    value = value[part];
+  }
+  
+  return value;
 }
 
 // ============================================================================

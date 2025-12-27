@@ -184,6 +184,12 @@ function handleMessage(message, sender, sendResponse) {
       });
       break;
     
+    case 'TEST_FILL_FIELD':
+      handleTestFillField(message.position, message.value, message.config)
+        .then(result => sendResponse(result))
+        .catch(error => sendResponse({ success: false, error: error.message }));
+      return true; // Async response
+    
     default:
       sendResponse({ success: false, error: 'Unknown message type' });
   }
@@ -380,6 +386,51 @@ async function handleFillFields(data, mapping) {
     return { success: true, filledCount };
   } catch (error) {
     console.error('Error filling fields:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Test fill a single field by position (used by admin panel)
+ * Unlike handleFillFields, this targets a specific field position directly
+ */
+async function handleTestFillField(position, value, config) {
+  try {
+    // Find all form fields on the page
+    const form = document.querySelector('form') || document.body;
+    const fields = form.querySelectorAll('input, select, textarea');
+    
+    const fieldIndex = position - 1; // Convert 1-based to 0-based
+    
+    if (fieldIndex < 0 || fieldIndex >= fields.length) {
+      return { success: false, error: `Field at position ${position} not found` };
+    }
+    
+    const field = fields[fieldIndex];
+    
+    // Create a minimal mapping object for fillField
+    const fieldMapping = {
+      inputType: config.inputType || 'paste',
+      dateFormat: config.dateFormat,
+      config: {
+        keypressMap: config.keypressMap
+      }
+    };
+    
+    // Fill the field
+    await fillField(field, value, fieldMapping);
+    
+    // Scroll field into view and highlight briefly
+    field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const originalOutline = field.style.outline;
+    field.style.outline = '3px solid #10b981';
+    setTimeout(() => {
+      field.style.outline = originalOutline;
+    }, 2000);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error testing field:', error);
     return { success: false, error: error.message };
   }
 }
