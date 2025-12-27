@@ -1578,6 +1578,11 @@ const DATA_SOURCES = {
     { value: 'traveler.nationality', label: 'Nationality' },
     { value: 'traveler.gender', label: 'Gender' },
     { value: 'traveler.placeOfBirth', label: 'Place of Birth' },
+    // Full date sources - for fields that accept a complete formatted date
+    { value: 'traveler.dateOfBirth', label: 'Date of Birth (Full Date)' },
+    { value: 'traveler.dateOfIssue', label: 'Issue Date (Full Date)' },
+    { value: 'traveler.dateOfExpiry', label: 'Expiry Date (Full Date)' },
+    // Individual date components - for forms with separate day/month/year fields
     { value: 'traveler.dateOfBirth.day', label: 'DOB - Day' },
     { value: 'traveler.dateOfBirth.month', label: 'DOB - Month' },
     { value: 'traveler.dateOfBirth.year', label: 'DOB - Year' },
@@ -1599,9 +1604,16 @@ const DATA_SOURCES = {
     { value: 'captain.licenseNumber', label: 'License Number' },
     { value: 'captain.email', label: 'Email' },
     { value: 'captain.phone', label: 'Phone' },
+    // Full date sources - for fields that accept a complete formatted date
+    { value: 'captain.dateOfBirth', label: 'Date of Birth (Full Date)' },
+    { value: 'captain.passportExpiry', label: 'Passport Expiry (Full Date)' },
+    // Individual date components - for forms with separate day/month/year fields
     { value: 'captain.dateOfBirth.day', label: 'DOB - Day' },
     { value: 'captain.dateOfBirth.month', label: 'DOB - Month' },
-    { value: 'captain.dateOfBirth.year', label: 'DOB - Year' }
+    { value: 'captain.dateOfBirth.year', label: 'DOB - Year' },
+    { value: 'captain.passportExpiry.day', label: 'Passport Expiry - Day' },
+    { value: 'captain.passportExpiry.month', label: 'Passport Expiry - Month' },
+    { value: 'captain.passportExpiry.year', label: 'Passport Expiry - Year' }
   ],
   boat: [
     { value: 'boat.vesselName', label: 'Vessel Name' },
@@ -1623,6 +1635,10 @@ const DATA_SOURCES = {
     { value: 'trip.destinationPorts', label: 'Destination Ports' },
     { value: 'trip.purpose', label: 'Purpose' },
     { value: 'trip.guestCount', label: 'Guest Count' },
+    // Full date sources - for fields that accept a complete formatted date
+    { value: 'trip.departureDate', label: 'Departure Date (Full Date)' },
+    { value: 'trip.returnDate', label: 'Return Date (Full Date)' },
+    // Individual date components - for forms with separate day/month/year fields
     { value: 'trip.departureDate.day', label: 'Departure - Day' },
     { value: 'trip.departureDate.month', label: 'Departure - Month' },
     { value: 'trip.departureDate.year', label: 'Departure - Year' },
@@ -1653,6 +1669,29 @@ const DATE_FORMATS = [
   { value: 'MM-DD-YYYY', label: 'MM-DD-YYYY (12-27-2025)' },
   { value: 'DD.MM.YYYY', label: 'DD.MM.YYYY (27.12.2025)' }
 ];
+
+/**
+ * Full date sources - these map to complete date objects {day, month, year}
+ * Used to detect when the admin selects a full date source that needs formatting
+ */
+const FULL_DATE_SOURCES = [
+  'traveler.dateOfBirth',
+  'traveler.dateOfIssue',
+  'traveler.dateOfExpiry',
+  'captain.dateOfBirth',
+  'captain.passportExpiry',
+  'trip.departureDate',
+  'trip.returnDate'
+];
+
+/**
+ * Check if a data source is a full date source (returns complete date object)
+ * @param {string} dataSource - The data source path (e.g., 'traveler.dateOfBirth')
+ * @returns {boolean} True if this is a full date source
+ */
+function isFullDateSource(dataSource) {
+  return FULL_DATE_SOURCES.includes(dataSource);
+}
 
 /**
  * Field types for explicit admin selection
@@ -2284,8 +2323,11 @@ function renderFieldConfigDetails(field, config) {
     </div>
   `;
   
-  // Date format selector (only when fieldType is 'date')
-  if (config.fieldType === 'date') {
+  // Date format selector - shown when:
+  // 1. fieldType is explicitly set to 'date', OR
+  // 2. A full date source is selected (auto-detected)
+  const showDateFormat = config.fieldType === 'date' || isFullDateSource(config.dataSource);
+  if (showDateFormat) {
     html += `
       <div class="config-group">
         <label>Date Format</label>
@@ -2401,7 +2443,14 @@ function handleFieldStatusChange(event) {
  */
 function handleDataSourceChange(event) {
   const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].dataSource = event.target.value;
+  const dataSource = event.target.value;
+  state.fieldConfigs[position].dataSource = dataSource;
+  
+  // Auto-set fieldType to 'date' when a full date source is selected
+  // This triggers the date format picker to appear
+  if (isFullDateSource(dataSource)) {
+    state.fieldConfigs[position].fieldType = 'date';
+  }
   
   // Re-render to show/hide date format based on data source
   renderFieldList();
