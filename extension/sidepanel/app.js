@@ -831,6 +831,7 @@ function handleOcrComplete(travelerId, data) {
     dateOfExpiry: data.dateOfExpiry || {},
     placeOfBirth: data.placeOfBirth || '',
     issuingAuthority: data.issuingAuthority || '',
+    passportType: data.passportType || '',
     status: 'ready',
     confidence: data.confidence || null
   });
@@ -921,6 +922,30 @@ function renderTravelerList() {
             <div class="traveler-field">
               <div class="traveler-field-label">Gender</div>
               <div class="traveler-field-value">${traveler.gender || '-'}</div>
+            </div>
+            <div class="traveler-field">
+              <div class="traveler-field-label">Date of Issue</div>
+              <div class="traveler-field-value">
+                ${formatDateObj(traveler.dateOfIssue)}
+              </div>
+            </div>
+            <div class="traveler-field">
+              <div class="traveler-field-label">Date of Expiry</div>
+              <div class="traveler-field-value">
+                ${formatDateObj(traveler.dateOfExpiry)}
+              </div>
+            </div>
+            <div class="traveler-field">
+              <div class="traveler-field-label">Place of Birth</div>
+              <div class="traveler-field-value">${traveler.placeOfBirth || '-'}</div>
+            </div>
+            <div class="traveler-field">
+              <div class="traveler-field-label">Issuing Authority</div>
+              <div class="traveler-field-value">${traveler.issuingAuthority || '-'}</div>
+            </div>
+            <div class="traveler-field">
+              <div class="traveler-field-label">Passport Type</div>
+              <div class="traveler-field-value">${traveler.passportType || '-'}</div>
             </div>
           </div>
         </div>

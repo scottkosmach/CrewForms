@@ -54,6 +54,7 @@ interface PassportData {
   };
   placeOfBirth: string | null;
   issuingAuthority: string | null;
+  passportType: string | null; // "passport" or "passport card"
   confidence: number;
 }
 
@@ -88,6 +89,7 @@ Return the data as a valid JSON object with the following structure:
   },
   "placeOfBirth": "string or null",
   "issuingAuthority": "string or null (country or authority name)",
+  "passportType": "string or null (either 'passport' for a full passport book or 'passport card' for a passport card)",
   "confidence": 0.0 to 1.0 (your confidence in the extraction accuracy)
 }
 
@@ -97,6 +99,7 @@ Important:
 - Names should be in their original case (usually uppercase on passports)
 - Dates should be extracted as separate day/month/year strings
 - Passport numbers may contain letters and numbers
+- Determine if the document is a passport book (full passport) or a passport card (smaller card format) based on the image
 - Return ONLY the JSON object, no other text`;
 
 // ============================================================================
@@ -256,6 +259,7 @@ export async function GET() {
     },
     placeOfBirth: 'NEW YORK',
     issuingAuthority: 'United States',
+    passportType: 'passport',
     confidence: 0.95
   };
   
