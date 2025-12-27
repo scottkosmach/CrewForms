@@ -28,6 +28,13 @@ let overlayState = {
   panOffset: { x: 0, y: 0 }
 };
 
+// Store references to event handlers for cleanup
+let overlayEventHandlers = {
+  mousemove: null,
+  mouseup: null,
+  keydown: null
+};
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -755,6 +762,21 @@ function hideImageOverlay() {
   if (imageOverlay) {
     imageOverlay.remove();
     imageOverlay = null;
+    
+    // Remove document-level event listeners to prevent accumulation
+    if (overlayEventHandlers.mousemove) {
+      document.removeEventListener('mousemove', overlayEventHandlers.mousemove);
+      overlayEventHandlers.mousemove = null;
+    }
+    if (overlayEventHandlers.mouseup) {
+      document.removeEventListener('mouseup', overlayEventHandlers.mouseup);
+      overlayEventHandlers.mouseup = null;
+    }
+    if (overlayEventHandlers.keydown) {
+      document.removeEventListener('keydown', overlayEventHandlers.keydown);
+      overlayEventHandlers.keydown = null;
+    }
+    
     console.log('CrewForms: Image overlay hidden');
   }
 }
@@ -824,27 +846,56 @@ function setupOverlayEventListeners() {
     }
   });
   
-  document.addEventListener('mousemove', (e) => {
+  // Store reference to mousemove handler for cleanup
+  overlayEventHandlers.mousemove = (e) => {
     if (overlayState.isPanning) {
+      // Calculate raw mouse movement
       const dx = e.clientX - overlayState.panStart.x;
       const dy = e.clientY - overlayState.panStart.y;
-      overlayState.panOffset.x += dx;
-      overlayState.panOffset.y += dy;
+      
+      // Adjust pan offset based on rotation to keep drag direction intuitive
+      // When image is rotated, we need to transform the drag vector
+      // to match screen coordinates instead of rotated image coordinates
+      const rotation = overlayState.rotation;
+      let adjustedDx = dx;
+      let adjustedDy = dy;
+      
+      if (rotation === 90) {
+        // 90° rotation: swap and negate
+        adjustedDx = dy;
+        adjustedDy = -dx;
+      } else if (rotation === 180) {
+        // 180° rotation: negate both
+        adjustedDx = -dx;
+        adjustedDy = -dy;
+      } else if (rotation === 270) {
+        // 270° rotation: swap and negate opposite
+        adjustedDx = -dy;
+        adjustedDy = dx;
+      }
+      // 0° rotation: no adjustment needed
+      
+      overlayState.panOffset.x += adjustedDx;
+      overlayState.panOffset.y += adjustedDy;
       overlayState.panStart = { x: e.clientX, y: e.clientY };
       updateImageTransform();
     }
-  });
+  };
+  document.addEventListener('mousemove', overlayEventHandlers.mousemove);
   
-  document.addEventListener('mouseup', () => {
+  // Store reference to mouseup handler for cleanup
+  overlayEventHandlers.mouseup = () => {
     if (overlayState.isPanning) {
       overlayState.isPanning = false;
       const container = document.getElementById('crewforms-image-container');
       if (container) container.classList.remove('panning');
     }
-  });
+  };
+  document.addEventListener('mouseup', overlayEventHandlers.mouseup);
   
-  // Keyboard shortcuts
-  document.addEventListener('keydown', handleOverlayKeydown);
+  // Store reference to keydown handler for cleanup
+  overlayEventHandlers.keydown = handleOverlayKeydown;
+  document.addEventListener('keydown', overlayEventHandlers.keydown);
 }
 
 /**
