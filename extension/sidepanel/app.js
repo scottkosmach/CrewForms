@@ -875,10 +875,10 @@ function renderTravelerList() {
               `<span>${initials || '?'}</span>`
             }
           </div>
-          <div class="traveler-info">
+          <div class="traveler-info ${traveler.status === 'error' ? 'retry-ocr' : ''}" data-id="${traveler.id}" style="${traveler.status === 'error' ? 'cursor: pointer;' : ''}">
             <div class="traveler-name">
               ${traveler.status === 'processing' ? 'Processing...' : 
-                traveler.status === 'error' ? 'Error - Click to retry' :
+                traveler.status === 'error' ? '⚠️ Error - Tap to retry' :
                 `${traveler.firstName} ${traveler.lastName}` || 'Unknown'
               }
             </div>
@@ -942,6 +942,14 @@ function renderTravelerList() {
       deleteTraveler(btn.dataset.id);
     });
   });
+  
+  // Add retry OCR click handlers for failed travelers
+  list.querySelectorAll('.retry-ocr').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      retryOcr(el.dataset.id);
+    });
+  });
 }
 
 function getInitials(firstName, lastName) {
@@ -980,6 +988,30 @@ async function deleteTraveler(id) {
   renderTravelerList();
   updatePasteSourceOptions();
   showToast('Traveler deleted', 'success');
+}
+
+/**
+ * Retry OCR processing for a failed traveler
+ */
+async function retryOcr(id) {
+  const traveler = state.travelers.find(t => t.id === id);
+  const imageData = state.travelerImages[id];
+  
+  if (!traveler || !imageData) {
+    showToast('Cannot retry - image data not found', 'error');
+    return;
+  }
+  
+  // Reset status to processing
+  traveler.status = 'processing';
+  traveler.error = null;
+  await setStorage({ travelers: state.travelers });
+  renderTravelerList();
+  
+  showToast('Retrying OCR...', 'info');
+  
+  // Re-run OCR
+  await processOcr(id, imageData.data);
 }
 
 // ============================================================================

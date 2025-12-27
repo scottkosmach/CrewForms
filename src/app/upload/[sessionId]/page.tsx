@@ -468,7 +468,7 @@ export default function UploadPage() {
               <p className="select-hint">
                 {selectedFiles.length > 0 
                   ? 'Tap again to add more' 
-                  : 'Select from your camera roll'
+                  : 'Select from gallery or take a photo'
                 }
               </p>
             </div>
@@ -478,7 +478,6 @@ export default function UploadPage() {
               type="file"
               accept="image/*"
               multiple
-              capture="environment"
               className="file-input"
               onChange={handleFileSelect}
             />
