@@ -547,6 +547,7 @@ async function getFieldMapping(url) {
 
 /**
  * Send fill command to content script
+ * Injects content script if not already loaded on the page
  */
 async function fillFormFields(tabId, data, mapping) {
   try {
@@ -555,11 +556,31 @@ async function fillFormFields(tabId, data, mapping) {
       data,
       mapping
     });
-    
     return response;
   } catch (error) {
-    console.error('Failed to fill form:', error);
-    return { success: false, error: error.message };
+    // Content script not loaded - inject it first
+    console.log('Content script not loaded, injecting for form fill...');
+    
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['content/content-script.js']
+      });
+      
+      // Wait a moment for script to initialize
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Retry sending the message
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: 'FILL_FIELDS',
+        data,
+        mapping
+      });
+      return response;
+    } catch (injectError) {
+      console.error('Failed to inject and fill form:', injectError);
+      return { success: false, error: injectError.message };
+    }
   }
 }
 

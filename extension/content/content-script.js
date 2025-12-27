@@ -92,14 +92,16 @@ function handleFocusIn(event) {
 
 /**
  * Handle focus leaving an element
+ * 
+ * Note: We intentionally do NOT clear focusedElement when focus leaves
+ * the page entirely (e.g., when clicking into the side panel).
+ * We only update focusedElement when a NEW form element is focused.
+ * This preserves the "last focused field" context for paste operations.
  */
 function handleFocusOut(event) {
-  // Small delay to allow for focus moving to another element
-  setTimeout(() => {
-    if (document.activeElement === document.body) {
-      focusedElement = null;
-    }
-  }, 100);
+  // Don't clear focusedElement - we want to remember the last focused
+  // form field even when focus moves to the side panel or elsewhere.
+  // focusedElement will be updated when handleFocusIn fires on a new field.
 }
 
 /**
@@ -234,7 +236,8 @@ async function handleFillFields(data, mapping) {
   
   try {
     // Find the form block starting from focused element
-    const formBlock = findFormBlock(focusedElement);
+    // Pass formType to determine static vs dynamic-guest-blocks behavior
+    const formBlock = findFormBlock(focusedElement, mapping.formType);
     const fields = formBlock.querySelectorAll('input, select, textarea');
     
     let filledCount = 0;
@@ -263,26 +266,35 @@ async function handleFillFields(data, mapping) {
 
 /**
  * Find the form block containing an element
- * This handles dynamic forms with repeatable guest blocks
+ * 
+ * @param {HTMLElement} element - The element to start searching from
+ * @param {string} formType - 'static' or 'dynamic-guest-blocks'
+ * 
+ * For static forms: Returns the whole <form> element (single-guest per form)
+ * For dynamic-guest-blocks: Searches for guest-specific containers
  */
-function findFormBlock(element) {
-  // Look for common form block patterns
-  // Try to find a parent container that groups related fields
+function findFormBlock(element, formType) {
+  // For static (single-guest) forms, use the whole form
+  // This is the most common case where one form = one guest
+  if (formType === 'static') {
+    return element.closest('form') || document.body;
+  }
   
+  // For dynamic guest blocks, look for guest-specific containers
+  // These are repeating sections within a single form (e.g., Guest 1, Guest 2)
   let current = element.parentElement;
   
   while (current && current !== document.body) {
-    // Check for common block identifiers
     const classList = current.classList.toString().toLowerCase();
     const id = (current.id || '').toLowerCase();
     
+    // Only look for actual guest/passenger block indicators
+    // NOT generic layout classes like "row" or "block" (used by Bootstrap, etc.)
     if (
       classList.includes('guest') ||
       classList.includes('passenger') ||
       classList.includes('traveler') ||
       classList.includes('person') ||
-      classList.includes('block') ||
-      classList.includes('row') ||
       classList.includes('entry') ||
       id.includes('guest') ||
       id.includes('passenger')
