@@ -32,7 +32,7 @@ export async function GET(
   // Check if SSE connection is requested
   const acceptHeader = request.headers.get('accept');
   if (acceptHeader?.includes('text/event-stream')) {
-    return handleSSE(sessionId);
+    return handleSSE(sessionId, request);
   }
   
   // Return session status
@@ -66,7 +66,7 @@ export async function DELETE(
 /**
  * Handle Server-Sent Events connection for image relay
  */
-function handleSSE(sessionId: string): Response {
+function handleSSE(sessionId: string, request: NextRequest): Response {
   const session = getSession(sessionId);
   
   if (!session) {

@@ -147,13 +147,9 @@ async function processFiles(sessionId: string, files: File[]): Promise<number> {
 }
 
 /**
- * Configure body parser for large uploads
+ * Route segment config for large uploads
+ * https://nextjs.org/docs/app/api-reference/file-conventions/route-segment-config
  */
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb'
-    }
-  }
-};
+export const maxDuration = 60; // Allow up to 60 seconds for uploads
+export const dynamic = 'force-dynamic';
 
