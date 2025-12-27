@@ -240,6 +240,10 @@ async function handleMessage(message, sender) {
     case 'HIDE_IMAGE_OVERLAY':
       return await hideImageOverlayOnTab();
     
+    // Scan form fields on a specific tab (injects content script if needed)
+    case 'SCAN_FIELDS_ON_TAB':
+      return await scanFieldsOnTab(message.tabId);
+    
     default:
       console.log('Unknown message type:', message.type);
       return { success: false, error: `Unknown message type: ${message.type}` };
@@ -590,6 +594,42 @@ async function fillFormFields(tabId, data, mapping) {
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return { success: true, tab };
+}
+
+/**
+ * Scan form fields on a specific tab
+ * Injects content script if not already loaded
+ */
+async function scanFieldsOnTab(tabId) {
+  try {
+    // First try to send message directly
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: 'SCAN_FORM_FIELDS'
+    });
+    return response;
+  } catch (error) {
+    // Content script not loaded - inject it first
+    console.log('Content script not loaded, injecting for field scan...');
+    
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['content/content-script.js']
+      });
+      
+      // Wait a moment for script to initialize
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Retry sending the message
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: 'SCAN_FORM_FIELDS'
+      });
+      return response;
+    } catch (injectError) {
+      console.error('Failed to inject and scan fields:', injectError);
+      return { success: false, error: injectError.message };
+    }
+  }
 }
 
 // ============================================================================

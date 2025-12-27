@@ -1801,29 +1801,50 @@ async function editExistingMapping(mappingId) {
     showToast('Loading mapping...', 'info');
     
     // Fetch the full mapping details
+    console.log('Fetching mapping:', mappingId);
     const response = await fetch(`https://crewforms.vercel.app/api/mappings?id=${mappingId}`);
     
     if (!response.ok) {
-      throw new Error('Failed to fetch mapping');
+      const errorText = await response.text();
+      console.error('Mapping fetch failed:', response.status, errorText);
+      throw new Error(`Failed to fetch mapping: ${response.status}`);
     }
     
     const mapping = await response.json();
+    console.log('Loaded mapping:', mapping);
     
     // First scan the fields to get current page structure
     const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
     if (!tabResult.success || !tabResult.tab) {
+      console.error('Could not get active tab:', tabResult);
       showToast('Could not detect active tab', 'error');
       return;
     }
     
-    const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
-      type: 'SCAN_FORM_FIELDS'
-    });
+    console.log('Scanning fields on tab:', tabResult.tab.id);
     
-    if (!result.success || !result.fields) {
-      showToast('Could not scan form fields', 'error');
+    // Try to scan fields - use sendMessage through background to ensure content script is injected
+    let result;
+    try {
+      result = await chrome.tabs.sendMessage(tabResult.tab.id, {
+        type: 'SCAN_FORM_FIELDS'
+      });
+    } catch (scanError) {
+      console.log('Direct message failed, trying via background:', scanError.message);
+      // Content script might not be loaded, try via background which will inject it
+      result = await sendMessage({ 
+        type: 'SCAN_FIELDS_ON_TAB',
+        tabId: tabResult.tab.id
+      });
+    }
+    
+    if (!result || !result.success || !result.fields) {
+      console.error('Field scan failed:', result);
+      showToast('Could not scan form fields. Make sure you are on a form page.', 'error');
       return;
     }
+    
+    console.log('Scanned fields:', result.fields.length);
     
     // Store scanned fields
     state.scannedFields = result.fields;
@@ -1888,7 +1909,7 @@ async function editExistingMapping(mappingId) {
     
   } catch (error) {
     console.error('Failed to edit mapping:', error);
-    showToast('Failed to load mapping for editing', 'error');
+    showToast(`Failed to load mapping: ${error.message}`, 'error');
   }
 }
 
