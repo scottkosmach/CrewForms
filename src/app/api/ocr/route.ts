@@ -64,6 +64,15 @@ interface PassportData {
 
 const OCR_SYSTEM_PROMPT = `You are a passport OCR system. Extract all relevant information from the passport image provided.
 
+IMPORTANT NOTES:
+- The image may be rotated 90, 180, or 270 degrees from normal orientation. Mentally rotate it to read correctly.
+- Passports have a Machine Readable Zone (MRZ) at the bottom - two lines of OCR-B font characters. This is the most reliable data source.
+- Read the MRZ FIRST, then cross-reference with the visual printed fields above.
+
+MRZ Format (Type P passport):
+- Line 1: P<COUNTRY<<SURNAME<<GIVEN_NAMES<<<<<<<<<<<<<<<<<<
+- Line 2: PASSPORT_NO<CHECK<NATIONALITY<YYMMDD<CHECK<SEX<YYMMDD<CHECK
+
 Return the data as a valid JSON object with the following structure:
 {
   "firstName": "string or null",
@@ -93,14 +102,14 @@ Return the data as a valid JSON object with the following structure:
   "confidence": 0.0 to 1.0 (your confidence in the extraction accuracy)
 }
 
-Important:
+Extraction Rules:
 - Extract exactly what is shown on the passport
 - Use null for any fields you cannot read or find
 - Names should be in their original case (usually uppercase on passports)
 - Dates should be extracted as separate day/month/year strings
 - Passport numbers may contain letters and numbers
 - Determine if the document is a passport book (full passport) or a passport card (smaller card format) based on the image
-- Return ONLY the JSON object, no other text`;
+- For dates in MRZ: YYMMDD format - convert YY to 4-digit year (00-30 = 2000s, 31-99 = 1900s for DOB; always 2000s for expiry)`;
 
 // ============================================================================
 // API HANDLER
@@ -142,10 +151,11 @@ export async function POST(request: NextRequest) {
     
     console.log('Processing OCR request...');
     
-    // Call OpenAI Vision API
+    // Call OpenAI Vision API with GPT-4.1 mini for better instruction following
     const client = getOpenAIClient();
     const response = await client.chat.completions.create({
-      model: 'gpt-4o', // Use gpt-4o for vision capabilities
+      model: 'gpt-4.1-mini', // GPT-4.1 mini: better instruction following, 83% cheaper
+      response_format: { type: 'json_object' }, // Force valid JSON output
       messages: [
         {
           role: 'system',
@@ -169,7 +179,7 @@ export async function POST(request: NextRequest) {
         }
       ],
       max_tokens: 1000,
-      temperature: 0.1 // Low temperature for consistent extraction
+      temperature: 0 // Zero temperature for maximum consistency
     });
     
     // Parse the response
