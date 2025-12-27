@@ -165,7 +165,25 @@ function handleBackgroundMessage(message) {
     
     case 'IMAGE_RECEIVED':
       // New passport image received from upload
+      console.log('Received image from background!');
       handleImageReceived(message.imageData, message.sessionId);
+      
+      // Close QR modal after receiving first image
+      const qrModal = document.getElementById('qrModal');
+      if (qrModal && !qrModal.classList.contains('hidden')) {
+        qrModal.classList.add('hidden');
+        showToast('Passport image received!', 'success');
+      }
+      break;
+    
+    case 'SESSION_EXPIRED':
+      // Session expired, close modal and notify user
+      const modal = document.getElementById('qrModal');
+      if (modal) {
+        modal.classList.add('hidden');
+      }
+      activeSessionId = null;
+      showToast('Upload session expired', 'warning');
       break;
     
     case 'OCR_COMPLETE':
@@ -666,6 +684,9 @@ function startExpiryTimer() {
 // TRAVELER IMPORT
 // ============================================================================
 
+// Track current active session
+let activeSessionId = null;
+
 function setupTravelerImport() {
   const importBtn = document.getElementById('importGuestsBtn');
   const closeQrBtn = document.getElementById('closeQrBtn');
@@ -679,7 +700,12 @@ function setupTravelerImport() {
     const result = await sendMessage({ type: 'CREATE_SESSION' });
     
     if (result.success) {
+      activeSessionId = result.sessionId;
       displayQrCode(result.uploadUrl);
+      
+      // Start polling for uploaded images
+      await sendMessage({ type: 'START_POLLING', sessionId: result.sessionId });
+      console.log('Started polling for session:', result.sessionId);
     } else {
       showToast('Failed to create upload session: ' + result.error, 'error');
       qrModal.classList.add('hidden');
@@ -687,6 +713,11 @@ function setupTravelerImport() {
   });
   
   closeQrBtn.addEventListener('click', () => {
+    // Stop polling when closing the modal
+    if (activeSessionId) {
+      sendMessage({ type: 'STOP_POLLING', sessionId: activeSessionId });
+      activeSessionId = null;
+    }
     qrModal.classList.add('hidden');
   });
 }

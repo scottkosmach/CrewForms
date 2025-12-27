@@ -196,6 +196,12 @@ async function handleMessage(message, sender) {
     case 'CHECK_SESSION':
       return await checkSessionStatus(message.sessionId);
     
+    case 'START_POLLING':
+      return await startSessionPolling(message.sessionId);
+    
+    case 'STOP_POLLING':
+      return stopSessionPolling(message.sessionId);
+    
     // OCR operations
     case 'PROCESS_OCR':
       return await processOCR(message.imageData);
@@ -294,6 +300,84 @@ async function checkSessionStatus(sessionId) {
   } catch (error) {
     return { success: false, error: error.message };
   }
+}
+
+// Active polling intervals (keyed by sessionId)
+const activePollers = new Map();
+
+/**
+ * Start polling a session for uploaded images
+ */
+async function startSessionPolling(sessionId) {
+  // Don't start if already polling
+  if (activePollers.has(sessionId)) {
+    return { success: true, message: 'Already polling' };
+  }
+  
+  const settings = await chrome.storage.local.get('settings');
+  const serverUrl = settings.settings?.serverUrl || SERVER_URL;
+  
+  console.log(`Starting to poll session ${sessionId} for images`);
+  
+  // Poll every 2 seconds
+  const intervalId = setInterval(async () => {
+    try {
+      // Check session status and get any pending images
+      const response = await fetch(`${serverUrl}/api/sessions/${sessionId}`);
+      
+      if (!response.ok) {
+        // Session expired or not found
+        console.log(`Session ${sessionId} no longer valid, stopping polling`);
+        stopSessionPolling(sessionId);
+        notifySidePanel({ type: 'SESSION_EXPIRED', sessionId });
+        return;
+      }
+      
+      const status = await response.json();
+      
+      // If there are images, fetch and relay them
+      if (status.imageCount > 0) {
+        console.log(`Found ${status.imageCount} images in session ${sessionId}`);
+        
+        // Fetch images from a dedicated endpoint
+        const imagesResponse = await fetch(`${serverUrl}/api/sessions/${sessionId}/images`);
+        
+        if (imagesResponse.ok) {
+          const { images } = await imagesResponse.json();
+          
+          // Send each image to the side panel
+          for (const imageData of images) {
+            console.log('Relaying image to side panel');
+            notifySidePanel({ 
+              type: 'IMAGE_RECEIVED', 
+              imageData,
+              sessionId 
+            });
+          }
+        }
+      }
+      
+    } catch (error) {
+      console.error('Polling error:', error);
+    }
+  }, 2000);
+  
+  activePollers.set(sessionId, intervalId);
+  
+  return { success: true };
+}
+
+/**
+ * Stop polling a session
+ */
+function stopSessionPolling(sessionId) {
+  const intervalId = activePollers.get(sessionId);
+  if (intervalId) {
+    clearInterval(intervalId);
+    activePollers.delete(sessionId);
+    console.log(`Stopped polling session ${sessionId}`);
+  }
+  return { success: true };
 }
 
 // ============================================================================
