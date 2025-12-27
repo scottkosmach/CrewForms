@@ -156,19 +156,35 @@ export async function getSession(sessionId: string): Promise<Session | null> {
 export async function addImageToSession(sessionId: string, imageData: string): Promise<boolean> {
   const supabase = await createClient();
   
+  console.log(`[addImageToSession] Adding image to session ${sessionId}`);
+  console.log(`[addImageToSession] Image data preview: ${imageData.substring(0, 100)}...`);
+  
   // First get current images
   const session = await getSession(sessionId);
-  if (!session) return false;
+  if (!session) {
+    console.log(`[addImageToSession] Session ${sessionId} not found`);
+    return false;
+  }
+  
+  console.log(`[addImageToSession] Current images in session: ${session.images.length}`);
   
   // Append new image
   const updatedImages = [...session.images, imageData];
+  
+  console.log(`[addImageToSession] Updating session with ${updatedImages.length} images`);
   
   const { error } = await supabase
     .from('upload_sessions')
     .update({ images: updatedImages })
     .eq('id', sessionId);
   
-  return !error;
+  if (error) {
+    console.error(`[addImageToSession] Failed to update session:`, error);
+    return false;
+  }
+  
+  console.log(`[addImageToSession] Successfully added image to session ${sessionId}`);
+  return true;
 }
 
 /**
@@ -177,18 +193,32 @@ export async function addImageToSession(sessionId: string, imageData: string): P
 export async function getPendingImages(sessionId: string): Promise<string[]> {
   const supabase = await createClient();
   
+  console.log(`[getPendingImages] Fetching images for session ${sessionId}`);
+  
   // Get current session
   const session = await getSession(sessionId);
-  if (!session) return [];
+  if (!session) {
+    console.log(`[getPendingImages] Session ${sessionId} not found`);
+    return [];
+  }
   
   const images = [...session.images];
+  console.log(`[getPendingImages] Found ${images.length} pending image(s)`);
   
   // Clear images if there are any
   if (images.length > 0) {
-    await supabase
+    console.log(`[getPendingImages] Clearing images from session ${sessionId}`);
+    const { error } = await supabase
       .from('upload_sessions')
       .update({ images: [] })
       .eq('id', sessionId);
+    
+    if (error) {
+      console.error(`[getPendingImages] Failed to clear images:`, error);
+      // Still return the images even if clearing failed
+    } else {
+      console.log(`[getPendingImages] Successfully cleared images from session`);
+    }
   }
   
   return images;

@@ -21,19 +21,25 @@ export async function POST(
 ) {
   const { sessionId } = await params;
   
+  console.log(`[Upload API] POST request for session ${sessionId}`);
+  
   // Verify session exists (now async)
   const session = await getSession(sessionId);
   
   if (!session) {
+    console.log(`[Upload API] Session ${sessionId} not found or expired`);
     return NextResponse.json(
       { error: 'Session not found or expired' },
       { status: 404 }
     );
   }
   
+  console.log(`[Upload API] Session ${sessionId} found, current images: ${session.images.length}`);
+  
   // Check if session has expired (compare ISO strings)
   const expiresAtMs = new Date(session.expires_at).getTime();
   if (expiresAtMs < Date.now()) {
+    console.log(`[Upload API] Session ${sessionId} has expired`);
     return NextResponse.json(
       { error: 'Session has expired' },
       { status: 410 }

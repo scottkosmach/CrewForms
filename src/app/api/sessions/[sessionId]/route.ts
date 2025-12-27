@@ -23,9 +23,13 @@ export async function GET(
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const { sessionId } = await params;
+  
+  console.log(`[Session API] GET request for session ${sessionId}`);
+  
   const session = await getSession(sessionId);
   
   if (!session) {
+    console.log(`[Session API] Session ${sessionId} not found or expired`);
     return NextResponse.json(
       { error: 'Session not found or expired' },
       { status: 404 }
@@ -35,19 +39,24 @@ export async function GET(
   // Check if SSE connection is requested
   const acceptHeader = request.headers.get('accept');
   if (acceptHeader?.includes('text/event-stream')) {
+    console.log(`[Session API] SSE connection requested for session ${sessionId}`);
     return handleSSE(sessionId, request);
   }
   
   // Return session status
   const expiresAtMs = new Date(session.expires_at).getTime();
   
-  return NextResponse.json({
+  const response = {
     id: session.id,
     expiresAt: expiresAtMs,
     imageCount: session.images.length,
     connected: session.connected,
     timeRemaining: Math.max(0, expiresAtMs - Date.now())
-  });
+  };
+  
+  console.log(`[Session API] Returning status for session ${sessionId}:`, JSON.stringify(response));
+  
+  return NextResponse.json(response);
 }
 
 /**

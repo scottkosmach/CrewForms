@@ -154,18 +154,28 @@ async function loadAllData() {
  * Handle messages from background script
  */
 function handleBackgroundMessage(message) {
-  console.log('Side panel received:', message.type);
+  console.log('[SidePanel] Received message:', message.type);
   
   switch (message.type) {
     case 'DATA_EXPIRED':
       // Reload data and update UI
+      console.log('[SidePanel] Data expired, reloading...');
       loadAllData().then(() => renderAll());
       showToast('Some data has expired and been cleared', 'warning');
       break;
     
     case 'IMAGE_RECEIVED':
       // New passport image received from upload
-      console.log('Received image from background!');
+      console.log('[SidePanel] IMAGE_RECEIVED - Image data received!');
+      console.log('[SidePanel] Image data preview:', message.imageData?.substring(0, 100));
+      console.log('[SidePanel] Session ID:', message.sessionId);
+      
+      if (!message.imageData) {
+        console.error('[SidePanel] ERROR: No image data in message!');
+        showToast('Error: No image data received', 'error');
+        break;
+      }
+      
       handleImageReceived(message.imageData, message.sessionId);
       
       // Close QR modal after receiving first image
@@ -770,14 +780,19 @@ function displayQrCode(url) {
 }
 
 function handleImageReceived(imageData, sessionId) {
+  console.log('[SidePanel] handleImageReceived called');
+  console.log('[SidePanel] Image data length:', imageData?.length || 0);
+  
   // Create a new traveler entry with the image
   const travelerId = generateId();
+  console.log('[SidePanel] Generated traveler ID:', travelerId);
   
   // Store image separately (large data)
   state.travelerImages[travelerId] = {
     data: imageData,
     expiresAt: getExpiryTime()
   };
+  console.log('[SidePanel] Stored image in state.travelerImages');
   
   // Create traveler placeholder
   const traveler = {
@@ -789,17 +804,24 @@ function handleImageReceived(imageData, sessionId) {
   };
   
   state.travelers.push(traveler);
+  console.log('[SidePanel] Added traveler to state, total travelers:', state.travelers.length);
   
   // Save to storage
   setStorage({
     travelers: state.travelers,
     travelerImages: state.travelerImages
+  }).then(() => {
+    console.log('[SidePanel] Saved to storage');
+  }).catch(err => {
+    console.error('[SidePanel] Failed to save to storage:', err);
   });
   
   // Render updated list
+  console.log('[SidePanel] Rendering traveler list...');
   renderTravelerList();
   
   // Trigger OCR processing
+  console.log('[SidePanel] Starting OCR processing...');
   processOcr(travelerId, imageData);
 }
 
