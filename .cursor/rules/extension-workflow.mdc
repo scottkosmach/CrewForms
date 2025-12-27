@@ -1,0 +1,45 @@
+---
+description: Extension development workflow and deployment
+globs: extension/**/*
+alwaysApply: false
+---
+
+# Extension Workflow
+
+## After Modifying Extension Files
+
+When ANY file in the `extension/` folder is modified:
+
+1. **Always regenerate the distributable zip:**
+   ```powershell
+   Compress-Archive -Path "extension\*" -DestinationPath "public\crewforms-extension.zip" -Force
+   ```
+
+2. **Commit both the source files AND the zip together**
+
+3. **Push to GitHub**
+
+This ensures the downloadable extension at `/crewforms-extension.zip` always matches the source code.
+
+## Extension File Structure
+
+```
+extension/
+├── background/
+│   └── service-worker.js    # Background service worker
+├── content/
+│   └── content-script.js    # Injected into web pages
+├── sidepanel/
+│   ├── index.html           # Side panel UI
+│   ├── app.js               # Side panel logic
+│   └── styles.css           # Side panel styles
+├── icons/                   # Extension icons
+└── manifest.json            # Extension manifest
+```
+
+## Testing Changes
+
+After updating extension files:
+1. Go to `chrome://extensions`
+2. Click "Reload" on the CrewForms extension
+3. Test the changes on a page with a mapping configured
