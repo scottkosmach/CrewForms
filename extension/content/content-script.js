@@ -848,46 +848,78 @@ function triggerInputEvents(field) {
 /**
  * Simulate a keypress on an element
  * Handles both regular keys (a-z) and special keys (Enter, Tab, Arrow keys, etc.)
+ * 
+ * Includes legacy keyCode/which properties for compatibility with older frameworks
+ * and Angular Material components.
  */
 async function simulateKeypress(element, key) {
-  // Map special key names to their proper key/code values
+  // Map special key names to their proper key/code/keyCode values
+  // keyCode values are deprecated but still used by many frameworks
   const specialKeys = {
-    'Enter': { key: 'Enter', code: 'Enter' },
-    'Tab': { key: 'Tab', code: 'Tab' },
-    'Escape': { key: 'Escape', code: 'Escape' },
-    'Space': { key: ' ', code: 'Space' },
-    'Backspace': { key: 'Backspace', code: 'Backspace' },
-    'ArrowUp': { key: 'ArrowUp', code: 'ArrowUp' },
-    'ArrowDown': { key: 'ArrowDown', code: 'ArrowDown' },
-    'ArrowLeft': { key: 'ArrowLeft', code: 'ArrowLeft' },
-    'ArrowRight': { key: 'ArrowRight', code: 'ArrowRight' }
+    'Enter': { key: 'Enter', code: 'Enter', keyCode: 13 },
+    'Tab': { key: 'Tab', code: 'Tab', keyCode: 9 },
+    'Escape': { key: 'Escape', code: 'Escape', keyCode: 27 },
+    'Space': { key: ' ', code: 'Space', keyCode: 32 },
+    'Backspace': { key: 'Backspace', code: 'Backspace', keyCode: 8 },
+    'ArrowUp': { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
+    'ArrowDown': { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
+    'ArrowLeft': { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
+    'ArrowRight': { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 }
   };
   
-  // Determine key and code values
-  let keyValue, codeValue;
+  // Determine key, code, and keyCode values
+  let keyValue, codeValue, keyCodeValue;
   if (specialKeys[key]) {
     keyValue = specialKeys[key].key;
     codeValue = specialKeys[key].code;
+    keyCodeValue = specialKeys[key].keyCode;
   } else {
     // Regular letter key
     keyValue = key;
     codeValue = `Key${key.toUpperCase()}`;
+    keyCodeValue = key.toUpperCase().charCodeAt(0);
   }
   
   const eventOptions = {
     key: keyValue,
     code: codeValue,
+    keyCode: keyCodeValue,
+    which: keyCodeValue,
+    charCode: keyCodeValue,
     bubbles: true,
-    cancelable: true
+    cancelable: true,
+    composed: true,  // Allows event to cross shadow DOM boundaries
+    view: window
   };
   
+  // Dispatch keydown (most frameworks listen to this)
   const keydownEvent = new KeyboardEvent('keydown', eventOptions);
-  const keypressEvent = new KeyboardEvent('keypress', eventOptions);
-  const keyupEvent = new KeyboardEvent('keyup', eventOptions);
-  
   element.dispatchEvent(keydownEvent);
-  element.dispatchEvent(keypressEvent);
+  
+  // Dispatch keypress (deprecated but some still use it) - not for special keys
+  if (!specialKeys[key]) {
+    const keypressEvent = new KeyboardEvent('keypress', eventOptions);
+    element.dispatchEvent(keypressEvent);
+  }
+  
+  // Dispatch keyup
+  const keyupEvent = new KeyboardEvent('keyup', eventOptions);
   element.dispatchEvent(keyupEvent);
+  
+  // For Enter key specifically, also try dispatching on the active dropdown panel
+  // Angular Material listens on the overlay panel for keyboard events
+  if (key === 'Enter') {
+    const dropdownPanel = document.querySelector('.mat-select-panel, .cdk-overlay-pane, [role="listbox"]');
+    if (dropdownPanel) {
+      dropdownPanel.dispatchEvent(new KeyboardEvent('keydown', eventOptions));
+    }
+    
+    // Also try clicking the currently highlighted option
+    const highlightedOption = document.querySelector('.mat-option.mat-active, .mat-option:focus, [role="option"].mat-active');
+    if (highlightedOption) {
+      highlightedOption.click();
+    }
+  }
 }
 
 /**
