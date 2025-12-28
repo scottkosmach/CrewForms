@@ -352,21 +352,28 @@ async function handleFillFields(data, mapping) {
   console.log('[CrewForms] Data received:', JSON.stringify(data, null, 2));
   console.log('[CrewForms] Mapping fields count:', mapping?.fields?.length);
   
-  if (!focusedElement) {
-    console.error('[CrewForms] No field is currently focused');
-    return { success: false, error: 'No field is currently focused. Click on a form field first.' };
-  }
-  
   if (!mapping || !mapping.fields) {
     console.error('[CrewForms] No field mapping provided');
     return { success: false, error: 'No field mapping provided' };
   }
   
   try {
-    // Find the form block starting from focused element
-    // Pass formType to determine static vs dynamic-guest-blocks behavior
-    const formBlock = findFormBlock(focusedElement, mapping.formType);
-    console.log('[CrewForms] Form block found:', formBlock.tagName, formBlock.className);
+    let formBlock;
+    
+    // For static forms, we don't need a focused element - just use the form directly
+    // This allows pasting without clicking into a field first
+    if (mapping.formType === 'static' || !mapping.formType) {
+      formBlock = document.querySelector('form') || document.body;
+      console.log('[CrewForms] Static form - using form directly:', formBlock.tagName);
+    } else {
+      // For dynamic-guest-blocks, we need a focused element to identify which guest block to fill
+      if (!focusedElement) {
+        console.error('[CrewForms] No field is currently focused');
+        return { success: false, error: 'No field is currently focused. Click on a form field first.' };
+      }
+      formBlock = findFormBlock(focusedElement, mapping.formType);
+      console.log('[CrewForms] Dynamic form block found:', formBlock.tagName, formBlock.className);
+    }
     
     // Must match selector in scanAllFormFields() for consistent field positions!
     // Includes Angular Material mat-select and custom dropdown components.
