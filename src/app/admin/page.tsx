@@ -8,27 +8,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 // ============================================================================
 // TYPES
 // ============================================================================
-
-interface FieldConfig {
-  keypressMap?: Record<string, { key: string; count: number }>;
-  format?: string;
-  keypressDelay?: number;
-}
-
-interface FieldMapping {
-  position: number;
-  dataSource: string;
-  inputType: string;
-  staticValue?: string;
-  status?: string;
-  fieldType?: string;
-  dateFormat?: string;
-  config?: FieldConfig;
-}
 
 interface MappingSummary {
   id: string;
@@ -40,11 +24,6 @@ interface MappingSummary {
   updatedAt: number;
 }
 
-interface MappingDetails extends MappingSummary {
-  fields: FieldMapping[];
-  fillDelay?: number;
-}
-
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -53,11 +32,6 @@ export default function AdminDashboard() {
   const [mappings, setMappings] = useState<MappingSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // State for viewing mapping details
-  const [selectedMappingId, setSelectedMappingId] = useState<string | null>(null);
-  const [selectedMapping, setSelectedMapping] = useState<MappingDetails | null>(null);
-  const [loadingDetails, setLoadingDetails] = useState(false);
   
   // Load mappings on mount
   useEffect(() => {
@@ -83,32 +57,6 @@ export default function AdminDashboard() {
     }
   }
   
-  // Load full mapping details when viewing
-  async function loadMappingDetails(id: string) {
-    try {
-      setLoadingDetails(true);
-      const response = await fetch(`/api/mappings?id=${id}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to load mapping details');
-      }
-      
-      const data = await response.json();
-      setSelectedMapping(data);
-      setSelectedMappingId(id);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to load details');
-    } finally {
-      setLoadingDetails(false);
-    }
-  }
-  
-  // Close the details panel
-  function closeDetails() {
-    setSelectedMappingId(null);
-    setSelectedMapping(null);
-  }
-  
   function formatDate(timestamp: number): string {
     return new Date(timestamp).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -117,17 +65,6 @@ export default function AdminDashboard() {
       hour: '2-digit',
       minute: '2-digit'
     });
-  }
-  
-  // Format data source for display
-  function formatDataSource(dataSource: string): string {
-    if (!dataSource) return '—';
-    // Convert "traveler.firstName" to "Traveler → First Name"
-    const parts = dataSource.split('.');
-    const formatted = parts.map(p => 
-      p.charAt(0).toUpperCase() + p.slice(1).replace(/([A-Z])/g, ' $1')
-    );
-    return formatted.join(' → ');
   }
   
   // ============================================================================
@@ -409,174 +346,6 @@ export default function AdminDashboard() {
           font-size: 14px;
           color: #64748b;
         }
-        
-        /* Details Modal Overlay */
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          padding: 20px;
-        }
-        
-        .modal {
-          background: white;
-          border-radius: 16px;
-          width: 100%;
-          max-width: 800px;
-          max-height: 90vh;
-          overflow: hidden;
-          display: flex;
-          flex-direction: column;
-        }
-        
-        .modal-header {
-          padding: 20px 24px;
-          border-bottom: 1px solid #e2e8f0;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        
-        .modal-title {
-          font-size: 18px;
-          font-weight: 600;
-          color: #1e293b;
-        }
-        
-        .modal-close {
-          background: none;
-          border: none;
-          cursor: pointer;
-          padding: 8px;
-          color: #64748b;
-          border-radius: 6px;
-        }
-        
-        .modal-close:hover {
-          background: #f1f5f9;
-          color: #1e293b;
-        }
-        
-        .modal-body {
-          padding: 24px;
-          overflow-y: auto;
-          flex: 1;
-        }
-        
-        .detail-section {
-          margin-bottom: 24px;
-        }
-        
-        .detail-section:last-child {
-          margin-bottom: 0;
-        }
-        
-        .detail-section-title {
-          font-size: 14px;
-          font-weight: 600;
-          color: #64748b;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          margin-bottom: 12px;
-        }
-        
-        .detail-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 16px;
-        }
-        
-        .detail-item {
-          background: #f8fafc;
-          padding: 12px 16px;
-          border-radius: 8px;
-        }
-        
-        .detail-label {
-          font-size: 12px;
-          color: #64748b;
-          margin-bottom: 4px;
-        }
-        
-        .detail-value {
-          font-size: 14px;
-          color: #1e293b;
-          font-weight: 500;
-        }
-        
-        .detail-value.mono {
-          font-family: monospace;
-          font-size: 13px;
-        }
-        
-        .fields-table {
-          width: 100%;
-          border: 1px solid #e2e8f0;
-          border-radius: 8px;
-          overflow: hidden;
-        }
-        
-        .fields-table th,
-        .fields-table td {
-          padding: 10px 14px;
-          text-align: left;
-          border-bottom: 1px solid #e2e8f0;
-          font-size: 13px;
-        }
-        
-        .fields-table th {
-          background: #f8fafc;
-          font-weight: 500;
-          color: #64748b;
-        }
-        
-        .fields-table tr:last-child td {
-          border-bottom: none;
-        }
-        
-        .input-type-badge {
-          background: #f1f5f9;
-          color: #475569;
-          padding: 2px 6px;
-          border-radius: 4px;
-          font-size: 11px;
-          font-weight: 500;
-        }
-        
-        .status-badge {
-          padding: 2px 6px;
-          border-radius: 4px;
-          font-size: 11px;
-          font-weight: 500;
-        }
-        
-        .status-data {
-          background: #dcfce7;
-          color: #16a34a;
-        }
-        
-        .status-static {
-          background: #fef3c7;
-          color: #d97706;
-        }
-        
-        .status-unmapped {
-          background: #f1f5f9;
-          color: #64748b;
-        }
-        
-        .modal-loading {
-          text-align: center;
-          padding: 40px;
-          color: #64748b;
-        }
       `}</style>
       
       {/* Header */}
@@ -708,13 +477,12 @@ export default function AdminDashboard() {
                     </td>
                     <td>{formatDate(mapping.updatedAt)}</td>
                     <td>
-                      <button 
-                        onClick={() => loadMappingDetails(mapping.id)} 
+                      <Link 
+                        href={`/admin/${mapping.id}`}
                         className="btn btn-sm btn-secondary"
-                        disabled={loadingDetails && selectedMappingId === mapping.id}
                       >
-                        {loadingDetails && selectedMappingId === mapping.id ? 'Loading...' : 'View Details'}
-                      </button>
+                        View Details
+                      </Link>
                     </td>
                   </tr>
                 ))}
@@ -723,102 +491,6 @@ export default function AdminDashboard() {
           )}
         </div>
       </main>
-      
-      {/* Details Modal */}
-      {selectedMappingId && (
-        <div className="modal-overlay" onClick={closeDetails}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">
-                {selectedMapping ? selectedMapping.name : 'Loading...'}
-              </h2>
-              <button className="modal-close" onClick={closeDetails}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-            <div className="modal-body">
-              {!selectedMapping ? (
-                <div className="modal-loading">Loading mapping details...</div>
-              ) : (
-                <>
-                  {/* Basic Info */}
-                  <div className="detail-section">
-                    <h3 className="detail-section-title">Basic Information</h3>
-                    <div className="detail-grid">
-                      <div className="detail-item">
-                        <div className="detail-label">URL Pattern</div>
-                        <div className="detail-value mono">{selectedMapping.urlPattern}</div>
-                      </div>
-                      <div className="detail-item">
-                        <div className="detail-label">Form Type</div>
-                        <div className="detail-value">
-                          {selectedMapping.formType === 'dynamic-guest-blocks' ? 'Dynamic (Multiple Guests)' : 'Static (Single Form)'}
-                        </div>
-                      </div>
-                      <div className="detail-item">
-                        <div className="detail-label">Version</div>
-                        <div className="detail-value">v{selectedMapping.version}</div>
-                      </div>
-                      <div className="detail-item">
-                        <div className="detail-label">Fill Delay</div>
-                        <div className="detail-value">{selectedMapping.fillDelay || 100}ms</div>
-                      </div>
-                      <div className="detail-item">
-                        <div className="detail-label">Last Updated</div>
-                        <div className="detail-value">{formatDate(selectedMapping.updatedAt)}</div>
-                      </div>
-                      <div className="detail-item">
-                        <div className="detail-label">Field Count</div>
-                        <div className="detail-value">{selectedMapping.fields?.length || 0} fields</div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Field Mappings */}
-                  <div className="detail-section">
-                    <h3 className="detail-section-title">Field Mappings</h3>
-                    {selectedMapping.fields && selectedMapping.fields.length > 0 ? (
-                      <table className="fields-table">
-                        <thead>
-                          <tr>
-                            <th>#</th>
-                            <th>Status</th>
-                            <th>Data Source</th>
-                            <th>Input Type</th>
-                            <th>Static Value</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedMapping.fields.map((field, index) => (
-                            <tr key={index}>
-                              <td>{field.position}</td>
-                              <td>
-                                <span className={`status-badge status-${field.status || 'unmapped'}`}>
-                                  {field.status || 'unmapped'}
-                                </span>
-                              </td>
-                              <td>{formatDataSource(field.dataSource)}</td>
-                              <td>
-                                <span className="input-type-badge">{field.inputType || 'paste'}</span>
-                              </td>
-                              <td>{field.staticValue || '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p style={{ color: '#64748b', fontSize: '14px' }}>No field mappings configured</p>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
