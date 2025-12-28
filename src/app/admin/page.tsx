@@ -1,18 +1,34 @@
 /**
- * Admin Dashboard Page
+ * Admin Dashboard Page (Read-Only)
  * 
- * Main entry point for the admin interface.
- * Lists all field mappings and provides navigation to create/edit.
+ * View-only dashboard for field mappings.
+ * To create or edit mappings, use the Chrome extension's Admin tab.
  */
 
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 
 // ============================================================================
 // TYPES
 // ============================================================================
+
+interface FieldConfig {
+  keypressMap?: Record<string, { key: string; count: number }>;
+  format?: string;
+  keypressDelay?: number;
+}
+
+interface FieldMapping {
+  position: number;
+  dataSource: string;
+  inputType: string;
+  staticValue?: string;
+  status?: string;
+  fieldType?: string;
+  dateFormat?: string;
+  config?: FieldConfig;
+}
 
 interface MappingSummary {
   id: string;
@@ -24,6 +40,11 @@ interface MappingSummary {
   updatedAt: number;
 }
 
+interface MappingDetails extends MappingSummary {
+  fields: FieldMapping[];
+  fillDelay?: number;
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -32,6 +53,11 @@ export default function AdminDashboard() {
   const [mappings, setMappings] = useState<MappingSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // State for viewing mapping details
+  const [selectedMappingId, setSelectedMappingId] = useState<string | null>(null);
+  const [selectedMapping, setSelectedMapping] = useState<MappingDetails | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   
   // Load mappings on mount
   useEffect(() => {
@@ -57,23 +83,30 @@ export default function AdminDashboard() {
     }
   }
   
-  async function deleteMapping(id: string) {
-    if (!confirm('Are you sure you want to delete this mapping?')) return;
-    
+  // Load full mapping details when viewing
+  async function loadMappingDetails(id: string) {
     try {
-      const response = await fetch(`/api/mappings?id=${id}`, {
-        method: 'DELETE'
-      });
+      setLoadingDetails(true);
+      const response = await fetch(`/api/mappings?id=${id}`);
       
       if (!response.ok) {
-        throw new Error('Failed to delete mapping');
+        throw new Error('Failed to load mapping details');
       }
       
-      // Reload mappings
-      await loadMappings();
+      const data = await response.json();
+      setSelectedMapping(data);
+      setSelectedMappingId(id);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete');
+      alert(err instanceof Error ? err.message : 'Failed to load details');
+    } finally {
+      setLoadingDetails(false);
     }
+  }
+  
+  // Close the details panel
+  function closeDetails() {
+    setSelectedMappingId(null);
+    setSelectedMapping(null);
   }
   
   function formatDate(timestamp: number): string {
@@ -84,6 +117,17 @@ export default function AdminDashboard() {
       hour: '2-digit',
       minute: '2-digit'
     });
+  }
+  
+  // Format data source for display
+  function formatDataSource(dataSource: string): string {
+    if (!dataSource) return '—';
+    // Convert "traveler.firstName" to "Traveler → First Name"
+    const parts = dataSource.split('.');
+    const formatted = parts.map(p => 
+      p.charAt(0).toUpperCase() + p.slice(1).replace(/([A-Z])/g, ' $1')
+    );
+    return formatted.join(' → ');
   }
   
   // ============================================================================
@@ -145,13 +189,44 @@ export default function AdminDashboard() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-bottom: 30px;
+          margin-bottom: 20px;
         }
         
         .page-title {
           font-size: 24px;
           font-weight: 600;
           color: #1e293b;
+        }
+        
+        .info-banner {
+          background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+          border: 1px solid #93c5fd;
+          border-radius: 10px;
+          padding: 16px 20px;
+          margin-bottom: 30px;
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+        }
+        
+        .info-banner svg {
+          flex-shrink: 0;
+          color: #3b82f6;
+        }
+        
+        .info-banner-content {
+          flex: 1;
+        }
+        
+        .info-banner-title {
+          font-weight: 600;
+          color: #1e40af;
+          margin-bottom: 4px;
+        }
+        
+        .info-banner-text {
+          font-size: 14px;
+          color: #1e3a8a;
         }
         
         .btn {
@@ -168,15 +243,6 @@ export default function AdminDashboard() {
           transition: all 0.2s ease;
         }
         
-        .btn-primary {
-          background: #0891b2;
-          color: white;
-        }
-        
-        .btn-primary:hover {
-          background: #0e7490;
-        }
-        
         .btn-secondary {
           background: #e2e8f0;
           color: #475569;
@@ -184,15 +250,6 @@ export default function AdminDashboard() {
         
         .btn-secondary:hover {
           background: #cbd5e1;
-        }
-        
-        .btn-danger {
-          background: #fee2e2;
-          color: #dc2626;
-        }
-        
-        .btn-danger:hover {
-          background: #fecaca;
         }
         
         .btn-download {
@@ -291,11 +348,6 @@ export default function AdminDashboard() {
           font-size: 12px;
         }
         
-        .actions {
-          display: flex;
-          gap: 8px;
-        }
-        
         .empty-state {
           text-align: center;
           padding: 60px 20px;
@@ -310,7 +362,12 @@ export default function AdminDashboard() {
         }
         
         .empty-state p {
-          margin-bottom: 20px;
+          margin-bottom: 8px;
+        }
+        
+        .empty-state .hint {
+          font-size: 14px;
+          color: #94a3b8;
         }
         
         .loading {
@@ -352,33 +409,201 @@ export default function AdminDashboard() {
           font-size: 14px;
           color: #64748b;
         }
+        
+        /* Details Modal Overlay */
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 20px;
+        }
+        
+        .modal {
+          background: white;
+          border-radius: 16px;
+          width: 100%;
+          max-width: 800px;
+          max-height: 90vh;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+        
+        .modal-header {
+          padding: 20px 24px;
+          border-bottom: 1px solid #e2e8f0;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        
+        .modal-title {
+          font-size: 18px;
+          font-weight: 600;
+          color: #1e293b;
+        }
+        
+        .modal-close {
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 8px;
+          color: #64748b;
+          border-radius: 6px;
+        }
+        
+        .modal-close:hover {
+          background: #f1f5f9;
+          color: #1e293b;
+        }
+        
+        .modal-body {
+          padding: 24px;
+          overflow-y: auto;
+          flex: 1;
+        }
+        
+        .detail-section {
+          margin-bottom: 24px;
+        }
+        
+        .detail-section:last-child {
+          margin-bottom: 0;
+        }
+        
+        .detail-section-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: #64748b;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          margin-bottom: 12px;
+        }
+        
+        .detail-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 16px;
+        }
+        
+        .detail-item {
+          background: #f8fafc;
+          padding: 12px 16px;
+          border-radius: 8px;
+        }
+        
+        .detail-label {
+          font-size: 12px;
+          color: #64748b;
+          margin-bottom: 4px;
+        }
+        
+        .detail-value {
+          font-size: 14px;
+          color: #1e293b;
+          font-weight: 500;
+        }
+        
+        .detail-value.mono {
+          font-family: monospace;
+          font-size: 13px;
+        }
+        
+        .fields-table {
+          width: 100%;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        
+        .fields-table th,
+        .fields-table td {
+          padding: 10px 14px;
+          text-align: left;
+          border-bottom: 1px solid #e2e8f0;
+          font-size: 13px;
+        }
+        
+        .fields-table th {
+          background: #f8fafc;
+          font-weight: 500;
+          color: #64748b;
+        }
+        
+        .fields-table tr:last-child td {
+          border-bottom: none;
+        }
+        
+        .input-type-badge {
+          background: #f1f5f9;
+          color: #475569;
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-size: 11px;
+          font-weight: 500;
+        }
+        
+        .status-badge {
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-size: 11px;
+          font-weight: 500;
+        }
+        
+        .status-data {
+          background: #dcfce7;
+          color: #16a34a;
+        }
+        
+        .status-static {
+          background: #fef3c7;
+          color: #d97706;
+        }
+        
+        .status-unmapped {
+          background: #f1f5f9;
+          color: #64748b;
+        }
+        
+        .modal-loading {
+          text-align: center;
+          padding: 40px;
+          color: #64748b;
+        }
       `}</style>
       
       {/* Header */}
       <header className="header">
         <div className="header-content">
-        <div className="logo">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
-          </svg>
-          CrewForms
-          <span className="badge">Admin</span>
-        </div>
-        {/* Download Extension Button */}
-        <a 
-          href="/crewforms-extension.zip"
-          className="btn btn-download"
-          download
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          Download Extension
-        </a>
+          <div className="logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+            CrewForms
+            <span className="badge">Dashboard</span>
+          </div>
+          {/* Download Extension Button */}
+          <a 
+            href="/crewforms-extension.zip"
+            className="btn btn-download"
+            download
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download Extension
+          </a>
         </div>
       </header>
       
@@ -386,13 +611,22 @@ export default function AdminDashboard() {
       <main className="container">
         <div className="page-header">
           <h1 className="page-title">Field Mappings</h1>
-          <Link href="/admin/mappings/new" className="btn btn-primary">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="5" x2="12" y2="19"/>
-              <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            New Mapping
-          </Link>
+        </div>
+        
+        {/* Info Banner - direct users to extension */}
+        <div className="info-banner">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 16v-4"/>
+            <path d="M12 8h.01"/>
+          </svg>
+          <div className="info-banner-content">
+            <div className="info-banner-title">Read-Only Dashboard</div>
+            <div className="info-banner-text">
+              To create, edit, or delete mappings, use the <strong>Admin tab</strong> in the CrewForms Chrome extension.
+              Navigate to the target form page, open the extension sidebar, and use the Mapping Assistant.
+            </div>
+          </div>
         </div>
         
         {/* Stats */}
@@ -439,9 +673,7 @@ export default function AdminDashboard() {
                 <line x1="12" y1="3" x2="12" y2="21"/>
               </svg>
               <p>No field mappings configured yet</p>
-              <Link href="/admin/mappings/new" className="btn btn-primary">
-                Create Your First Mapping
-              </Link>
+              <p className="hint">Use the Chrome extension&apos;s Admin tab to create your first mapping</p>
             </div>
           ) : (
             <table className="table">
@@ -476,17 +708,13 @@ export default function AdminDashboard() {
                     </td>
                     <td>{formatDate(mapping.updatedAt)}</td>
                     <td>
-                      <div className="actions">
-                        <Link href={`/admin/mappings/${mapping.id}`} className="btn btn-sm btn-secondary">
-                          Edit
-                        </Link>
-                        <button 
-                          onClick={() => deleteMapping(mapping.id)} 
-                          className="btn btn-sm btn-danger"
-                        >
-                          Delete
-                        </button>
-                      </div>
+                      <button 
+                        onClick={() => loadMappingDetails(mapping.id)} 
+                        className="btn btn-sm btn-secondary"
+                        disabled={loadingDetails && selectedMappingId === mapping.id}
+                      >
+                        {loadingDetails && selectedMappingId === mapping.id ? 'Loading...' : 'View Details'}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -495,7 +723,102 @@ export default function AdminDashboard() {
           )}
         </div>
       </main>
+      
+      {/* Details Modal */}
+      {selectedMappingId && (
+        <div className="modal-overlay" onClick={closeDetails}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">
+                {selectedMapping ? selectedMapping.name : 'Loading...'}
+              </h2>
+              <button className="modal-close" onClick={closeDetails}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              {!selectedMapping ? (
+                <div className="modal-loading">Loading mapping details...</div>
+              ) : (
+                <>
+                  {/* Basic Info */}
+                  <div className="detail-section">
+                    <h3 className="detail-section-title">Basic Information</h3>
+                    <div className="detail-grid">
+                      <div className="detail-item">
+                        <div className="detail-label">URL Pattern</div>
+                        <div className="detail-value mono">{selectedMapping.urlPattern}</div>
+                      </div>
+                      <div className="detail-item">
+                        <div className="detail-label">Form Type</div>
+                        <div className="detail-value">
+                          {selectedMapping.formType === 'dynamic-guest-blocks' ? 'Dynamic (Multiple Guests)' : 'Static (Single Form)'}
+                        </div>
+                      </div>
+                      <div className="detail-item">
+                        <div className="detail-label">Version</div>
+                        <div className="detail-value">v{selectedMapping.version}</div>
+                      </div>
+                      <div className="detail-item">
+                        <div className="detail-label">Fill Delay</div>
+                        <div className="detail-value">{selectedMapping.fillDelay || 100}ms</div>
+                      </div>
+                      <div className="detail-item">
+                        <div className="detail-label">Last Updated</div>
+                        <div className="detail-value">{formatDate(selectedMapping.updatedAt)}</div>
+                      </div>
+                      <div className="detail-item">
+                        <div className="detail-label">Field Count</div>
+                        <div className="detail-value">{selectedMapping.fields?.length || 0} fields</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Field Mappings */}
+                  <div className="detail-section">
+                    <h3 className="detail-section-title">Field Mappings</h3>
+                    {selectedMapping.fields && selectedMapping.fields.length > 0 ? (
+                      <table className="fields-table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Status</th>
+                            <th>Data Source</th>
+                            <th>Input Type</th>
+                            <th>Static Value</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedMapping.fields.map((field, index) => (
+                            <tr key={index}>
+                              <td>{field.position}</td>
+                              <td>
+                                <span className={`status-badge status-${field.status || 'unmapped'}`}>
+                                  {field.status || 'unmapped'}
+                                </span>
+                              </td>
+                              <td>{formatDataSource(field.dataSource)}</td>
+                              <td>
+                                <span className="input-type-badge">{field.inputType || 'paste'}</span>
+                              </td>
+                              <td>{field.staticValue || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p style={{ color: '#64748b', fontSize: '14px' }}>No field mappings configured</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
