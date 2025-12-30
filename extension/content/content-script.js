@@ -732,10 +732,20 @@ function formatDateWithConfig(dateObj, format) {
 /**
  * Fill a dropdown using click-to-select approach
  * This handles custom dropdown components that require clicking to open
+ * 
+ * Supports:
+ * - Telerik RadComboBox (.RadComboBoxDropDown, .rcbItem)
+ * - Angular Material (.mat-select-panel)
+ * - ng-select (.ng-dropdown-panel)
+ * - Bootstrap (.dropdown-menu)
+ * - Generic ([role="listbox"], .select-options)
  */
 async function fillClickSelect(field, value, config) {
-  const delay = config?.openDelay || 100;
-  const optionSelector = config?.optionSelector || '[role="option"], .option, li';
+  const delay = config?.openDelay || 150; // Slightly longer default for Telerik
+  
+  // Default option selectors include common patterns
+  const optionSelector = config?.optionSelector || 
+    '[role="option"], .option, li, .rcbItem, .k-item';
   
   // Click to open the dropdown
   field.click();
@@ -747,18 +757,34 @@ async function fillClickSelect(field, value, config) {
   // Look for the option to click
   const searchValue = String(value).toLowerCase();
   
-  // Try to find options in a nearby dropdown container
+  // Try to find dropdown container - check multiple common patterns
+  // Order matters: more specific selectors first
   const dropdownContainer = document.querySelector(
-    '.dropdown-menu, .mat-select-panel, .ng-dropdown-panel, [role="listbox"], .select-options'
+    // Telerik RadComboBox
+    '.RadComboBoxDropDown, .rcbSlide, ' +
+    // Kendo UI
+    '.k-animation-container, .k-list-container, ' +
+    // Angular Material
+    '.mat-select-panel, .cdk-overlay-pane, ' +
+    // ng-select
+    '.ng-dropdown-panel, ' +
+    // Bootstrap
+    '.dropdown-menu, ' +
+    // Generic patterns
+    '[role="listbox"], .select-options'
   );
+  
+  console.log(`[CrewForms] Click-select: Found container:`, dropdownContainer?.className);
   
   if (dropdownContainer) {
     const options = dropdownContainer.querySelectorAll(optionSelector);
+    console.log(`[CrewForms] Click-select: Found ${options.length} options`);
     
     for (const option of options) {
       const optionText = option.textContent.trim().toLowerCase();
       
       if (optionText === searchValue || optionText.includes(searchValue)) {
+        console.log(`[CrewForms] Click-select: Clicking option "${option.textContent.trim()}"`);
         option.click();
         await sleep(50);
         triggerInputEvents(field);
@@ -768,7 +794,7 @@ async function fillClickSelect(field, value, config) {
   }
   
   // Fallback: try match approach
-  console.warn(`Click-select fallback for: ${value}`);
+  console.warn(`[CrewForms] Click-select fallback for: ${value}`);
   await fillSelectMatch(field, value);
 }
 
@@ -1004,12 +1030,23 @@ function formatDate(dateObj, format) {
 
 /**
  * Trigger input events on a field
+ * 
+ * Important: We call field.blur() to actually move focus away from the field.
+ * Just dispatching 'blur' event isn't enough for some frameworks (Telerik, ASP.NET)
+ * that check actual focus state before triggering dependent dropdowns.
  */
 function triggerInputEvents(field) {
   // Dispatch events that forms typically listen for
   field.dispatchEvent(new Event('input', { bubbles: true }));
   field.dispatchEvent(new Event('change', { bubbles: true }));
+  
+  // Actually blur the field (moves focus away)
+  // This is critical for dependent dropdowns that wait for real focus loss
+  field.blur();
+  
+  // Dispatch blur-related events for frameworks that listen to them
   field.dispatchEvent(new Event('blur', { bubbles: true }));
+  field.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
 }
 
 /**

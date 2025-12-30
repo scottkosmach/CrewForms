@@ -1263,6 +1263,71 @@ body {
   color: var(--color-white);
 }
 
+/* Component Type Badge - shows detected UI component type */
+.component-type-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+/* Telerik components */
+.component-type-badge.telerik-combobox,
+.component-type-badge.telerik-dropdown {
+  background: #ff6358;
+  color: white;
+}
+
+/* Angular Material */
+.component-type-badge.mat-select {
+  background: #673ab7;
+  color: white;
+}
+
+/* Kendo UI */
+.component-type-badge.kendo-combobox,
+.component-type-badge.kendo-dropdown {
+  background: #ff6358;
+  color: white;
+}
+
+/* Bootstrap */
+.component-type-badge.bootstrap-select {
+  background: #7952b3;
+  color: white;
+}
+
+/* ng-select */
+.component-type-badge.ng-select {
+  background: #dd0031;
+  color: white;
+}
+
+/* Native select */
+.component-type-badge.native-select {
+  background: var(--color-gray-500);
+  color: white;
+}
+
+/* Generic combobox */
+.component-type-badge.combobox {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* Strategy Hint - shows recommended input behavior */
+.strategy-hint {
+  font-size: 11px;
+  color: var(--color-gray-600);
+  padding: 4px var(--spacing-md);
+  padding-left: calc(var(--spacing-md) + 36px); /* Align with field label */
+  background: var(--color-gray-50);
+  border-bottom: 1px dashed var(--color-gray-200);
+}
+
 /* Test Button */
 .btn-test {
   background: var(--color-accent);

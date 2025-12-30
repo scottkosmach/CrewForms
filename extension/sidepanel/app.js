@@ -2260,22 +2260,147 @@ function scanAllFramesForFields() {
     return null;
   }
   
+  /**
+   * Detect the UI component type for an element
+   * Returns component type and recommended input strategy
+   */
+  function detectComponentType(element) {
+    const classes = element.className || '';
+    const tagName = element.tagName.toLowerCase();
+    
+    // Check parent/ancestor classes for wrapper components
+    const parent = element.parentElement;
+    const grandparent = parent?.parentElement;
+    const wrapper = element.closest('[class*="Rad"], [class*="k-"], [class*="mat-"], [class*="ng-"]');
+    const wrapperClasses = wrapper?.className || '';
+    const parentClasses = parent?.className || '';
+    const gpClasses = grandparent?.className || '';
+    
+    // Telerik RadComboBox - input inside RadComboBox wrapper
+    if (classes.includes('rcbInput') || 
+        parentClasses.includes('rcbInputCell') || 
+        wrapperClasses.includes('RadComboBox')) {
+      return { 
+        type: 'telerik-combobox', 
+        label: 'Telerik ComboBox',
+        strategy: 'paste',
+        hint: 'Type/paste value - component filters automatically'
+      };
+    }
+    
+    // Telerik RadDropDownList
+    if (wrapperClasses.includes('RadDropDownList')) {
+      return { 
+        type: 'telerik-dropdown', 
+        label: 'Telerik Dropdown',
+        strategy: 'click-select',
+        hint: 'Click to open, then select option'
+      };
+    }
+    
+    // Angular Material mat-select
+    if (tagName === 'mat-select' || classes.includes('mat-select')) {
+      return { 
+        type: 'mat-select', 
+        label: 'Angular Material',
+        strategy: 'select-match',
+        hint: 'Will click and match option text'
+      };
+    }
+    
+    // Kendo UI ComboBox
+    if (classes.includes('k-input') || wrapperClasses.includes('k-combobox')) {
+      return { 
+        type: 'kendo-combobox', 
+        label: 'Kendo ComboBox',
+        strategy: 'paste',
+        hint: 'Type/paste value directly'
+      };
+    }
+    
+    // Kendo UI DropDownList
+    if (wrapperClasses.includes('k-dropdown') || wrapperClasses.includes('k-dropdownlist')) {
+      return { 
+        type: 'kendo-dropdown', 
+        label: 'Kendo Dropdown',
+        strategy: 'click-select',
+        hint: 'Click to open, then select option'
+      };
+    }
+    
+    // Bootstrap form-select
+    if (classes.includes('form-select') || classes.includes('custom-select')) {
+      return { 
+        type: 'bootstrap-select', 
+        label: 'Bootstrap Select',
+        strategy: 'select-match',
+        hint: 'Native select with Bootstrap styling'
+      };
+    }
+    
+    // ng-select (Angular)
+    if (tagName === 'ng-select' || classes.includes('ng-select')) {
+      return { 
+        type: 'ng-select', 
+        label: 'ng-select',
+        strategy: 'click-select',
+        hint: 'Click to open, type to filter'
+      };
+    }
+    
+    // Native <select>
+    if (tagName === 'select') {
+      return { 
+        type: 'native-select', 
+        label: 'Native Select',
+        strategy: 'select-match',
+        hint: 'Standard HTML select'
+      };
+    }
+    
+    // Generic combobox role
+    if (element.getAttribute('role') === 'combobox') {
+      return { 
+        type: 'combobox', 
+        label: 'Combobox',
+        strategy: 'paste',
+        hint: 'Try paste first, or click-select'
+      };
+    }
+    
+    // Default text input
+    return { 
+      type: 'text-input', 
+      label: 'Text Input',
+      strategy: 'paste',
+      hint: 'Standard text input'
+    };
+  }
+  
   // Map elements to field info
-  return Array.from(elements).map((el, index) => ({
-    position: index + 1,
-    tagName: el.tagName.toLowerCase(),
-    type: el.type || el.getAttribute('role') || 'unknown',
-    id: el.id || null,
-    name: el.name || null,
-    formControlName: el.getAttribute('formcontrolname') || null,
-    placeholder: el.placeholder || null,
-    label: findLabelFor(el),
-    isRequired: el.required || el.getAttribute('aria-required') === 'true',
-    isDisabled: el.disabled || el.getAttribute('aria-disabled') === 'true',
-    classes: el.className,
-    visible: isElementVisible(el),
-    frameUrl: window.location.href
-  }));
+  return Array.from(elements).map((el, index) => {
+    const component = detectComponentType(el);
+    return {
+      position: index + 1,
+      tagName: el.tagName.toLowerCase(),
+      type: el.type || el.getAttribute('role') || 'unknown',
+      id: el.id || null,
+      name: el.name || null,
+      formControlName: el.getAttribute('formcontrolname') || null,
+      placeholder: el.placeholder || null,
+      label: findLabelFor(el),
+      isRequired: el.required || el.getAttribute('aria-required') === 'true',
+      isDisabled: el.disabled || el.getAttribute('aria-disabled') === 'true',
+      classes: el.className,
+      visible: isElementVisible(el),
+      frameUrl: window.location.href,
+      // Component detection info
+      componentType: component.type,
+      componentLabel: component.label,
+      suggestedStrategy: component.strategy,
+      strategyHint: component.hint
+    };
+  });
 }
 
 /**
@@ -2456,14 +2581,26 @@ function renderFieldItem(field, frameIndex) {
   // Pass the normalized status to config for renderFieldConfigDetails
   const configWithStatus = { ...config, status };
   
+  // Component type badge - show detected UI component type
+  const componentBadge = field.componentLabel && field.componentType !== 'text-input'
+    ? `<span class="component-type-badge ${field.componentType}">${field.componentLabel}</span>`
+    : '';
+  
+  // Strategy hint - show suggested input behavior
+  const strategyHint = field.strategyHint && field.componentType !== 'text-input'
+    ? `<div class="strategy-hint">💡 ${field.strategyHint}</div>`
+    : '';
+  
   return `
     <div class="field-item ${status === 'ignore' ? 'ignore' : ''}" data-field-key="${key}" data-frame-index="${frameIndex}" data-position="${field.position}">
       <div class="field-header">
         <span class="field-position">#${field.position}</span>
         <span class="field-label">${field.label || field.name || field.formControlName || 'Unlabeled'}</span>
+        ${componentBadge}
         <span class="field-type ${isDisabled ? 'disabled' : ''}">${field.type}${isDisabled ? ' (disabled)' : ''}</span>
         ${isMapped ? `<button class="btn btn-sm btn-test" data-frame-index="${frameIndex}" data-position="${field.position}" title="Test this field">Test</button>` : ''}
       </div>
+      ${strategyHint}
       <div class="field-config">
         <div class="field-config-row">
           <select class="field-status" data-field-key="${key}">
