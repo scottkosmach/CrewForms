@@ -567,6 +567,7 @@ async function handleTestFillField(position, value, config) {
       const fieldMapping = {
         inputType,
         dateFormat: config.dateFormat,
+        tabAfter: config.tabAfter || false, // Include Tab After option
         config: {
           keypressMap: config.keypressMap
         }
@@ -663,6 +664,7 @@ function getValueFromData(data, dataSource) {
  */
 async function fillField(field, value, mapping) {
   const inputType = mapping.inputType || 'paste';
+  const tabAfter = mapping.tabAfter || false;
   
   // Format date if dateFormat is specified and value is an object with date parts
   if (mapping.dateFormat && typeof value === 'object' && (value.day || value.month || value.year)) {
@@ -672,19 +674,32 @@ async function fillField(field, value, mapping) {
   switch (inputType) {
     case 'paste':
     case 'text':
-      await fillTextField(field, value);
+      await fillTextField(field, value, { tabAfter });
       break;
     
     case 'select-match':
       await fillSelectMatch(field, value);
+      // If tabAfter is set, simulate tab after select
+      if (tabAfter) {
+        await sleep(50);
+        await simulateTabAndBlur(field);
+      }
       break;
     
     case 'select-keypress':
       await fillSelectKeypress(field, value, mapping.config);
+      if (tabAfter) {
+        await sleep(50);
+        await simulateTabAndBlur(field);
+      }
       break;
     
     case 'click-select':
       await fillClickSelect(field, value, mapping.config);
+      if (tabAfter) {
+        await sleep(50);
+        await simulateTabAndBlur(field);
+      }
       break;
     
     case 'date-text':
@@ -709,7 +724,7 @@ async function fillField(field, value, mapping) {
       break;
     
     default:
-      await fillTextField(field, value);
+      await fillTextField(field, value, { tabAfter });
   }
 }
 
@@ -808,50 +823,47 @@ async function fillClickSelect(field, value, config) {
  * Focuses the field first to ensure Angular/React forms recognize the change.
  * Uses a small delay after focus for framework change detection.
  * 
- * Special handling for Telerik RadComboBox which has internal filter state
- * that needs to be reset before filling with a new value.
+ * @param {HTMLElement} field - The input field to fill
+ * @param {string} value - The value to fill
+ * @param {Object} options - Options for filling
+ * @param {boolean} options.tabAfter - Simulate Tab key after fill (for dependent dropdowns)
  */
-async function fillTextField(field, value) {
-  // Check if this is a Telerik RadComboBox input
-  const isTelerikComboBox = field.classList.contains('rcbInput') || 
-    field.closest('.RadComboBox') !== null;
+async function fillTextField(field, value, options = {}) {
+  // Reset any existing component state by clicking elsewhere first
+  // This is important for repeated fills (e.g., Telerik RadComboBox)
+  document.body.click();
+  await sleep(30);
   
   // Focus the field first - critical for Angular reactive forms
   field.focus();
-  field.click(); // Click to activate (important for Telerik)
+  field.click(); // Click to activate
   await sleep(10);
   
-  // Clear existing value - with extra steps for Telerik
-  if (isTelerikComboBox) {
-    // For Telerik RadComboBox, we need to properly clear and reset the filter
-    // 1. Select all existing text
-    field.select();
-    await sleep(10);
-    
-    // 2. Clear via keyboard simulation (backspace) to trigger Telerik's handlers
-    field.value = '';
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(50); // Wait for Telerik to reset its filter
-    
-    // 3. Set new value
-    field.value = String(value);
-    
-    // 4. Trigger input event to make Telerik filter
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(100); // Wait for Telerik dropdown to filter
-    
-    // 5. Trigger change and blur for dependent dropdowns
-    field.dispatchEvent(new Event('change', { bubbles: true }));
+  // Clear existing value
+  field.select();
+  await sleep(10);
+  field.value = '';
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  await sleep(50);
+  
+  // Set new value
+  field.value = String(value);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  await sleep(50);
+  
+  // Trigger change event
+  field.dispatchEvent(new Event('change', { bubbles: true }));
+  
+  // If tabAfter is enabled, simulate Tab key to trigger dependent dropdowns
+  if (options.tabAfter) {
+    await sleep(100); // Wait for any filtering/processing
+    await simulateTabAndBlur(field);
+    console.log('[CrewForms] Text field filled with Tab after:', value);
+  } else {
+    // Standard blur
     field.blur();
     field.dispatchEvent(new Event('blur', { bubbles: true }));
     field.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
-    
-    console.log('[CrewForms] Telerik RadComboBox filled with:', value);
-  } else {
-    // Standard text field handling
-    field.value = '';
-    field.value = String(value);
-    triggerInputEvents(field);
   }
   
   // Small delay after events for framework processing
@@ -1079,6 +1091,34 @@ function triggerInputEvents(field) {
   // Dispatch blur-related events for frameworks that listen to them
   field.dispatchEvent(new Event('blur', { bubbles: true }));
   field.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+}
+
+/**
+ * Simulate Tab key press and blur
+ * 
+ * This is specifically for components like Telerik RadComboBox that listen
+ * for the Tab keydown event to trigger selection and update dependent dropdowns.
+ * Just calling blur() is not enough - the Tab keydown must fire first.
+ */
+async function simulateTabAndBlur(field) {
+  // Simulate Tab keydown - this triggers Telerik's selection logic
+  field.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'Tab',
+    code: 'Tab',
+    keyCode: 9,
+    which: 9,
+    bubbles: true,
+    cancelable: true
+  }));
+  
+  await sleep(50);
+  
+  // Then blur the field
+  field.blur();
+  field.dispatchEvent(new Event('blur', { bubbles: true }));
+  field.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+  
+  console.log('[CrewForms] Simulated Tab + blur for dependent dropdown trigger');
 }
 
 /**

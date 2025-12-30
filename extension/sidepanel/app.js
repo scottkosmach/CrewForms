@@ -2465,6 +2465,11 @@ function renderFieldList() {
     select.addEventListener('change', handleDateFormatChange);
   });
   
+  // Add event listeners for Tab After Fill checkbox
+  container.querySelectorAll('.tab-after-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('change', handleTabAfterChange);
+  });
+  
   // Add event listeners for field type selector
   container.querySelectorAll('.field-type-select').forEach(select => {
     select.addEventListener('change', handleFieldTypeChange);
@@ -2704,6 +2709,17 @@ function renderFieldConfigDetails(field, frameIndex, config) {
     </div>
   `;
   
+  // Tab After Fill checkbox - triggers dependent dropdowns (e.g., Telerik)
+  html += `
+    <div class="config-group config-checkbox">
+      <label>
+        <input type="checkbox" class="tab-after-checkbox" data-field-key="${key}"
+               ${config.tabAfter ? 'checked' : ''}>
+        Tab After Fill (triggers dependent dropdowns)
+      </label>
+    </div>
+  `;
+  
   // Date format selector - shown when:
   // 1. fieldType is explicitly set to 'date', OR
   // 2. A full date source is selected (auto-detected)
@@ -2880,6 +2896,17 @@ function handleDateFormatChange(event) {
 }
 
 /**
+ * Handle Tab After Fill checkbox change
+ */
+function handleTabAfterChange(event) {
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (!state.fieldConfigs[key]) {
+    state.fieldConfigs[key] = {};
+  }
+  state.fieldConfigs[key].tabAfter = event.target.checked;
+}
+
+/**
  * Handle field type change
  */
 function handleFieldTypeChange(event) {
@@ -3031,6 +3058,10 @@ async function saveMapping() {
       fieldMapping.dateFormat = config.dateFormat;
     }
     
+    if (config.tabAfter) {
+      fieldMapping.tabAfter = true;
+    }
+    
     if (config.inputType === 'select-keypress' && Object.keys(config.keypressMap || {}).length > 0) {
       fieldMapping.config = { 
         keypressMap: config.keypressMap,
@@ -3176,6 +3207,7 @@ async function testField(frameIndex, position) {
         dateFormat: config.dateFormat,
         keypressMap: config.keypressMap,
         keypressDelay: config.keypressDelay || 100,
+        tabAfter: config.tabAfter || false,
         useKeystrokes
       }
     }, { frameId });
@@ -3199,14 +3231,19 @@ async function testField(frameIndex, position) {
       console.log('Content script not loaded, injecting...');
       
       try {
-        // Inject the content script
+        // Inject the content script into all frames
+        // We use allFrames because the content script needs to be in every frame
+        // to handle multi-frame forms
         await chrome.scripting.executeScript({
-          target: { tabId: tabResult.tab.id, allFrames: true },
+          target: { 
+            tabId: tabResult.tab.id, 
+            allFrames: true
+          },
           files: ['content/content-script.js']
         });
         
-        // Wait for script to initialize
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Wait for script to initialize (longer wait for iframes)
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Retry the test fill
         const result = await sendTestFill();
@@ -3218,7 +3255,12 @@ async function testField(frameIndex, position) {
         }
       } catch (injectError) {
         console.error('Failed to inject content script:', injectError);
-        showToast('Could not connect to page. Try refreshing and waiting a moment.', 'error');
+        // More helpful error message
+        if (injectError.message.includes('Cannot access')) {
+          showToast('Cannot access this page - it may be a protected or cross-origin page.', 'error');
+        } else {
+          showToast('Page not ready. Please refresh the page and wait for it to fully load.', 'error');
+        }
       }
     } else {
       showToast('Could not test field: ' + error.message, 'error');
