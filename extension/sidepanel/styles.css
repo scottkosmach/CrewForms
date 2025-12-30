@@ -1099,8 +1099,105 @@ body {
 }
 
 #fieldListContainer {
-  max-height: 400px;
+  max-height: 500px;
   overflow-y: auto;
+}
+
+/* ============================================================================
+   FRAME GROUPS - Collapsible sections for multi-frame form scanning
+   ============================================================================ */
+
+.frame-group {
+  border-bottom: 2px solid var(--color-gray-300);
+}
+
+.frame-group:last-child {
+  border-bottom: none;
+}
+
+.frame-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-gray-100);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+.frame-header:hover {
+  background: var(--color-gray-200);
+}
+
+.frame-collapse-icon {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+  width: 12px;
+}
+
+.frame-badge {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.frame-badge.main {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.frame-badge.iframe {
+  background: var(--color-accent);
+  color: var(--color-white);
+}
+
+.frame-url {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-600);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.frame-field-count {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+  padding: 2px 8px;
+  background: var(--color-white);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-gray-300);
+}
+
+.frame-collapse-btn {
+  font-size: var(--font-size-xs);
+  padding: 2px 8px;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-gray-600);
+}
+
+.frame-collapse-btn:hover {
+  background: var(--color-gray-50);
+  border-color: var(--color-gray-400);
+}
+
+.frame-fields {
+  /* Visible state - fields shown */
+}
+
+.frame-fields.hidden {
+  display: none;
+}
+
+.frame-group.collapsed .frame-header {
+  background: var(--color-gray-50);
 }
 
 /* Field Item */

@@ -344,17 +344,42 @@ function findLabelFor(element) {
 /**
  * Fill form fields based on data and mapping
  * 
+ * With all_frames enabled, this runs in each frame (main + iframes).
+ * Each content script filters fields by frameUrl to only fill fields meant for its frame.
+ * 
  * Added delay between fields to allow Angular/React forms to process changes.
  * Default delay is 100ms but can be configured via mapping.fillDelay
  */
 async function handleFillFields(data, mapping) {
-  console.log('[CrewForms] handleFillFields called');
+  const currentFrameUrl = window.location.href;
+  const isMainFrame = window === window.top;
+  
+  console.log(`[CrewForms] handleFillFields called in ${isMainFrame ? 'main frame' : 'iframe'}: ${currentFrameUrl}`);
   console.log('[CrewForms] Data received:', JSON.stringify(data, null, 2));
   console.log('[CrewForms] Mapping fields count:', mapping?.fields?.length);
   
   if (!mapping || !mapping.fields) {
     console.error('[CrewForms] No field mapping provided');
     return { success: false, error: 'No field mapping provided' };
+  }
+  
+  // Filter fields to only those meant for this frame
+  // Match by frameUrl, or include fields with no frameUrl for backward compatibility
+  const fieldsForThisFrame = mapping.fields.filter(f => {
+    // No frameUrl means legacy mapping - only main frame handles these
+    if (!f.frameUrl) {
+      return isMainFrame;
+    }
+    // Match by URL (normalize both to handle trailing slashes, etc.)
+    return normalizeUrl(f.frameUrl) === normalizeUrl(currentFrameUrl);
+  });
+  
+  console.log(`[CrewForms] Fields for this frame: ${fieldsForThisFrame.length} of ${mapping.fields.length}`);
+  
+  // If no fields for this frame, return success (another frame will handle them)
+  if (fieldsForThisFrame.length === 0) {
+    console.log('[CrewForms] No fields to fill in this frame, skipping');
+    return { success: true, filledCount: 0, totalMapped: 0, skipped: 0 };
   }
   
   try {
@@ -391,8 +416,8 @@ async function handleFillFields(data, mapping) {
     const fillDelay = mapping.fillDelay || 100;
     console.log('[CrewForms] Using fill delay:', fillDelay, 'ms');
     
-    // Fill each mapped field
-    for (const fieldMapping of mapping.fields) {
+    // Fill each mapped field (only fields for this frame)
+    for (const fieldMapping of fieldsForThisFrame) {
       const fieldIndex = fieldMapping.position - 1; // Convert 1-based to 0-based
       
       if (fieldIndex < 0 || fieldIndex >= fields.length) {
@@ -447,7 +472,7 @@ async function handleFillFields(data, mapping) {
       }
     }
     
-    console.log(`[CrewForms] Fill complete: ${filledCount}/${mapping.fields.length} fields filled`);
+    console.log(`[CrewForms] Fill complete: ${filledCount}/${fieldsForThisFrame.length} fields filled in this frame`);
     if (skipped.length > 0) {
       console.log('[CrewForms] Skipped fields:', skipped);
     }
@@ -458,13 +483,26 @@ async function handleFillFields(data, mapping) {
     return { 
       success: true, 
       filledCount,
-      totalMapped: mapping.fields.length,
+      totalMapped: fieldsForThisFrame.length,
       skipped: skipped.length,
       errors: errors.length > 0 ? errors : undefined
     };
   } catch (error) {
     console.error('[CrewForms] Error filling fields:', error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Normalize URL for comparison (handles trailing slashes, protocol differences)
+ */
+function normalizeUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    // Normalize: lowercase host, remove trailing slash from pathname
+    return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`;
+  } catch (e) {
+    return url;
   }
 }
 

@@ -105,8 +105,9 @@ const state = {
   editingCompanyId: null,
   // Admin mode state
   adminMode: false,
-  scannedFields: [],
-  fieldConfigs: {} // Map of position -> config object
+  scannedFrames: [],      // Array of { frameIndex, frameUrl, isMainFrame, collapsed, fields[] }
+  fieldConfigs: {},       // Map of "frameIndex:position" -> config object (e.g., "1:3")
+  editingMappingId: null  // Track if we're editing an existing mapping
 };
 
 // ============================================================================
@@ -1857,6 +1858,9 @@ function escapeHtml(text) {
 
 /**
  * Edit an existing mapping - loads it into the editor
+ * 
+ * Uses executeScript with allFrames to scan all frames, then applies
+ * saved field configs using composite keys "frameIndex:position".
  */
 async function editExistingMapping(mappingId) {
   try {
@@ -1875,7 +1879,7 @@ async function editExistingMapping(mappingId) {
     const mapping = await response.json();
     console.log('Loaded mapping:', mapping);
     
-    // First scan the fields to get current page structure
+    // Get the active tab
     const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
     if (!tabResult.success || !tabResult.tab) {
       console.error('Could not get active tab:', tabResult);
@@ -1885,63 +1889,90 @@ async function editExistingMapping(mappingId) {
     
     console.log('Scanning fields on tab:', tabResult.tab.id);
     
-    // Try to scan fields - use sendMessage through background to ensure content script is injected
-    let result;
-    try {
-      result = await chrome.tabs.sendMessage(tabResult.tab.id, {
-        type: 'SCAN_FORM_FIELDS'
-      });
-    } catch (scanError) {
-      console.log('Direct message failed, trying via background:', scanError.message);
-      // Content script might not be loaded, try via background which will inject it
-      result = await sendMessage({ 
-        type: 'SCAN_FIELDS_ON_TAB',
-        tabId: tabResult.tab.id
-      });
-    }
+    // Use executeScript with allFrames to scan all frames
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabResult.tab.id, allFrames: true },
+      func: scanAllFramesForFields
+    });
     
-    if (!result || !result.success || !result.fields) {
-      console.error('Field scan failed:', result);
+    console.log('Raw scan results from all frames:', results);
+    
+    // Group results by frame
+    const frames = [];
+    let totalFields = 0;
+    
+    results.forEach((frameResult, index) => {
+      if (!frameResult.result || frameResult.result.length === 0) {
+        return;
+      }
+      
+      const frameIndex = frames.length;
+      const isMainFrame = frameResult.frameId === 0;
+      
+      const fields = frameResult.result.map(field => ({
+        ...field,
+        frameIndex
+      }));
+      
+      frames.push({
+        frameIndex,
+        frameId: frameResult.frameId,
+        frameUrl: fields[0]?.frameUrl || 'Unknown',
+        isMainFrame,
+        collapsed: false,
+        fields
+      });
+      
+      totalFields += fields.length;
+    });
+    
+    if (frames.length === 0 || totalFields === 0) {
       showToast('Could not scan form fields. Make sure you are on a form page.', 'error');
       return;
     }
     
-    console.log('Scanned fields:', result.fields.length);
+    console.log('Scanned frames:', frames.length, 'Total fields:', totalFields);
     
-    // Store scanned fields
-    state.scannedFields = result.fields;
+    // Store frames in state
+    state.scannedFrames = frames;
     state.fieldConfigs = {};
-    state.editingMappingId = mappingId; // Track that we're editing an existing mapping
+    state.editingMappingId = mappingId;
     
-    // Initialize field configs with defaults
-    result.fields.forEach(field => {
-      state.fieldConfigs[field.position] = {
-        status: 'unmapped',
-        dataSource: '',
-        staticValue: '',
-        inputType: 'paste',
-        fieldType: 'text',
-        dateFormat: '',
-        keypressMap: {},
-        keypressDelay: 100
-      };
+    // Initialize field configs with defaults using composite keys
+    frames.forEach(frame => {
+      frame.fields.forEach(field => {
+        const key = `${frame.frameIndex}:${field.position}`;
+        state.fieldConfigs[key] = {
+          status: 'unmapped',
+          dataSource: '',
+          staticValue: '',
+          inputType: 'paste',
+          fieldType: 'text',
+          dateFormat: '',
+          keypressMap: {},
+          keypressDelay: 100
+        };
+      });
     });
     
     // Apply the saved mapping config to fields
     console.log('Applying saved field configs:', mapping.fields);
     
     mapping.fields.forEach(savedField => {
-      console.log('Loading field:', savedField.position, savedField);
+      // Use frameIndex from saved mapping (default to 0 for backward compatibility)
+      const frameIndex = savedField.frameIndex ?? 0;
+      const key = `${frameIndex}:${savedField.position}`;
       
-      if (state.fieldConfigs[savedField.position]) {
+      console.log('Loading field:', key, savedField);
+      
+      if (state.fieldConfigs[key]) {
         // Determine status: use saved status, or infer from data
         let status = savedField.status;
         if (!status) {
-          // Fallback: infer status if not explicitly saved
           status = savedField.staticValue ? 'static' : (savedField.dataSource ? 'data' : 'unmapped');
         }
         
-        state.fieldConfigs[savedField.position] = {
+        state.fieldConfigs[key] = {
           status: status,
           dataSource: savedField.dataSource || '',
           staticValue: savedField.staticValue || '',
@@ -1952,9 +1983,9 @@ async function editExistingMapping(mappingId) {
           keypressDelay: savedField.config?.keypressDelay || 100
         };
         
-        console.log('Applied config for field', savedField.position, ':', state.fieldConfigs[savedField.position]);
+        console.log('Applied config for field', key, ':', state.fieldConfigs[key]);
       } else {
-        console.warn('Field position not found in scanned fields:', savedField.position);
+        console.warn('Field key not found in scanned fields:', key);
       }
     });
     
@@ -1974,12 +2005,6 @@ async function editExistingMapping(mappingId) {
     document.getElementById('adminFieldList')?.classList.remove('hidden');
     document.getElementById('mappingNameSection')?.classList.remove('hidden');
     document.getElementById('saveMappingBtn').disabled = false;
-    
-    // Update field count
-    const fieldCount = document.getElementById('fieldCount');
-    if (fieldCount) {
-      fieldCount.textContent = `${result.fields.length} fields found`;
-    }
     
     // Render the field list with the loaded configs
     renderFieldList();
@@ -2022,10 +2047,13 @@ async function deleteExistingMapping(mappingId, mappingName) {
 }
 
 /**
- * Scan form fields on the current page
+ * Scan form fields on the current page (including iframes)
+ * 
+ * Uses chrome.scripting.executeScript with allFrames:true to scan all frames.
+ * Results are grouped by frame with collapsible sections in the UI.
  */
 async function scanFormFields() {
-  console.log('Scanning form fields...');
+  console.log('Scanning form fields across all frames...');
   
   // Get the active tab
   const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
@@ -2043,80 +2071,218 @@ async function scanFormFields() {
   }
   
   try {
-    // Send scan message to content script via background
-    const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
-      type: 'SCAN_FORM_FIELDS'
+    // Use executeScript with allFrames to scan ALL frames (including iframes)
+    // This returns an array of results, one per frame
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabResult.tab.id, allFrames: true },
+      func: scanAllFramesForFields
     });
     
-    if (result.success && result.fields) {
-      state.scannedFields = result.fields;
-      state.fieldConfigs = {};
+    console.log('Raw scan results from all frames:', results);
+    
+    // Group results by frame, filtering out empty results
+    const frames = [];
+    let totalFields = 0;
+    
+    results.forEach((frameResult, index) => {
+      // Skip frames with no results or errors
+      if (!frameResult.result || frameResult.result.length === 0) {
+        return;
+      }
       
-      // Initialize default configs for each field
-      result.fields.forEach(field => {
-        state.fieldConfigs[field.position] = {
+      const frameIndex = frames.length;
+      const isMainFrame = frameResult.frameId === 0;
+      
+      // Add frame info to each field
+      const fields = frameResult.result.map(field => ({
+        ...field,
+        frameIndex
+      }));
+      
+      frames.push({
+        frameIndex,
+        frameId: frameResult.frameId,
+        frameUrl: fields[0]?.frameUrl || 'Unknown',
+        isMainFrame,
+        collapsed: false,
+        fields
+      });
+      
+      totalFields += fields.length;
+    });
+    
+    if (frames.length === 0 || totalFields === 0) {
+      showToast('No form fields found on this page', 'warning');
+      return;
+    }
+    
+    // Store frames in state
+    state.scannedFrames = frames;
+    state.fieldConfigs = {};
+    state.editingMappingId = null;
+    
+    // Initialize default configs for each field using composite keys
+    frames.forEach(frame => {
+      frame.fields.forEach(field => {
+        const key = `${frame.frameIndex}:${field.position}`;
+        state.fieldConfigs[key] = {
           status: 'unmapped',
           dataSource: '',
           staticValue: '',
           inputType: 'paste',
-          fieldType: 'text', // Explicit field type: text, date, dropdown
+          fieldType: 'text',
           dateFormat: '',
           keypressMap: {},
-          keypressDelay: 100 // Default delay between keystrokes in ms
+          keypressDelay: 100
         };
       });
-      
-      // Update URL pattern
-      const mappingUrl = document.getElementById('mappingUrl');
-      if (mappingUrl) {
-        // Extract base URL pattern
-        const urlObj = new URL(url);
-        mappingUrl.value = `${urlObj.origin}${urlObj.pathname}*`;
-      }
-      
-      // Show the field list and mapping name section
-      document.getElementById('adminEmptyState').classList.add('hidden');
-      document.getElementById('adminFieldList').classList.remove('hidden');
-      document.getElementById('mappingNameSection').classList.remove('hidden');
-      document.getElementById('saveMappingBtn').disabled = false;
-      
-      // Render the field list
-      renderFieldList();
-      
-      showToast(`Found ${result.fields.length} fields`, 'success');
-    } else {
-      showToast('No form fields found on this page', 'warning');
+    });
+    
+    // Update URL pattern
+    const mappingUrl = document.getElementById('mappingUrl');
+    if (mappingUrl) {
+      const urlObj = new URL(url);
+      mappingUrl.value = `${urlObj.origin}${urlObj.pathname}*`;
     }
+    
+    // Show the field list and mapping name section
+    document.getElementById('adminEmptyState').classList.add('hidden');
+    document.getElementById('adminFieldList').classList.remove('hidden');
+    document.getElementById('mappingNameSection').classList.remove('hidden');
+    document.getElementById('saveMappingBtn').disabled = false;
+    
+    // Render the grouped field list
+    renderFieldList();
+    
+    const frameWord = frames.length === 1 ? 'frame' : 'frames';
+    showToast(`Found ${totalFields} fields across ${frames.length} ${frameWord}`, 'success');
+    
   } catch (error) {
     console.error('Scan error:', error);
-    // Content script might not be loaded, try injecting it
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tabResult.tab.id },
-        files: ['content/content-script.js']
-      });
-      
-      // Wait a moment and retry
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
-        type: 'SCAN_FORM_FIELDS'
-      });
-      
-      if (result.success && result.fields) {
-        state.scannedFields = result.fields;
-        // ... same processing as above
-        showToast(`Found ${result.fields.length} fields`, 'success');
-        renderFieldList();
-      }
-    } catch (injectError) {
-      showToast('Could not scan page: ' + error.message, 'error');
-    }
+    showToast('Could not scan page: ' + error.message, 'error');
   }
 }
 
 /**
- * Render the list of scanned fields
+ * Function injected into all frames to scan for form fields.
+ * Must be self-contained (no external dependencies) since it runs in page context.
+ */
+function scanAllFramesForFields() {
+  const form = document.querySelector('form') || document.body;
+  
+  // Extended selector to include Angular Material and custom dropdowns
+  const elements = form.querySelectorAll(
+    'input, select, textarea, mat-select, [role="combobox"], [role="listbox"]'
+  );
+  
+  /**
+   * Check if element is visible
+   */
+  function isElementVisible(element) {
+    const style = window.getComputedStyle(element);
+    return (
+      style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      style.opacity !== '0' &&
+      element.offsetWidth > 0 &&
+      element.offsetHeight > 0
+    );
+  }
+  
+  /**
+   * Find the label text associated with a form element
+   */
+  function findLabelFor(element) {
+    // 1. Check for label with matching 'for' attribute
+    if (element.id) {
+      const label = document.querySelector(`label[for="${element.id}"]`);
+      if (label) return label.textContent.trim().replace(/\*$/, '').trim();
+    }
+    
+    // 2. Check aria-label attribute
+    const ariaLabel = element.getAttribute('aria-label');
+    if (ariaLabel) return ariaLabel.trim();
+    
+    // 3. Check aria-labelledby attribute
+    const ariaLabelledBy = element.getAttribute('aria-labelledby');
+    if (ariaLabelledBy) {
+      const labelEl = document.getElementById(ariaLabelledBy);
+      if (labelEl) return labelEl.textContent.trim().replace(/\*$/, '').trim();
+    }
+    
+    // 4. Check for parent label element (wrapping pattern)
+    const parentLabel = element.closest('label');
+    if (parentLabel) {
+      const clone = parentLabel.cloneNode(true);
+      const inputs = clone.querySelectorAll('input, select, textarea');
+      inputs.forEach(i => i.remove());
+      const text = clone.textContent.trim().replace(/\*$/, '').trim();
+      if (text) return text;
+    }
+    
+    // 5. Check for Angular Material mat-label
+    const formField = element.closest('mat-form-field, .mat-form-field');
+    if (formField) {
+      const matLabel = formField.querySelector('mat-label');
+      if (matLabel) return matLabel.textContent.trim().replace(/\*$/, '').trim();
+    }
+    
+    // 6. Check for Bootstrap/common form-group pattern
+    const formGroup = element.closest('.form-group, .form-row');
+    if (formGroup) {
+      const label = formGroup.querySelector('label, .control-label, .form-label');
+      if (label) return label.textContent.trim().replace(/\*$/, '').trim();
+    }
+    
+    // 7. Check previous sibling for label
+    let prevSibling = element.previousElementSibling;
+    while (prevSibling) {
+      if (prevSibling.tagName === 'LABEL' || prevSibling.classList.contains('label')) {
+        return prevSibling.textContent.trim().replace(/\*$/, '').trim();
+      }
+      prevSibling = prevSibling.previousElementSibling;
+    }
+    
+    // 8. Use placeholder as fallback
+    if (element.placeholder && element.placeholder !== '--Select--') {
+      return element.placeholder;
+    }
+    
+    // 9. Use name attribute as last resort (convert to readable)
+    if (element.name) {
+      return element.name
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/_/g, ' ')
+        .trim()
+        .replace(/^\w/, c => c.toUpperCase());
+    }
+    
+    return null;
+  }
+  
+  // Map elements to field info
+  return Array.from(elements).map((el, index) => ({
+    position: index + 1,
+    tagName: el.tagName.toLowerCase(),
+    type: el.type || el.getAttribute('role') || 'unknown',
+    id: el.id || null,
+    name: el.name || null,
+    formControlName: el.getAttribute('formcontrolname') || null,
+    placeholder: el.placeholder || null,
+    label: findLabelFor(el),
+    isRequired: el.required || el.getAttribute('aria-required') === 'true',
+    isDisabled: el.disabled || el.getAttribute('aria-disabled') === 'true',
+    classes: el.className,
+    visible: isElementVisible(el),
+    frameUrl: window.location.href
+  }));
+}
+
+/**
+ * Render the list of scanned fields grouped by frame
+ * 
+ * Shows collapsible sections for each frame (main frame + iframes).
+ * Uses composite keys "frameIndex:position" for field identification.
  */
 function renderFieldList() {
   const container = document.getElementById('fieldListContainer');
@@ -2124,13 +2290,32 @@ function renderFieldList() {
   
   if (!container) return;
   
-  const fields = state.scannedFields;
-  countEl.textContent = `${fields.length} fields found`;
+  const frames = state.scannedFrames;
+  const totalFields = frames.reduce((sum, f) => sum + f.fields.length, 0);
+  const frameWord = frames.length === 1 ? 'frame' : 'frames';
+  countEl.textContent = `${totalFields} fields in ${frames.length} ${frameWord}`;
   
   // Debug: log field configs before rendering
-  console.log('Rendering field list. Field configs:', JSON.stringify(state.fieldConfigs, null, 2));
+  console.log('Rendering field list. Frames:', frames.length, 'Field configs:', Object.keys(state.fieldConfigs).length);
   
-  container.innerHTML = fields.map(field => renderFieldItem(field)).join('');
+  // Render each frame as a collapsible group
+  container.innerHTML = frames.map(frame => renderFrameGroup(frame)).join('');
+  
+  // Add event listeners for frame collapse toggles
+  container.querySelectorAll('.frame-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      // Don't toggle if clicking the collapse button directly (it handles itself)
+      if (e.target.closest('.frame-collapse-btn')) return;
+      toggleFrameCollapse(parseInt(header.dataset.frameIndex));
+    });
+  });
+  
+  container.querySelectorAll('.frame-collapse-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFrameCollapse(parseInt(btn.dataset.frameIndex));
+    });
+  });
   
   // Add event listeners for field status changes
   container.querySelectorAll('.field-status').forEach(select => {
@@ -2164,33 +2349,36 @@ function renderFieldList() {
   container.querySelectorAll('.add-keypress').forEach(btn => {
     btn.addEventListener('click', () => {
       const entriesContainer = btn.closest('.keypress-config').querySelector('.keypress-entries');
-      const position = parseInt(entriesContainer.dataset.position);
-      addKeypressEntry(position);
+      const key = entriesContainer.dataset.fieldKey; // Composite key: "frameIndex:position"
+      addKeypressEntry(key);
     });
   });
   
   container.querySelectorAll('.btn-remove-keypress').forEach(btn => {
     btn.addEventListener('click', () => {
-      const position = parseInt(btn.dataset.position);
+      const key = btn.dataset.fieldKey; // Composite key
       const index = parseInt(btn.dataset.index);
-      removeKeypressEntry(position, index);
+      removeKeypressEntry(key, index);
     });
   });
   
   // Add event listeners for keypress delay inputs
   container.querySelectorAll('.keypress-delay').forEach(input => {
     input.addEventListener('change', (e) => {
-      const position = parseInt(e.target.dataset.position);
+      const key = e.target.dataset.fieldKey; // Composite key
       const delay = parseInt(e.target.value) || 100;
-      state.fieldConfigs[position].keypressDelay = delay;
+      if (state.fieldConfigs[key]) {
+        state.fieldConfigs[key].keypressDelay = delay;
+      }
     });
   });
   
   // Add event listeners for test buttons
   container.querySelectorAll('.btn-test').forEach(btn => {
     btn.addEventListener('click', () => {
+      const frameIndex = parseInt(btn.dataset.frameIndex);
       const position = parseInt(btn.dataset.position);
-      testField(position);
+      testField(frameIndex, position);
     });
   });
   
@@ -2201,10 +2389,60 @@ function renderFieldList() {
 }
 
 /**
- * Render a single field item
+ * Render a collapsible frame group containing its fields
  */
-function renderFieldItem(field) {
-  const config = state.fieldConfigs[field.position] || {};
+function renderFrameGroup(frame) {
+  const isCollapsed = frame.collapsed;
+  const fieldCount = frame.fields.length;
+  const frameLabel = frame.isMainFrame ? 'Main Frame' : 'Iframe';
+  
+  // Extract just the pathname from the URL for cleaner display
+  let displayUrl = frame.frameUrl;
+  try {
+    const urlObj = new URL(frame.frameUrl);
+    displayUrl = urlObj.pathname || '/';
+  } catch (e) {
+    // Keep full URL if parsing fails
+  }
+  
+  return `
+    <div class="frame-group ${isCollapsed ? 'collapsed' : ''}" data-frame-index="${frame.frameIndex}">
+      <div class="frame-header" data-frame-index="${frame.frameIndex}">
+        <span class="frame-collapse-icon">${isCollapsed ? '▶' : '▼'}</span>
+        <span class="frame-badge ${frame.isMainFrame ? 'main' : 'iframe'}">${frameLabel}</span>
+        <span class="frame-url" title="${frame.frameUrl}">${displayUrl}</span>
+        <span class="frame-field-count">${fieldCount} field${fieldCount !== 1 ? 's' : ''}</span>
+        <button class="frame-collapse-btn" data-frame-index="${frame.frameIndex}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+          ${isCollapsed ? 'Expand' : 'Collapse'}
+        </button>
+      </div>
+      <div class="frame-fields ${isCollapsed ? 'hidden' : ''}">
+        ${frame.fields.map(field => renderFieldItem(field, frame.frameIndex)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Toggle collapse state for a frame
+ */
+function toggleFrameCollapse(frameIndex) {
+  const frame = state.scannedFrames.find(f => f.frameIndex === frameIndex);
+  if (frame) {
+    frame.collapsed = !frame.collapsed;
+    renderFieldList();
+  }
+}
+
+/**
+ * Render a single field item
+ * 
+ * @param {Object} field - Field data from scan
+ * @param {number} frameIndex - Index of the frame this field belongs to
+ */
+function renderFieldItem(field, frameIndex) {
+  const key = `${frameIndex}:${field.position}`; // Composite key
+  const config = state.fieldConfigs[key] || {};
   // Ensure status has a default value
   const status = config.status || 'unmapped';
   const isDisabled = field.isDisabled;
@@ -2212,30 +2450,30 @@ function renderFieldItem(field) {
   
   // Debug log for each field being rendered
   if (status !== 'unmapped') {
-    console.log(`Rendering field #${field.position} with status: ${status}`);
+    console.log(`Rendering field ${key} with status: ${status}`);
   }
   
   // Pass the normalized status to config for renderFieldConfigDetails
   const configWithStatus = { ...config, status };
   
   return `
-    <div class="field-item ${status === 'ignore' ? 'ignore' : ''}" data-position="${field.position}">
+    <div class="field-item ${status === 'ignore' ? 'ignore' : ''}" data-field-key="${key}" data-frame-index="${frameIndex}" data-position="${field.position}">
       <div class="field-header">
         <span class="field-position">#${field.position}</span>
         <span class="field-label">${field.label || field.name || field.formControlName || 'Unlabeled'}</span>
         <span class="field-type ${isDisabled ? 'disabled' : ''}">${field.type}${isDisabled ? ' (disabled)' : ''}</span>
-        ${isMapped ? `<button class="btn btn-sm btn-test" data-position="${field.position}" title="Test this field">Test</button>` : ''}
+        ${isMapped ? `<button class="btn btn-sm btn-test" data-frame-index="${frameIndex}" data-position="${field.position}" title="Test this field">Test</button>` : ''}
       </div>
       <div class="field-config">
         <div class="field-config-row">
-          <select class="field-status" data-position="${field.position}">
+          <select class="field-status" data-field-key="${key}">
             <option value="unmapped" ${status === 'unmapped' ? 'selected' : ''}>Unmapped</option>
             <option value="ignore" ${status === 'ignore' ? 'selected' : ''}>Ignore</option>
             <option value="data" ${status === 'data' ? 'selected' : ''}>Map to Data</option>
             <option value="static" ${status === 'static' ? 'selected' : ''}>Static Value</option>
           </select>
         </div>
-        ${renderFieldConfigDetails(field, configWithStatus)}
+        ${renderFieldConfigDetails(field, frameIndex, configWithStatus)}
       </div>
     </div>
   `;
@@ -2243,11 +2481,17 @@ function renderFieldItem(field) {
 
 /**
  * Render configuration details based on field status
+ * 
+ * @param {Object} field - Field data
+ * @param {number} frameIndex - Frame index for composite key
+ * @param {Object} config - Field configuration
  */
-function renderFieldConfigDetails(field, config) {
+function renderFieldConfigDetails(field, frameIndex, config) {
   if (config.status === 'unmapped' || config.status === 'ignore') {
     return '';
   }
+  
+  const key = `${frameIndex}:${field.position}`; // Composite key
   
   let html = '<div class="field-config-details">';
   
@@ -2256,7 +2500,7 @@ function renderFieldConfigDetails(field, config) {
     html += `
       <div class="config-group">
         <label>Data Source</label>
-        <select class="data-source-select" data-position="${field.position}">
+        <select class="data-source-select" data-field-key="${key}">
           <option value="">-- Select Data Source --</option>
           <optgroup label="Traveler">
             ${DATA_SOURCES.traveler.map(s => 
@@ -2293,7 +2537,7 @@ function renderFieldConfigDetails(field, config) {
     html += `
       <div class="config-group">
         <label>Static Value</label>
-        <input type="text" class="static-value-input" data-position="${field.position}" 
+        <input type="text" class="static-value-input" data-field-key="${key}" 
                value="${config.staticValue || ''}" placeholder="Enter fixed value">
       </div>
     `;
@@ -2303,7 +2547,7 @@ function renderFieldConfigDetails(field, config) {
   html += `
     <div class="config-group">
       <label>Field Type</label>
-      <select class="field-type-select" data-position="${field.position}">
+      <select class="field-type-select" data-field-key="${key}">
         ${FIELD_TYPES.map(t => 
           `<option value="${t.value}" ${config.fieldType === t.value ? 'selected' : ''}>${t.label}</option>`
         ).join('')}
@@ -2315,7 +2559,7 @@ function renderFieldConfigDetails(field, config) {
   html += `
     <div class="config-group">
       <label>Input Behavior</label>
-      <select class="input-behavior-select" data-position="${field.position}">
+      <select class="input-behavior-select" data-field-key="${key}">
         ${INPUT_BEHAVIORS.map(b => 
           `<option value="${b.value}" ${config.inputType === b.value ? 'selected' : ''}>${b.label}</option>`
         ).join('')}
@@ -2331,7 +2575,7 @@ function renderFieldConfigDetails(field, config) {
     html += `
       <div class="config-group">
         <label>Date Format</label>
-        <select class="date-format-select" data-position="${field.position}">
+        <select class="date-format-select" data-field-key="${key}">
           <option value="">-- Select Format --</option>
           ${DATE_FORMATS.map(f => 
             `<option value="${f.value}" ${config.dateFormat === f.value ? 'selected' : ''}>${f.label}</option>`
@@ -2346,7 +2590,7 @@ function renderFieldConfigDetails(field, config) {
     html += `
       <div class="config-group">
         <label>Test Value (for testing paste)</label>
-        <input type="text" class="test-value-input" data-position="${field.position}" 
+        <input type="text" class="test-value-input" data-field-key="${key}" 
                value="${config.testValue || ''}" placeholder="Enter a value to test with">
       </div>
     `;
@@ -2354,7 +2598,7 @@ function renderFieldConfigDetails(field, config) {
   
   // Keypress map builder (for select-keypress behavior)
   if (config.inputType === 'select-keypress') {
-    html += renderKeypressMapBuilder(field.position, config.keypressMap || {});
+    html += renderKeypressMapBuilder(key, config.keypressMap || {});
   }
   
   html += '</div>';
@@ -2363,18 +2607,21 @@ function renderFieldConfigDetails(field, config) {
 
 /**
  * Render keypress map builder UI
+ * 
+ * @param {string} fieldKey - Composite key "frameIndex:position"
+ * @param {Object} keypressMap - Current keypress configuration
  */
-function renderKeypressMapBuilder(position, keypressMap) {
+function renderKeypressMapBuilder(fieldKey, keypressMap) {
   const entries = Object.entries(keypressMap);
   // Get current delay from field config, default to 100ms
-  const currentDelay = state.fieldConfigs[position]?.keypressDelay || 100;
+  const currentDelay = state.fieldConfigs[fieldKey]?.keypressDelay || 100;
   
   return `
     <div class="config-group">
       <label>Keypress Navigation Map</label>
       <div class="keypress-config">
         <p>Define keystroke sequence (executes all rows in order):</p>
-        <div class="keypress-entries" data-position="${position}">
+        <div class="keypress-entries" data-field-key="${fieldKey}">
           ${entries.length > 0 ? entries.map(([value, config], index) => `
             <div class="keypress-entry" data-index="${index}">
               <input type="text" class="keypress-value" value="${value}" placeholder="Label (e.g., step1)">
@@ -2397,17 +2644,17 @@ function renderKeypressMapBuilder(position, keypressMap) {
                 </optgroup>
               </select>
               <input type="number" class="keypress-count" value="${config.count || 1}" placeholder="#" min="1" title="Repeat count">
-              <button type="button" class="btn-remove-keypress" data-position="${position}" data-index="${index}">×</button>
+              <button type="button" class="btn-remove-keypress" data-field-key="${fieldKey}" data-index="${index}">×</button>
             </div>
           `).join('') : ''}
         </div>
         <button type="button" class="btn btn-sm btn-secondary add-keypress">+ Add Entry</button>
         <div class="keypress-delay-config">
-          <label for="keypressDelay-${position}">Delay between keystrokes (ms):</label>
+          <label for="keypressDelay-${fieldKey.replace(':', '-')}">Delay between keystrokes (ms):</label>
           <input type="number" 
-                 id="keypressDelay-${position}" 
+                 id="keypressDelay-${fieldKey.replace(':', '-')}" 
                  class="keypress-delay" 
-                 data-position="${position}"
+                 data-field-key="${fieldKey}"
                  value="${currentDelay}" 
                  placeholder="100" 
                  min="0" 
@@ -2421,17 +2668,20 @@ function renderKeypressMapBuilder(position, keypressMap) {
 
 /**
  * Handle field status change
+ * Uses composite key "frameIndex:position" for field identification
  */
 function handleFieldStatusChange(event) {
-  const position = parseInt(event.target.dataset.position);
+  const key = event.target.dataset.fieldKey; // Composite key
   const status = event.target.value;
   
-  state.fieldConfigs[position].status = status;
+  if (!state.fieldConfigs[key]) return;
+  
+  state.fieldConfigs[key].status = status;
   
   // Reset dependent values when status changes
   if (status === 'unmapped' || status === 'ignore') {
-    state.fieldConfigs[position].dataSource = '';
-    state.fieldConfigs[position].staticValue = '';
+    state.fieldConfigs[key].dataSource = '';
+    state.fieldConfigs[key].staticValue = '';
   }
   
   // Re-render the field list to update config details
@@ -2442,14 +2692,17 @@ function handleFieldStatusChange(event) {
  * Handle data source change
  */
 function handleDataSourceChange(event) {
-  const position = parseInt(event.target.dataset.position);
+  const key = event.target.dataset.fieldKey; // Composite key
   const dataSource = event.target.value;
-  state.fieldConfigs[position].dataSource = dataSource;
+  
+  if (!state.fieldConfigs[key]) return;
+  
+  state.fieldConfigs[key].dataSource = dataSource;
   
   // Auto-set fieldType to 'date' when a full date source is selected
   // This triggers the date format picker to appear
   if (isFullDateSource(dataSource)) {
-    state.fieldConfigs[position].fieldType = 'date';
+    state.fieldConfigs[key].fieldType = 'date';
   }
   
   // Re-render to show/hide date format based on data source
@@ -2460,16 +2713,20 @@ function handleDataSourceChange(event) {
  * Handle static value change
  */
 function handleStaticValueChange(event) {
-  const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].staticValue = event.target.value;
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (state.fieldConfigs[key]) {
+    state.fieldConfigs[key].staticValue = event.target.value;
+  }
 }
 
 /**
  * Handle input behavior change
  */
 function handleInputBehaviorChange(event) {
-  const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].inputType = event.target.value;
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (!state.fieldConfigs[key]) return;
+  
+  state.fieldConfigs[key].inputType = event.target.value;
   
   // Re-render to show/hide keypress map builder
   renderFieldList();
@@ -2479,16 +2736,20 @@ function handleInputBehaviorChange(event) {
  * Handle date format change
  */
 function handleDateFormatChange(event) {
-  const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].dateFormat = event.target.value;
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (state.fieldConfigs[key]) {
+    state.fieldConfigs[key].dateFormat = event.target.value;
+  }
 }
 
 /**
  * Handle field type change
  */
 function handleFieldTypeChange(event) {
-  const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].fieldType = event.target.value;
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (!state.fieldConfigs[key]) return;
+  
+  state.fieldConfigs[key].fieldType = event.target.value;
   
   // Re-render to show/hide date format picker
   renderFieldList();
@@ -2498,32 +2759,43 @@ function handleFieldTypeChange(event) {
  * Handle test value change
  */
 function handleTestValueChange(event) {
-  const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].testValue = event.target.value;
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (state.fieldConfigs[key]) {
+    state.fieldConfigs[key].testValue = event.target.value;
+  }
 }
 
 /**
  * Add a keypress entry
+ * 
+ * @param {string} fieldKey - Composite key "frameIndex:position"
  */
-function addKeypressEntry(position) {
-  if (!state.fieldConfigs[position].keypressMap) {
-    state.fieldConfigs[position].keypressMap = {};
+function addKeypressEntry(fieldKey) {
+  if (!state.fieldConfigs[fieldKey]) return;
+  
+  if (!state.fieldConfigs[fieldKey].keypressMap) {
+    state.fieldConfigs[fieldKey].keypressMap = {};
   }
   
   // Add empty entry with unique key
   const newKey = `value_${Date.now()}`;
-  state.fieldConfigs[position].keypressMap[newKey] = { key: '', count: 1 };
+  state.fieldConfigs[fieldKey].keypressMap[newKey] = { key: '', count: 1 };
   
   renderFieldList();
 }
 
 /**
  * Remove a keypress entry
+ * 
+ * @param {string} fieldKey - Composite key "frameIndex:position"
+ * @param {number} index - Index of entry to remove
  */
-function removeKeypressEntry(position, index) {
-  const entries = Object.entries(state.fieldConfigs[position].keypressMap || {});
+function removeKeypressEntry(fieldKey, index) {
+  if (!state.fieldConfigs[fieldKey]) return;
+  
+  const entries = Object.entries(state.fieldConfigs[fieldKey].keypressMap || {});
   if (entries[index]) {
-    delete state.fieldConfigs[position].keypressMap[entries[index][0]];
+    delete state.fieldConfigs[fieldKey].keypressMap[entries[index][0]];
   }
   renderFieldList();
 }
@@ -2531,10 +2803,13 @@ function removeKeypressEntry(position, index) {
 /**
  * Collect keypress map values before saving
  * Reads from the key select dropdown (supports special keys like Enter)
+ * Uses composite keys "frameIndex:position" for field identification
  */
 function collectKeypressMaps() {
   document.querySelectorAll('.keypress-entries').forEach(container => {
-    const position = parseInt(container.dataset.position);
+    const fieldKey = container.dataset.fieldKey; // Composite key
+    if (!fieldKey || !state.fieldConfigs[fieldKey]) return;
+    
     const newMap = {};
     
     container.querySelectorAll('.keypress-entry').forEach((entry, index) => {
@@ -2551,12 +2826,15 @@ function collectKeypressMaps() {
       }
     });
     
-    state.fieldConfigs[position].keypressMap = newMap;
+    state.fieldConfigs[fieldKey].keypressMap = newMap;
   });
 }
 
 /**
  * Save the mapping to the server
+ * 
+ * Includes frameIndex in each field for proper frame targeting during fill.
+ * Uses composite keys "frameIndex:position" to identify fields.
  */
 async function saveMapping() {
   const mappingName = document.getElementById('mappingName').value.trim();
@@ -2578,18 +2856,28 @@ async function saveMapping() {
   collectKeypressMaps();
   
   // Build the fields array from configs
+  // Key format is "frameIndex:position", e.g., "1:3"
   const fields = [];
   
-  for (const [posStr, config] of Object.entries(state.fieldConfigs)) {
-    const position = parseInt(posStr);
+  for (const [key, config] of Object.entries(state.fieldConfigs)) {
+    // Parse composite key to get frameIndex and position
+    const [frameIndexStr, positionStr] = key.split(':');
+    const frameIndex = parseInt(frameIndexStr);
+    const position = parseInt(positionStr);
     
     // Skip unmapped and ignored fields
     if (config.status === 'unmapped' || config.status === 'ignore') {
       continue;
     }
     
+    // Get frame URL for this field (used by content script to filter by frame)
+    const frame = state.scannedFrames.find(f => f.frameIndex === frameIndex);
+    const frameUrl = frame ? frame.frameUrl : null;
+    
     const fieldMapping = {
       position,
+      frameIndex,   // Include frame info for multi-frame support
+      frameUrl,     // Frame URL for content script filtering
       status: config.status,
       inputType: config.inputType || 'paste'
     };
@@ -2650,7 +2938,7 @@ async function saveMapping() {
       showToast(isEditing ? 'Mapping updated successfully!' : 'Mapping saved successfully!', 'success');
       
       // Clear the form and editing state
-      state.scannedFields = [];
+      state.scannedFrames = [];
       state.fieldConfigs = {};
       state.editingMappingId = null; // Clear editing state
       document.getElementById('mappingName').value = '';
@@ -2674,9 +2962,13 @@ async function saveMapping() {
 
 /**
  * Test filling a single field
+ * 
+ * @param {number} frameIndex - Index of the frame containing the field
+ * @param {number} position - Position of the field within the frame
  */
-async function testField(position) {
-  const config = state.fieldConfigs[position];
+async function testField(frameIndex, position) {
+  const key = `${frameIndex}:${position}`; // Composite key
+  const config = state.fieldConfigs[key];
   
   if (!config || (config.status !== 'data' && config.status !== 'static')) {
     showToast('Field is not mapped', 'warning');
@@ -2731,10 +3023,15 @@ async function testField(position) {
     return;
   }
   
+  // Get the frame info to find the frameId for targeted message
+  const frame = state.scannedFrames.find(f => f.frameIndex === frameIndex);
+  const frameId = frame ? frame.frameId : 0;
+  
   try {
-    // Send test fill message to content script
+    // Send test fill message to content script in the specific frame
     const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
       type: 'TEST_FILL_FIELD',
+      frameIndex,
       position,
       value,
       config: {
@@ -2744,7 +3041,7 @@ async function testField(position) {
         keypressDelay: config.keypressDelay || 100, // Delay between keystrokes in ms
         useKeystrokes // Flag to indicate keystrokes should be executed
       }
-    });
+    }, { frameId }); // Target specific frame
     
     if (result.success) {
       showToast(`Field #${position} filled successfully`, 'success');
