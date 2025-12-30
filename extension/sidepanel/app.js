@@ -3164,9 +3164,9 @@ async function testField(frameIndex, position) {
   const frame = state.scannedFrames.find(f => f.frameIndex === frameIndex);
   const frameId = frame ? frame.frameId : 0;
   
-  try {
-    // Send test fill message to content script in the specific frame
-    const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
+  // Helper to send test fill message
+  async function sendTestFill() {
+    return await chrome.tabs.sendMessage(tabResult.tab.id, {
       type: 'TEST_FILL_FIELD',
       frameIndex,
       position,
@@ -3175,10 +3175,15 @@ async function testField(frameIndex, position) {
         inputType,
         dateFormat: config.dateFormat,
         keypressMap: config.keypressMap,
-        keypressDelay: config.keypressDelay || 100, // Delay between keystrokes in ms
-        useKeystrokes // Flag to indicate keystrokes should be executed
+        keypressDelay: config.keypressDelay || 100,
+        useKeystrokes
       }
-    }, { frameId }); // Target specific frame
+    }, { frameId });
+  }
+  
+  try {
+    // Send test fill message to content script in the specific frame
+    const result = await sendTestFill();
     
     if (result.success) {
       showToast(`Field #${position} filled successfully`, 'success');
@@ -3187,7 +3192,37 @@ async function testField(frameIndex, position) {
     }
   } catch (error) {
     console.error('Test fill error:', error);
-    showToast('Could not test field: ' + error.message, 'error');
+    
+    // Check if content script is not loaded (common after page refresh)
+    if (error.message.includes('Receiving end does not exist') || 
+        error.message.includes('Could not establish connection')) {
+      console.log('Content script not loaded, injecting...');
+      
+      try {
+        // Inject the content script
+        await chrome.scripting.executeScript({
+          target: { tabId: tabResult.tab.id, allFrames: true },
+          files: ['content/content-script.js']
+        });
+        
+        // Wait for script to initialize
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Retry the test fill
+        const result = await sendTestFill();
+        
+        if (result.success) {
+          showToast(`Field #${position} filled successfully`, 'success');
+        } else {
+          showToast('Failed to fill field: ' + (result.error || 'Unknown error'), 'error');
+        }
+      } catch (injectError) {
+        console.error('Failed to inject content script:', injectError);
+        showToast('Could not connect to page. Try refreshing and waiting a moment.', 'error');
+      }
+    } else {
+      showToast('Could not test field: ' + error.message, 'error');
+    }
   }
 }
 

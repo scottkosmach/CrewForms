@@ -807,20 +807,52 @@ async function fillClickSelect(field, value, config) {
  * 
  * Focuses the field first to ensure Angular/React forms recognize the change.
  * Uses a small delay after focus for framework change detection.
+ * 
+ * Special handling for Telerik RadComboBox which has internal filter state
+ * that needs to be reset before filling with a new value.
  */
 async function fillTextField(field, value) {
+  // Check if this is a Telerik RadComboBox input
+  const isTelerikComboBox = field.classList.contains('rcbInput') || 
+    field.closest('.RadComboBox') !== null;
+  
   // Focus the field first - critical for Angular reactive forms
   field.focus();
+  field.click(); // Click to activate (important for Telerik)
   await sleep(10);
   
-  // Clear existing value
-  field.value = '';
-  
-  // Set new value
-  field.value = String(value);
-  
-  // Trigger events to notify any listeners
-  triggerInputEvents(field);
+  // Clear existing value - with extra steps for Telerik
+  if (isTelerikComboBox) {
+    // For Telerik RadComboBox, we need to properly clear and reset the filter
+    // 1. Select all existing text
+    field.select();
+    await sleep(10);
+    
+    // 2. Clear via keyboard simulation (backspace) to trigger Telerik's handlers
+    field.value = '';
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(50); // Wait for Telerik to reset its filter
+    
+    // 3. Set new value
+    field.value = String(value);
+    
+    // 4. Trigger input event to make Telerik filter
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100); // Wait for Telerik dropdown to filter
+    
+    // 5. Trigger change and blur for dependent dropdowns
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+    field.blur();
+    field.dispatchEvent(new Event('blur', { bubbles: true }));
+    field.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    
+    console.log('[CrewForms] Telerik RadComboBox filled with:', value);
+  } else {
+    // Standard text field handling
+    field.value = '';
+    field.value = String(value);
+    triggerInputEvents(field);
+  }
   
   // Small delay after events for framework processing
   await sleep(10);
