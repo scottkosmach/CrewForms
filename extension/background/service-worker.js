@@ -210,6 +210,13 @@ async function handleMessage(message, sender) {
     case 'GET_MAPPING':
       return await getFieldMapping(message.url);
     
+    // Excel template operations
+    case 'CHECK_EXCEL_TEMPLATE':
+      return await checkExcelTemplate(message.url);
+    
+    case 'GENERATE_EXCEL':
+      return await generateExcel(message.templateId, message.data);
+    
     // Content script communication
     case 'FILL_FORM':
       return await fillFormFields(message.tabId, message.data, message.mapping);
@@ -541,6 +548,78 @@ async function getFieldMapping(url) {
     return { success: true, mapping };
   } catch (error) {
     console.error('Failed to fetch mapping:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// ============================================================================
+// EXCEL TEMPLATE FUNCTIONS
+// ============================================================================
+
+/**
+ * Check if an Excel template exists for the given URL
+ * Returns template info if found
+ */
+async function checkExcelTemplate(url) {
+  try {
+    const settings = await chrome.storage.local.get('settings');
+    const serverUrl = settings.settings?.serverUrl || SERVER_URL;
+    
+    const response = await fetch(`${serverUrl}/api/excel/generate?url=${encodeURIComponent(url)}`);
+    
+    if (!response.ok) {
+      throw new Error(`Template check error: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('Failed to check Excel template:', error);
+    return { success: false, hasTemplate: false, error: error.message };
+  }
+}
+
+/**
+ * Generate and download an Excel file
+ * Returns the generated file as a blob URL
+ */
+async function generateExcel(templateId, data) {
+  try {
+    const settings = await chrome.storage.local.get('settings');
+    const serverUrl = settings.settings?.serverUrl || SERVER_URL;
+    
+    const response = await fetch(`${serverUrl}/api/excel/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        templateId,
+        travelers: data.travelers || [],
+        captain: data.captain || null,
+        crew: data.crew || [],
+        boat: data.boat || null,
+        trip: data.trip || null
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Generate error: ${response.status}`);
+    }
+    
+    // Get the filename from Content-Disposition header
+    const disposition = response.headers.get('Content-Disposition');
+    let filename = 'download.xlsx';
+    if (disposition) {
+      const match = disposition.match(/filename="?([^";\n]+)"?/);
+      if (match) filename = match[1];
+    }
+    
+    // Convert response to blob
+    const blob = await response.blob();
+    
+    return { success: true, blob, filename };
+  } catch (error) {
+    console.error('Failed to generate Excel:', error);
     return { success: false, error: error.message };
   }
 }

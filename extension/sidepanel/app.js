@@ -128,6 +128,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupTripForm();
   setupTravelerImport();
   setupPasteAction();
+  setupExcelDownload();
   setupAdminMode();
   
   // Update UI
@@ -1449,6 +1450,16 @@ function updatePasteSourceOptions() {
     `).join('');
 }
 
+/**
+ * Set up Excel download button event listener
+ */
+function setupExcelDownload() {
+  const excelBtn = document.getElementById('downloadExcelBtn');
+  if (excelBtn) {
+    excelBtn.addEventListener('click', handleExcelDownload);
+  }
+}
+
 // ============================================================================
 // URL MAPPING DETECTION & ACTION BAR
 // ============================================================================
@@ -1484,11 +1495,23 @@ async function checkCurrentTabMapping() {
       url: currentUrl
     });
     
-    if (mappingResult.success && mappingResult.mapping) {
-      console.log('Found mapping for URL:', mappingResult.mapping);
+    // Check if there's an Excel template for this URL
+    const excelResult = await sendMessage({
+      type: 'CHECK_EXCEL_TEMPLATE',
+      url: currentUrl
+    });
+    
+    const hasMapping = mappingResult.success && mappingResult.mapping;
+    const hasExcelTemplate = excelResult.success && excelResult.hasTemplate;
+    
+    if (hasMapping || hasExcelTemplate) {
+      console.log('Found mapping:', hasMapping, 'Excel template:', hasExcelTemplate);
       showActionBar();
+      
+      // Show/hide Excel button based on template availability
+      updateExcelButton(hasExcelTemplate, excelResult.templateId, excelResult.templateName);
     } else {
-      console.log('No mapping found for URL');
+      console.log('No mapping or Excel template found for URL');
       hideActionBar();
     }
   } catch (error) {
@@ -1517,6 +1540,161 @@ function hideActionBar() {
     actionBar.classList.add('hidden');
     console.log('Action bar hidden');
   }
+}
+
+// Store the current Excel template info
+let currentExcelTemplate = null;
+
+/**
+ * Update the Excel download button visibility
+ */
+function updateExcelButton(hasTemplate, templateId, templateName) {
+  const excelBtn = document.getElementById('downloadExcelBtn');
+  if (!excelBtn) return;
+  
+  if (hasTemplate) {
+    excelBtn.classList.remove('hidden');
+    excelBtn.title = `Download ${templateName || 'Excel'}`;
+    currentExcelTemplate = { templateId, templateName };
+    console.log('Excel button shown for template:', templateName);
+  } else {
+    excelBtn.classList.add('hidden');
+    currentExcelTemplate = null;
+    console.log('Excel button hidden');
+  }
+}
+
+/**
+ * Handle Excel download
+ * Gathers current data and generates a filled Excel file
+ */
+async function handleExcelDownload() {
+  if (!currentExcelTemplate || !currentExcelTemplate.templateId) {
+    showToast('No Excel template available', 'error');
+    return;
+  }
+  
+  const btn = document.getElementById('downloadExcelBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '...';
+  }
+  
+  try {
+    // Get current boat and trip selections
+    const currentBoat = state.boats.find(b => b.id === getCurrentBoatId());
+    const currentTrip = state.trips.find(t => t.id === getCurrentTripId());
+    
+    // Prepare data for Excel generation
+    const data = {
+      travelers: state.travelers.map(t => ({
+        firstName: t.firstName,
+        middleName: t.middleName,
+        lastName: t.lastName,
+        passportNumber: t.passportNumber,
+        nationality: t.nationality,
+        gender: t.gender,
+        placeOfBirth: t.placeOfBirth,
+        dateOfBirth: t.dateOfBirth,
+        dateOfIssue: t.dateOfIssue,
+        dateOfExpiry: t.dateOfExpiry,
+        issuingAuthority: t.issuingAuthority,
+        passportType: t.passportType
+      })),
+      captain: state.captain ? {
+        firstName: state.captain.firstName,
+        middleName: state.captain.middleName,
+        lastName: state.captain.lastName,
+        passportNumber: state.captain.passportNumber,
+        nationality: state.captain.nationality,
+        licenseNumber: state.captain.licenseNumber,
+        email: state.captain.email,
+        phone: state.captain.phone,
+        dateOfBirth: state.captain.dateOfBirth,
+        passportExpiry: state.captain.passportExpiry
+      } : null,
+      crew: [], // Future: add crew members support
+      boat: currentBoat ? {
+        vesselName: currentBoat.vesselName,
+        registrationNumber: currentBoat.registrationNumber,
+        flagState: currentBoat.flagState,
+        homePort: currentBoat.homePort,
+        vesselType: currentBoat.vesselType,
+        capacity: currentBoat.capacity
+      } : null,
+      trip: currentTrip ? {
+        departurePort: currentTrip.departurePort,
+        destinationPorts: currentTrip.destinationPorts,
+        purpose: currentTrip.purpose,
+        guestCount: currentTrip.guestCount,
+        departureDate: currentTrip.departureDate,
+        returnDate: currentTrip.returnDate
+      } : null
+    };
+    
+    console.log('Generating Excel with data:', data);
+    
+    // Send generate request to background
+    const result = await sendMessage({
+      type: 'GENERATE_EXCEL',
+      templateId: currentExcelTemplate.templateId,
+      data
+    });
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to generate Excel');
+    }
+    
+    // Create download link from blob
+    const url = URL.createObjectURL(result.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = result.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast('Excel file downloaded!', 'success');
+    
+  } catch (error) {
+    console.error('Excel download error:', error);
+    showToast(error.message || 'Failed to download Excel', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <polyline points="9 15 12 18 15 15"/>
+        </svg>
+        Excel
+      `;
+    }
+  }
+}
+
+/**
+ * Get the currently selected boat ID from the trip form
+ */
+function getCurrentBoatId() {
+  const boatSelect = document.getElementById('tripBoat');
+  return boatSelect ? boatSelect.value : null;
+}
+
+/**
+ * Get the currently selected trip ID
+ */
+function getCurrentTripId() {
+  // Look for the active/selected trip in the trip selector or first trip
+  const tripSelect = document.getElementById('tripSelector');
+  if (tripSelect && tripSelect.value) {
+    return tripSelect.value;
+  }
+  // Fallback to the first trip
+  return state.trips.length > 0 ? state.trips[0].id : null;
 }
 
 /**

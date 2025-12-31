@@ -648,6 +648,31 @@ body {
   background: var(--color-white);
 }
 
+.action-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+/* Excel download button - green Excel theme */
+.btn-excel {
+  background: #107c41;
+  color: var(--color-white);
+}
+
+.btn-excel:hover {
+  background: #0b5a2e;
+}
+
+.btn-excel:disabled {
+  background: var(--color-gray-300);
+  cursor: not-allowed;
+}
+
+.btn-excel.hidden {
+  display: none;
+}
+
 /* ============================================================================
    TRIP EXPIRY NOTICE
    ============================================================================ */
