@@ -1645,8 +1645,16 @@ async function handleExcelDownload() {
       throw new Error(result.error || 'Failed to generate Excel');
     }
     
+    // Convert base64 back to blob (Chrome messaging can't pass blobs directly)
+    const binaryString = atob(result.base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: result.mimeType });
+    
     // Create download link from blob
-    const url = URL.createObjectURL(result.blob);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = result.filename;

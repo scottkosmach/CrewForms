@@ -581,7 +581,7 @@ async function checkExcelTemplate(url) {
 
 /**
  * Generate and download an Excel file
- * Returns the generated file as a blob URL
+ * Returns the generated file as a base64 data URL (blobs can't be passed through messaging)
  */
 async function generateExcel(templateId, data) {
   try {
@@ -614,10 +614,22 @@ async function generateExcel(templateId, data) {
       if (match) filename = match[1];
     }
     
-    // Convert response to blob
+    // Convert response to blob, then to base64 (blobs can't be passed through Chrome messaging)
     const blob = await response.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (let i = 0; i < uint8Array.length; i++) {
+      binary += String.fromCharCode(uint8Array[i]);
+    }
+    const base64 = btoa(binary);
     
-    return { success: true, blob, filename };
+    return { 
+      success: true, 
+      base64, 
+      filename,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    };
   } catch (error) {
     console.error('Failed to generate Excel:', error);
     return { success: false, error: error.message };
