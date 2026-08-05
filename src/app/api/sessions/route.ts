@@ -151,76 +151,56 @@ export async function getSession(sessionId: string): Promise<Session | null> {
 }
 
 /**
- * Add image to session for relay
+ * Add image to session for relay (atomic — no read-modify-write race condition)
  */
 export async function addImageToSession(sessionId: string, imageData: string): Promise<boolean> {
   const supabase = await createClient();
-  
-  console.log(`[addImageToSession] Adding image to session ${sessionId}`);
-  console.log(`[addImageToSession] Image data preview: ${imageData.substring(0, 100)}...`);
-  
-  // First get current images
-  const session = await getSession(sessionId);
-  if (!session) {
-    console.log(`[addImageToSession] Session ${sessionId} not found`);
-    return false;
-  }
-  
-  console.log(`[addImageToSession] Current images in session: ${session.images.length}`);
-  
-  // Append new image
-  const updatedImages = [...session.images, imageData];
-  
-  console.log(`[addImageToSession] Updating session with ${updatedImages.length} images`);
-  
-  const { error } = await supabase
-    .from('upload_sessions')
-    .update({ images: updatedImages })
-    .eq('id', sessionId);
-  
+
+  console.log(`[addImageToSession] Atomically appending image to session ${sessionId}`);
+  console.log(`[addImageToSession] Image data length: ${imageData.length}`);
+
+  const { data, error } = await supabase.rpc('append_session_image', {
+    p_session_id: sessionId,
+    p_image_data: imageData
+  });
+
   if (error) {
-    console.error(`[addImageToSession] Failed to update session:`, error);
+    console.error(`[addImageToSession] RPC error:`, error);
     return false;
   }
-  
-  console.log(`[addImageToSession] Successfully added image to session ${sessionId}`);
-  return true;
+
+  const success = data === true;
+
+  if (!success) {
+    console.log(`[addImageToSession] Session ${sessionId} not found or expired`);
+  } else {
+    console.log(`[addImageToSession] Successfully appended image to session ${sessionId}`);
+  }
+
+  return success;
 }
 
 /**
- * Get and clear pending images from session
+ * Get and clear pending images from session (atomic — row-level lock prevents race conditions)
  */
 export async function getPendingImages(sessionId: string): Promise<string[]> {
   const supabase = await createClient();
-  
-  console.log(`[getPendingImages] Fetching images for session ${sessionId}`);
-  
-  // Get current session
-  const session = await getSession(sessionId);
-  if (!session) {
-    console.log(`[getPendingImages] Session ${sessionId} not found`);
+
+  console.log(`[getPendingImages] Atomically fetching and clearing images for session ${sessionId}`);
+
+  const { data, error } = await supabase.rpc('fetch_and_clear_session_images', {
+    p_session_id: sessionId
+  });
+
+  if (error) {
+    console.error(`[getPendingImages] RPC error:`, error);
     return [];
   }
-  
-  const images = [...session.images];
-  console.log(`[getPendingImages] Found ${images.length} pending image(s)`);
-  
-  // Clear images if there are any
-  if (images.length > 0) {
-    console.log(`[getPendingImages] Clearing images from session ${sessionId}`);
-    const { error } = await supabase
-      .from('upload_sessions')
-      .update({ images: [] })
-      .eq('id', sessionId);
-    
-    if (error) {
-      console.error(`[getPendingImages] Failed to clear images:`, error);
-      // Still return the images even if clearing failed
-    } else {
-      console.log(`[getPendingImages] Successfully cleared images from session`);
-    }
-  }
-  
+
+  // The RPC returns a JSONB array — parse it to string[]
+  const images: string[] = Array.isArray(data) ? data : [];
+  console.log(`[getPendingImages] Retrieved ${images.length} image(s) from session ${sessionId}`);
+
   return images;
 }
 

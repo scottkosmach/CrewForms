@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getPendingImages, getSession } from '../../route';
+import { getPendingImages } from '../../route';
 
 // ============================================================================
 // API HANDLERS
@@ -21,32 +21,15 @@ export async function GET(
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const { sessionId } = await params;
-  
+
   console.log(`[Images API] GET request for session ${sessionId}`);
-  
-  // Verify session exists
-  const session = await getSession(sessionId);
-  
-  if (!session) {
-    console.log(`[Images API] Session ${sessionId} not found or expired`);
-    return NextResponse.json(
-      { error: 'Session not found or expired' },
-      { status: 404 }
-    );
-  }
-  
-  console.log(`[Images API] Session ${sessionId} found, images in session: ${session.images.length}`);
-  
-  // Get and clear pending images
+
+  // Atomically fetch and clear pending images
+  // The RPC function handles session validation and row-level locking internally
   const images = await getPendingImages(sessionId);
-  
+
   console.log(`[Images API] Returning ${images.length} images from session ${sessionId}`);
-  
-  // Log first 100 chars of each image for debugging
-  images.forEach((img, i) => {
-    console.log(`[Images API] Image ${i + 1}: ${img.substring(0, 100)}...`);
-  });
-  
+
   return NextResponse.json({
     images,
     count: images.length
