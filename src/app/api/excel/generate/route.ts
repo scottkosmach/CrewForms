@@ -8,6 +8,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import {
+  getValue,
+  formatDate,
+  applyValueMap,
+  colLetterToNumber,
+} from '@/lib/excel/values';
 import ExcelJS from 'exceljs';
 
 // ============================================================================
@@ -111,89 +117,13 @@ interface GenerateRequest {
 // HELPER FUNCTIONS
 // ============================================================================
 
-/**
- * Get value from nested object path
- * e.g., getValue({ traveler: { firstName: 'John' } }, 'traveler.firstName') => 'John'
- */
-function getValue(data: Record<string, unknown>, path: string): string | undefined {
-  const parts = path.split('.');
-  let current: unknown = data;
-  
-  for (const part of parts) {
-    if (current === null || current === undefined) {
-      return undefined;
-    }
-    if (typeof current === 'object') {
-      current = (current as Record<string, unknown>)[part];
-    } else {
-      return undefined;
-    }
-  }
-  
-  // Convert to string if we got a value
-  if (current !== null && current !== undefined) {
-    return String(current);
-  }
-  
-  return undefined;
-}
 
-/**
- * Format a date string according to the specified format
- * Supported formats: YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, etc.
- */
-function formatDate(dateStr: string | undefined, format?: string): string {
-  if (!dateStr) return '';
-  
-  // Try to parse the date
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) {
-    // Return original string if parsing fails
-    return dateStr;
-  }
-  
-  // Default format is ISO (YYYY-MM-DD)
-  if (!format) {
-    return dateStr;
-  }
-  
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  
-  // Apply format
-  return format
-    .replace('YYYY', String(year))
-    .replace('YY', String(year).slice(-2))
-    .replace('MM', month)
-    .replace('DD', day);
-}
 
-/**
- * Apply value mapping transformation
- * e.g., { "M": "Male", "F": "Female" } transforms "M" to "Male"
- */
-function applyValueMap(
-  value: string | undefined, 
-  valueMap?: Record<string, string>
-): string {
-  if (!value) return '';
-  if (!valueMap) return value;
-  
-  // Check if there's a mapping for this value
-  return valueMap[value] || value;
-}
 
-/**
- * Convert column letter to number (A=1, B=2, ..., Z=26, AA=27, etc.)
- */
-function colLetterToNumber(col: string): number {
-  let result = 0;
-  for (let i = 0; i < col.length; i++) {
-    result = result * 26 + col.charCodeAt(i) - 64;
-  }
-  return result;
-}
+
+
+
+
 
 /**
  * Fill a single cell with data
