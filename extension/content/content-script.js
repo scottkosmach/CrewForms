@@ -9,11 +9,44 @@
  */
 
 // ============================================================================
+// CONTEXT VALIDITY CHECK
+// ============================================================================
+
+/**
+ * Check if this content script's extension context is still valid.
+ * When the extension is reloaded, old content scripts remain on the page
+ * but lose their connection. This prevents stale scripts from interfering.
+ */
+function isContextValid() {
+  try {
+    return !!chrome.runtime?.id;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Remove all event listeners and stop this content script from doing anything.
+ * Called when we detect the extension context has been invalidated.
+ */
+function selfDestruct() {
+  console.log('[CrewForms] Extension context invalidated — cleaning up old content script');
+  document.removeEventListener('focusin', handleFocusIn);
+  document.removeEventListener('focusout', handleFocusOut);
+  document.removeEventListener('click', handleClick);
+  autoPasteValue = null;
+  focusedElement = null;
+}
+
+// ============================================================================
 // STATE
 // ============================================================================
 
 // Track the currently focused element
 let focusedElement = null;
+
+// Autopaste: when set, the next focused form field will receive this value
+let autoPasteValue = null;
 
 // Current field mapping for this page (if any)
 let currentMapping = null;
@@ -48,6 +81,9 @@ function initialize() {
   // Track focus changes
   document.addEventListener('focusin', handleFocusIn);
   document.addEventListener('focusout', handleFocusOut);
+
+  // Track clicks on form fields (for autopaste when focusin doesn't fire)
+  document.addEventListener('click', handleClick);
   
   // Listen for messages from background script
   chrome.runtime.onMessage.addListener(handleMessage);
@@ -73,15 +109,60 @@ function notifyReady() {
 // ============================================================================
 
 /**
+ * Apply the pending autopaste value to a form element.
+ * Called from both focusin and click handlers to ensure it works
+ * even when focus doesn't technically change (e.g. side panel interaction).
+ */
+function applyAutoPaste(element) {
+  if (!isContextValid()) { selfDestruct(); return; }
+  if (autoPasteValue === null) return;
+
+  const value = autoPasteValue;
+  autoPasteValue = null; // Clear immediately so it only pastes once
+
+  // Use the element that was passed in — this is event.target from
+  // the focusin or click handler, i.e. the field the user just interacted with.
+  // No setTimeout — fill immediately so we don't risk targeting a stale element.
+  const target = element;
+
+  // Set the value using native setter for React/Angular compatibility
+  const nativeSetter = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(target), 'value'
+  )?.set || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+
+  if (nativeSetter) {
+    nativeSetter.call(target, value);
+  } else {
+    target.value = value;
+  }
+
+  // Dispatch events so frameworks (Angular/React) pick up the change
+  target.dispatchEvent(new Event('input', { bubbles: true }));
+  target.dispatchEvent(new Event('change', { bubbles: true }));
+
+  // Brief green flash to confirm
+  const origOutline = target.style.outline;
+  target.style.outline = '2px solid #22c55e';
+  setTimeout(() => { target.style.outline = origOutline; }, 800);
+
+  console.log('[CrewForms] Auto-pasted value into', target.tagName, target.name || target.id);
+}
+
+/**
  * Handle focus entering an element
  */
 function handleFocusIn(event) {
+  if (!isContextValid()) { selfDestruct(); return; }
   const element = event.target;
-  
+
   // Only track form input elements
   if (isFormElement(element)) {
     focusedElement = element;
-    
+
+    // Do NOT auto-paste on focusin — when focus returns from the side panel,
+    // the browser restores focus to the previously focused field, which is
+    // the wrong target. We only auto-paste on explicit click (see handleClick).
+
     // Notify side panel of focus change
     chrome.runtime.sendMessage({
       type: 'FOCUS_CHANGED',
@@ -91,8 +172,29 @@ function handleFocusIn(event) {
 }
 
 /**
+ * Handle click on a form element.
+ *
+ * Auto-paste ONLY fires on click, not on focusin. This is because:
+ * 1. When the user clicks the copy icon in the side panel then clicks a form
+ *    field, the browser first fires focusin on the PREVIOUSLY focused field
+ *    (restoring focus from the side panel), and only then fires click on the
+ *    field the user actually clicked. Using click ensures we target the right field.
+ * 2. Click always fires regardless of prior focus state.
+ */
+function handleClick(event) {
+  if (!isContextValid()) { selfDestruct(); return; }
+  const element = event.target;
+  if (isFormElement(element)) {
+    focusedElement = element;
+    if (autoPasteValue !== null) {
+      applyAutoPaste(element);
+    }
+  }
+}
+
+/**
  * Handle focus leaving an element
- * 
+ *
  * Note: We intentionally do NOT clear focusedElement when focus leaves
  * the page entirely (e.g., when clicking into the side panel).
  * We only update focusedElement when a NEW form element is focused.
@@ -164,6 +266,12 @@ function handleMessage(message, sender, sendResponse) {
     
     case 'SET_MAPPING':
       currentMapping = message.mapping;
+      sendResponse({ success: true });
+      break;
+
+    case 'SET_AUTOPASTE':
+      autoPasteValue = message.value;
+      console.log('[CrewForms] Autopaste armed with value:', message.value);
       sendResponse({ success: true });
       break;
     
@@ -352,20 +460,32 @@ async function handleFillFields(data, mapping) {
   console.log('[CrewForms] Data received:', JSON.stringify(data, null, 2));
   console.log('[CrewForms] Mapping fields count:', mapping?.fields?.length);
   
-  if (!focusedElement) {
-    console.error('[CrewForms] No field is currently focused');
-    return { success: false, error: 'No field is currently focused. Click on a form field first.' };
-  }
-  
   if (!mapping || !mapping.fields) {
     console.error('[CrewForms] No field mapping provided');
     return { success: false, error: 'No field mapping provided' };
   }
-  
+
+  // If we lost focus (e.g. user clicked into side panel), try to refocus
+  // the last known element, or fall back to finding the form on the page
+  if (focusedElement) {
+    // Re-focus to restore context (it may have lost focus to the side panel)
+    focusedElement.focus();
+    console.log('[CrewForms] Re-focused last known element:', focusedElement.tagName, focusedElement.name || focusedElement.id);
+  } else {
+    console.log('[CrewForms] No focused element - will search for form on page');
+  }
+
   try {
-    // Find the form block starting from focused element
-    // Pass formType to determine static vs dynamic-guest-blocks behavior
-    const formBlock = findFormBlock(focusedElement, mapping.formType);
+    // Find the form block - use focused element if available, otherwise find first form
+    let formBlock;
+    if (focusedElement) {
+      formBlock = findFormBlock(focusedElement, mapping.formType);
+    } else {
+      // No focused element at all (e.g. fresh content script injection)
+      // For static forms, find the first form on the page
+      formBlock = document.querySelector('form') || document.body;
+      console.log('[CrewForms] Using fallback form block:', formBlock.tagName);
+    }
     console.log('[CrewForms] Form block found:', formBlock.tagName, formBlock.className);
     
     // Must match selector in scanAllFormFields() for consistent field positions!

@@ -106,8 +106,43 @@ const state = {
   // Admin mode state
   adminMode: false,
   scannedFields: [],
-  fieldConfigs: {} // Map of position -> config object
+  fieldConfigs: {}, // Map of position -> config object
+  // Paste tracking - reset on URL change
+  pastedTravelerIds: new Set(),
+  lastPasteUrl: null,
+  hasMappingForCurrentPage: false,
+  // Image overlay tracking
+  imageOverlayVisible: false
 };
+
+// ============================================================================
+// OCR QUEUE - Process images 2 at a time to avoid overwhelming the API
+// ============================================================================
+
+const ocrQueue = [];       // Array of { travelerId, imageData }
+let ocrActiveCount = 0;    // How many OCR calls are currently in flight
+const OCR_CONCURRENCY = 2; // Max simultaneous OCR requests
+const processedImageHashes = new Set(); // Track processed images to prevent duplicates
+
+function enqueueOcr(travelerId, imageData) {
+  ocrQueue.push({ travelerId, imageData });
+  processOcrQueue();
+}
+
+function processOcrQueue() {
+  while (ocrQueue.length > 0 && ocrActiveCount < OCR_CONCURRENCY) {
+    const job = ocrQueue.shift();
+    ocrActiveCount++;
+    console.log(`[OCR Queue] Starting job for ${job.travelerId} (active: ${ocrActiveCount}, queued: ${ocrQueue.length})`);
+
+    processOcr(job.travelerId, job.imageData)
+      .finally(() => {
+        ocrActiveCount--;
+        console.log(`[OCR Queue] Job done for ${job.travelerId} (active: ${ocrActiveCount}, queued: ${ocrQueue.length})`);
+        processOcrQueue();
+      });
+  }
+}
 
 // ============================================================================
 // INITIALIZATION
@@ -126,7 +161,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupCompanyForm();
   setupTripForm();
   setupTravelerImport();
-  setupPasteAction();
   setupAdminMode();
   
   // Update UI
@@ -150,15 +184,15 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 async function loadAllData() {
   const data = await getStorage([
-    'captain', 'boats', 'companies', 'trips', 'travelers', 'travelerImages'
+    'captain', 'boats', 'companies', 'trips', 'travelers'
   ]);
-  
+
   state.captain = data.captain || null;
   state.boats = data.boats || [];
   state.companies = data.companies || [];
   state.trips = data.trips || [];
   state.travelers = data.travelers || [];
-  state.travelerImages = data.travelerImages || {};
+  // travelerImages are kept in memory only (too large for chrome.storage)
 }
 
 /**
@@ -213,13 +247,9 @@ function handleBackgroundMessage(message) {
       break;
     
     case 'IMAGE_OVERLAY_CLOSED':
-      // Image overlay was closed by user, collapse expanded card
-      const expandedCard = document.querySelector('.traveler-card.expanded');
-      if (expandedCard) {
-        expandedCard.classList.remove('expanded');
-        const btn = expandedCard.querySelector('.toggle-traveler');
-        if (btn) btn.textContent = 'Details';
-      }
+      // Image overlay was closed from the main page - reset toggle state
+      state.imageOverlayVisible = false;
+      document.querySelectorAll('.show-passport-image.active').forEach(b => b.classList.remove('active'));
       break;
   }
 }
@@ -241,16 +271,21 @@ function setupTabNavigation() {
 
 function switchTab(tabName) {
   state.currentTab = tabName;
-  
+
   // Update tab buttons
   document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.tab === tabName);
   });
-  
+
   // Update tab content
   document.querySelectorAll('.tab-content').forEach(content => {
     content.classList.toggle('active', content.id === `${tabName}-tab`);
   });
+
+  // Refresh existing mappings when switching to admin tab
+  if (tabName === 'admin') {
+    loadExistingMappings();
+  }
 }
 
 // ============================================================================
@@ -790,10 +825,30 @@ function displayQrCode(url) {
   }
 }
 
+function hashImageData(data) {
+  // Fast hash using a sample of the base64 string (full hash would be slow for large images)
+  const sample = data.length + '|' + data.substring(0, 200) + '|' + data.substring(data.length - 200);
+  let hash = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const chr = sample.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0; // Convert to 32bit integer
+  }
+  return hash.toString(36);
+}
+
 function handleImageReceived(imageData, sessionId) {
   console.log('[SidePanel] handleImageReceived called');
   console.log('[SidePanel] Image data length:', imageData?.length || 0);
-  
+
+  // Deduplicate - skip if we've already processed this exact image
+  const imageHash = hashImageData(imageData);
+  if (processedImageHashes.has(imageHash)) {
+    console.log('[SidePanel] Duplicate image detected, skipping. Hash:', imageHash);
+    return;
+  }
+  processedImageHashes.add(imageHash);
+
   // Create a new traveler entry with the image
   const travelerId = generateId();
   console.log('[SidePanel] Generated traveler ID:', travelerId);
@@ -817,12 +872,11 @@ function handleImageReceived(imageData, sessionId) {
   state.travelers.push(traveler);
   console.log('[SidePanel] Added traveler to state, total travelers:', state.travelers.length);
   
-  // Save to storage
+  // Save traveler metadata to storage (NOT images - they're too large for chrome.storage)
   setStorage({
-    travelers: state.travelers,
-    travelerImages: state.travelerImages
+    travelers: state.travelers
   }).then(() => {
-    console.log('[SidePanel] Saved to storage');
+    console.log('[SidePanel] Saved traveler metadata to storage');
   }).catch(err => {
     console.error('[SidePanel] Failed to save to storage:', err);
   });
@@ -831,9 +885,9 @@ function handleImageReceived(imageData, sessionId) {
   console.log('[SidePanel] Rendering traveler list...');
   renderTravelerList();
   
-  // Trigger OCR processing
-  console.log('[SidePanel] Starting OCR processing...');
-  processOcr(travelerId, imageData);
+  // Queue OCR processing (max 2 concurrent)
+  console.log('[SidePanel] Enqueueing OCR processing...');
+  enqueueOcr(travelerId, imageData);
 }
 
 async function processOcr(travelerId, imageData) {
@@ -882,7 +936,7 @@ function handleOcrComplete(travelerId, data) {
   // Save and render
   setStorage({ travelers: state.travelers });
   renderTravelerList();
-  updatePasteSourceOptions();
+
   
   showToast(`Extracted data for ${traveler.firstName} ${traveler.lastName}`, 'success');
 }
@@ -914,17 +968,17 @@ function renderTravelerList() {
     const initials = getInitials(traveler.firstName, traveler.lastName);
     
     return `
-      <div class="traveler-card" data-id="${traveler.id}">
+      <div class="traveler-card${state.pastedTravelerIds.has(traveler.id) ? ' pasted' : ''}" data-id="${traveler.id}">
         <div class="traveler-card-header">
           <div class="traveler-thumbnail">
-            ${imageData ? 
-              `<img src="${imageData.data}" alt="Passport">` : 
+            ${imageData ?
+              `<img src="${imageData.data}" alt="Passport">` :
               `<span>${initials || '?'}</span>`
             }
           </div>
           <div class="traveler-info ${traveler.status === 'error' ? 'retry-ocr' : ''}" data-id="${traveler.id}" style="${traveler.status === 'error' ? 'cursor: pointer;' : ''}">
             <div class="traveler-name">
-              ${traveler.status === 'processing' ? 'Processing...' : 
+              ${traveler.status === 'processing' ? 'Processing...' :
                 traveler.status === 'error' ? '⚠️ Error - Tap to retry' :
                 `${traveler.firstName} ${traveler.lastName}` || 'Unknown'
               }
@@ -934,9 +988,17 @@ function renderTravelerList() {
             </div>
           </div>
           <div class="traveler-actions">
+            ${imageData ? `<button class="btn btn-sm btn-icon show-passport-image" data-id="${traveler.id}" title="View passport image"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>` : ''}
             <button class="btn btn-sm btn-secondary toggle-traveler" data-id="${traveler.id}">
               ${traveler.expanded ? 'Hide' : 'Details'}
             </button>
+          </div>
+        </div>
+        <div class="paste-popup hidden" data-id="${traveler.id}">
+          <span>Paste ${traveler.firstName || 'this traveler'}'s data?</span>
+          <div class="paste-popup-actions">
+            <button class="btn btn-sm btn-accent paste-confirm" data-id="${traveler.id}">Paste</button>
+            <button class="btn btn-sm btn-secondary paste-cancel" data-id="${traveler.id}">Cancel</button>
           </div>
         </div>
         <div class="traveler-card-body">
@@ -948,33 +1010,33 @@ function renderTravelerList() {
           <div class="traveler-fields" data-id="${traveler.id}">
             <div class="traveler-field">
               <div class="traveler-field-label">First Name</div>
-              <div class="traveler-field-value" data-field="firstName">${traveler.firstName || '-'}</div>
+              <div class="traveler-field-value" data-field="firstName">${traveler.firstName || '-'}${copyBtn(traveler.firstName)}</div>
               <input class="traveler-field-input hidden" data-field="firstName" type="text" value="${traveler.firstName || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Middle Name</div>
-              <div class="traveler-field-value" data-field="middleName">${traveler.middleName || '-'}</div>
+              <div class="traveler-field-value" data-field="middleName">${traveler.middleName || '-'}${copyBtn(traveler.middleName)}</div>
               <input class="traveler-field-input hidden" data-field="middleName" type="text" value="${traveler.middleName || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Last Name</div>
-              <div class="traveler-field-value" data-field="lastName">${traveler.lastName || '-'}</div>
+              <div class="traveler-field-value" data-field="lastName">${traveler.lastName || '-'}${copyBtn(traveler.lastName)}</div>
               <input class="traveler-field-input hidden" data-field="lastName" type="text" value="${traveler.lastName || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Passport #</div>
-              <div class="traveler-field-value" data-field="passportNumber">${traveler.passportNumber || '-'}</div>
+              <div class="traveler-field-value" data-field="passportNumber">${traveler.passportNumber || '-'}${copyBtn(traveler.passportNumber)}</div>
               <input class="traveler-field-input hidden" data-field="passportNumber" type="text" value="${traveler.passportNumber || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Nationality</div>
-              <div class="traveler-field-value" data-field="nationality">${traveler.nationality || '-'}</div>
+              <div class="traveler-field-value" data-field="nationality">${traveler.nationality || '-'}${copyBtn(traveler.nationality)}</div>
               <input class="traveler-field-input hidden" data-field="nationality" type="text" value="${traveler.nationality || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Birth</div>
               <div class="traveler-field-value" data-field="dateOfBirth">
-                ${formatDateObj(traveler.dateOfBirth)}
+                ${formatDateObj(traveler.dateOfBirth)}${copyBtn(formatDateObj(traveler.dateOfBirth))}
               </div>
               <div class="traveler-date-inputs hidden" data-field="dateOfBirth">
                 <input class="traveler-field-input date-part" data-part="day" type="text" placeholder="DD" maxlength="2" value="${traveler.dateOfBirth?.day || ''}">
@@ -986,7 +1048,7 @@ function renderTravelerList() {
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Gender</div>
-              <div class="traveler-field-value" data-field="gender">${traveler.gender || '-'}</div>
+              <div class="traveler-field-value" data-field="gender">${traveler.gender || '-'}${copyBtn(traveler.gender)}</div>
               <select class="traveler-field-input hidden" data-field="gender">
                 <option value="" ${!traveler.gender ? 'selected' : ''}>-</option>
                 <option value="M" ${traveler.gender === 'M' ? 'selected' : ''}>M</option>
@@ -996,7 +1058,7 @@ function renderTravelerList() {
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Issue</div>
               <div class="traveler-field-value" data-field="dateOfIssue">
-                ${formatDateObj(traveler.dateOfIssue || {})}
+                ${formatDateObj(traveler.dateOfIssue || {})}${copyBtn(formatDateObj(traveler.dateOfIssue || {}))}
               </div>
               <div class="traveler-date-inputs hidden" data-field="dateOfIssue">
                 <input class="traveler-field-input date-part" data-part="day" type="text" placeholder="DD" maxlength="2" value="${traveler.dateOfIssue?.day || ''}">
@@ -1009,7 +1071,7 @@ function renderTravelerList() {
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Expiry</div>
               <div class="traveler-field-value" data-field="dateOfExpiry">
-                ${formatDateObj(traveler.dateOfExpiry || {})}
+                ${formatDateObj(traveler.dateOfExpiry || {})}${copyBtn(formatDateObj(traveler.dateOfExpiry || {}))}
               </div>
               <div class="traveler-date-inputs hidden" data-field="dateOfExpiry">
                 <input class="traveler-field-input date-part" data-part="day" type="text" placeholder="DD" maxlength="2" value="${traveler.dateOfExpiry?.day || ''}">
@@ -1021,17 +1083,17 @@ function renderTravelerList() {
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Place of Birth</div>
-              <div class="traveler-field-value" data-field="placeOfBirth">${traveler.placeOfBirth || '-'}</div>
+              <div class="traveler-field-value" data-field="placeOfBirth">${traveler.placeOfBirth || '-'}${copyBtn(traveler.placeOfBirth)}</div>
               <input class="traveler-field-input hidden" data-field="placeOfBirth" type="text" value="${traveler.placeOfBirth || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Issuing Authority</div>
-              <div class="traveler-field-value" data-field="issuingAuthority">${traveler.issuingAuthority || '-'}</div>
+              <div class="traveler-field-value" data-field="issuingAuthority">${traveler.issuingAuthority || '-'}${copyBtn(traveler.issuingAuthority)}</div>
               <input class="traveler-field-input hidden" data-field="issuingAuthority" type="text" value="${traveler.issuingAuthority || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Passport Type</div>
-              <div class="traveler-field-value" data-field="passportType">${traveler.passportType || '-'}</div>
+              <div class="traveler-field-value" data-field="passportType">${traveler.passportType || '-'}${copyBtn(traveler.passportType)}</div>
               <select class="traveler-field-input hidden" data-field="passportType">
                 <option value="" ${!traveler.passportType ? 'selected' : ''}>-</option>
                 <option value="passport" ${traveler.passportType === 'passport' ? 'selected' : ''}>Passport</option>
@@ -1054,7 +1116,28 @@ function renderTravelerList() {
       toggleTravelerCard(btn.dataset.id);
     });
   });
-  
+
+  // Toggle passport image button
+  list.querySelectorAll('.show-passport-image').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.imageOverlayVisible) {
+        hideImageOverlayOnPage();
+        state.imageOverlayVisible = false;
+        btn.classList.remove('active');
+      } else {
+        const imageData = state.travelerImages[btn.dataset.id];
+        if (imageData) {
+          showImageOverlayOnPage(imageData.data);
+          state.imageOverlayVisible = true;
+          // Remove active from all other image buttons
+          list.querySelectorAll('.show-passport-image').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        }
+      }
+    });
+  });
+
   // Delete button (now at bottom of details)
   list.querySelectorAll('.delete-traveler-bottom').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -1096,6 +1179,108 @@ function renderTravelerList() {
       retryOcr(el.dataset.id);
     });
   });
+
+  // Card header click - show paste popup (only for ready travelers on mapped pages)
+  list.querySelectorAll('.traveler-card-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      // Don't trigger if they clicked a button inside the header
+      if (e.target.closest('button')) return;
+
+      const card = header.closest('.traveler-card');
+      const id = card.dataset.id;
+      const traveler = state.travelers.find(t => t.id === id);
+
+      if (!traveler || traveler.status !== 'ready') {
+        console.log('[SidePanel] Card click ignored - traveler not ready:', traveler?.status);
+        return;
+      }
+
+      if (!state.hasMappingForCurrentPage) {
+        showToast('Navigate to a mapped form page to paste data', 'info');
+        console.log('[SidePanel] Card click - no mapping for current page');
+        return;
+      }
+
+      // Hide any other open paste popups
+      list.querySelectorAll('.paste-popup').forEach(p => p.classList.add('hidden'));
+
+      // Show this card's paste popup
+      const popup = card.querySelector('.paste-popup');
+      if (popup) popup.classList.remove('hidden');
+    });
+  });
+
+  // Paste confirm button
+  list.querySelectorAll('.paste-confirm').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      btn.disabled = true;
+      btn.textContent = 'Pasting...';
+      try {
+        await pasteTravelerData(id);
+      } finally {
+        // Always reset button state so user can retry
+        btn.disabled = false;
+        btn.textContent = 'Paste';
+        // Hide the popup after paste
+        const popup = btn.closest('.paste-popup');
+        if (popup) popup.classList.add('hidden');
+      }
+    });
+  });
+
+  // Paste cancel button
+  list.querySelectorAll('.paste-cancel').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const popup = btn.closest('.paste-popup');
+      if (popup) {
+        // Reset the confirm button in this popup
+        const confirmBtn = popup.querySelector('.paste-confirm');
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Paste';
+        }
+        popup.classList.add('hidden');
+      }
+    });
+  });
+
+  // Copy field value buttons
+  list.querySelectorAll('.copy-field-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const value = btn.dataset.value;
+      if (!value) return;
+
+      // Copy to clipboard
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch (err) {
+        console.error('Clipboard write failed:', err);
+      }
+
+      // Tell the content script to auto-paste this value on next focus
+      try {
+        await sendMessage({
+          type: 'SET_AUTOPASTE',
+          value: value
+        });
+      } catch (err) {
+        console.log('Could not set autopaste:', err.message);
+      }
+
+      // Visual feedback - briefly change icon to checkmark
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.classList.remove('copied');
+      }, 1500);
+    });
+  });
 }
 
 function getInitials(firstName, lastName) {
@@ -1114,8 +1299,6 @@ function formatDateObj(dateObj) {
 function toggleTravelerCard(id) {
   const card = document.querySelector(`.traveler-card[data-id="${id}"]`);
   if (card) {
-    const wasExpanded = card.classList.contains('expanded');
-    
     // Collapse all other cards first
     document.querySelectorAll('.traveler-card.expanded').forEach(c => {
       if (c !== card) {
@@ -1130,15 +1313,6 @@ function toggleTravelerCard(id) {
     const btn = card.querySelector('.toggle-traveler');
     btn.textContent = isExpanded ? 'Hide' : 'Details';
     
-    // Show/hide image overlay based on expanded state
-    if (isExpanded) {
-      const imageData = state.travelerImages[id];
-      if (imageData) {
-        showImageOverlayOnPage(imageData.data);
-      }
-    } else {
-      hideImageOverlayOnPage();
-    }
   }
 }
 
@@ -1150,12 +1324,11 @@ async function deleteTraveler(id) {
   delete state.travelerImages[id];
   
   await setStorage({
-    travelers: state.travelers,
-    travelerImages: state.travelerImages
+    travelers: state.travelers
   });
   
   renderTravelerList();
-  updatePasteSourceOptions();
+
   showToast('Traveler deleted', 'success');
 }
 
@@ -1270,7 +1443,7 @@ async function saveEditedTraveler(travelerId) {
   // Exit edit mode and re-render
   exitEditMode(travelerId);
   renderTravelerList();
-  updatePasteSourceOptions();
+
   
   showToast('Traveler data saved', 'success');
 }
@@ -1335,117 +1508,82 @@ async function retryOcr(id) {
 // PASTE ACTION
 // ============================================================================
 
-function setupPasteAction() {
-  const pasteSource = document.getElementById('pasteSource');
-  const pasteBtn = document.getElementById('pasteBtn');
-  
-  pasteSource.addEventListener('change', () => {
-    pasteBtn.disabled = !pasteSource.value;
-  });
-  
-  pasteBtn.addEventListener('click', async () => {
-    const source = pasteSource.value;
-    if (!source) return;
-    
-    // Get data based on source
-    let data;
-    let dataType;
-    
-    if (source === 'captain') {
-      data = { captain: state.captain };
-      dataType = 'captain';
-    } else if (source === 'boat') {
-      const trip = state.trips[0];
-      const boat = state.boats.find(b => b.id === trip?.boatId);
-      data = { boat };
-      dataType = 'boat';
-    } else if (source === 'company') {
-      const trip = state.trips[0];
-      const company = state.companies.find(c => c.id === trip?.companyId);
-      data = { company };
-      dataType = 'company';
-    } else if (source === 'trip') {
-      data = { trip: state.trips[0] };
-      dataType = 'trip';
-    } else {
-      // Traveler ID
-      const traveler = state.travelers.find(t => t.id === source);
-      data = { traveler };
-      dataType = 'traveler';
-    }
-    
-    if (!data || !Object.values(data)[0]) {
-      showToast('No data available to paste', 'error');
-      return;
-    }
-    
-    // Get active tab
-    const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
-    if (!tabResult.success || !tabResult.tab) {
-      showToast('Could not detect active tab', 'error');
-      return;
-    }
-    
-    // Get mapping for current URL
-    const mappingResult = await sendMessage({
-      type: 'GET_MAPPING',
-      url: tabResult.tab.url
-    });
-    
-    if (!mappingResult.success || !mappingResult.mapping) {
-      showToast('No form mapping found for this website', 'warning');
-      return;
-    }
-    
-    // Log data being sent for debugging
-    console.log('[SidePanel] Sending paste data:', JSON.stringify(data, null, 2));
-    console.log('[SidePanel] Using mapping:', mappingResult.mapping.name, 'with', mappingResult.mapping.fields?.length, 'fields');
-    
-    // Send fill command
-    const fillResult = await sendMessage({
-      type: 'FILL_FORM',
-      tabId: tabResult.tab.id,
-      data,
-      mapping: mappingResult.mapping
-    });
-    
-    console.log('[SidePanel] Fill result:', fillResult);
-    
-    if (fillResult.success) {
-      // Show detailed feedback
-      let message = `Filled ${fillResult.filledCount}`;
-      if (fillResult.totalMapped) {
-        message += `/${fillResult.totalMapped}`;
-      }
-      message += ' fields';
-      
-      if (fillResult.skipped > 0) {
-        message += ` (${fillResult.skipped} skipped - no data)`;
-      }
-      
-      if (fillResult.filledCount === 0) {
-        showToast(message + ' - check console for details', 'warning');
-      } else if (fillResult.errors && fillResult.errors.length > 0) {
-        showToast(message + ' with some errors', 'warning');
-      } else {
-        showToast(message, 'success');
-      }
-    } else {
-      showToast('Failed to fill form: ' + fillResult.error, 'error');
-    }
-  });
-}
 
-function updatePasteSourceOptions() {
-  const optgroup = document.getElementById('pasteSourceTravelers');
-  
-  optgroup.innerHTML = state.travelers
-    .filter(t => t.status === 'ready')
-    .map((t, i) => `
-      <option value="${t.id}">
-        ${t.firstName} ${t.lastName} (Guest ${i + 1})
-      </option>
-    `).join('');
+/**
+ * Paste a traveler's data into the current form.
+ * Returns true on success, false on failure.
+ */
+async function pasteTravelerData(travelerId) {
+  const traveler = state.travelers.find(t => t.id === travelerId);
+  if (!traveler) {
+    showToast('Traveler not found', 'error');
+    return false;
+  }
+
+  const data = { traveler };
+
+  // Get active tab
+  const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
+  if (!tabResult.success || !tabResult.tab) {
+    showToast('Could not detect active tab', 'error');
+    return false;
+  }
+
+  // Get mapping for current URL
+  const mappingResult = await sendMessage({
+    type: 'GET_MAPPING',
+    url: tabResult.tab.url
+  });
+
+  if (!mappingResult.success || !mappingResult.mapping) {
+    showToast('No form mapping found for this website', 'warning');
+    return false;
+  }
+
+  console.log('[SidePanel] Pasting traveler:', traveler.firstName, traveler.lastName);
+  console.log('[SidePanel] Using mapping:', mappingResult.mapping.name, 'with', mappingResult.mapping.fields?.length, 'fields');
+
+  // Send fill command
+  const fillResult = await sendMessage({
+    type: 'FILL_FORM',
+    tabId: tabResult.tab.id,
+    data,
+    mapping: mappingResult.mapping
+  });
+
+  console.log('[SidePanel] Fill result:', fillResult);
+
+  if (fillResult.success) {
+    let message = `Filled ${fillResult.filledCount}`;
+    if (fillResult.totalMapped) {
+      message += `/${fillResult.totalMapped}`;
+    }
+    message += ' fields';
+
+    if (fillResult.skipped > 0) {
+      message += ` (${fillResult.skipped} skipped - no data)`;
+    }
+
+    if (fillResult.filledCount === 0) {
+      showToast(message + ' - check console for details', 'warning');
+      return false;
+    } else if (fillResult.errors && fillResult.errors.length > 0) {
+      showToast(message + ' with some errors', 'warning');
+    } else {
+      showToast(message, 'success');
+    }
+
+    // Mark as pasted
+    state.pastedTravelerIds.add(travelerId);
+    state.lastPasteUrl = tabResult.tab.url;
+    const card = document.querySelector(`.traveler-card[data-id="${travelerId}"]`);
+    if (card) card.classList.add('pasted');
+
+    return true;
+  } else {
+    showToast('Failed to fill form: ' + fillResult.error, 'error');
+    return false;
+  }
 }
 
 // ============================================================================
@@ -1460,61 +1598,57 @@ async function checkCurrentTabMapping() {
   try {
     // Get the active tab
     const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
-    
+
     if (!tabResult.success || !tabResult.tab || !tabResult.tab.url) {
       console.log('No active tab found or no URL');
-      hideActionBar();
+      state.hasMappingForCurrentPage = false;
       return;
     }
-    
+
     const currentUrl = tabResult.tab.url;
     console.log('Checking mapping for URL:', currentUrl);
-    
+
+    // Reset pasted state only if the root domain changed (not just the path)
+    if (state.lastPasteUrl) {
+      try {
+        const lastHost = new URL(state.lastPasteUrl).hostname.replace(/^www\./, '');
+        const currentHost = new URL(currentUrl).hostname.replace(/^www\./, '');
+        if (lastHost !== currentHost) {
+          state.pastedTravelerIds.clear();
+          state.lastPasteUrl = null;
+          renderTravelerList();
+        }
+      } catch (e) {
+        // If URL parsing fails, reset to be safe
+        state.pastedTravelerIds.clear();
+        state.lastPasteUrl = null;
+        renderTravelerList();
+      }
+    }
+
     // Skip chrome:// and extension pages
     if (currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
       console.log('Skipping internal page');
-      hideActionBar();
+      state.hasMappingForCurrentPage = false;
       return;
     }
-    
+
     // Check if there's a mapping for this URL
     const mappingResult = await sendMessage({
       type: 'GET_MAPPING',
       url: currentUrl
     });
-    
+
     if (mappingResult.success && mappingResult.mapping) {
       console.log('Found mapping for URL:', mappingResult.mapping);
-      showActionBar();
+      state.hasMappingForCurrentPage = true;
     } else {
       console.log('No mapping found for URL');
-      hideActionBar();
+      state.hasMappingForCurrentPage = false;
     }
   } catch (error) {
     console.error('Error checking tab mapping:', error);
-    hideActionBar();
-  }
-}
-
-/**
- * Show the action bar footer
- */
-function showActionBar() {
-  const actionBar = document.getElementById('actionBar');
-  if (actionBar) {
-    actionBar.classList.remove('hidden');
-    console.log('Action bar shown');
-  }
-}
-
-/**
- * Hide the action bar footer
- */
-function hideActionBar() {
-  const actionBar = document.getElementById('actionBar');
-  if (actionBar) {
-    actionBar.classList.add('hidden');
-    console.log('Action bar hidden');
+    state.hasMappingForCurrentPage = false;
   }
 }
 
@@ -1558,7 +1692,7 @@ function renderAll() {
   updateTripSelectors();
   populateTripForm();
   renderTravelerList();
-  updatePasteSourceOptions();
+
   updateTripExpiryDisplay();
 }
 
@@ -1757,13 +1891,18 @@ async function loadExistingMappings() {
     const allMappings = data.mappings || [];
     
     // Filter mappings that match the current URL
-    const matchingMappings = allMappings.filter(mapping => 
-      urlMatchesPattern(currentUrl, mapping.urlPattern)
-    );
-    
+    console.log('[Admin] Current URL:', currentUrl);
+    console.log('[Admin] All mappings:', allMappings.map(m => m.urlPattern));
+    const matchingMappings = allMappings.filter(mapping => {
+      const matches = urlMatchesPattern(currentUrl, mapping.urlPattern);
+      console.log(`[Admin] Pattern "${mapping.urlPattern}" vs URL: ${matches}`);
+      return matches;
+    });
+
     loadingState?.classList.add('hidden');
-    
+
     if (matchingMappings.length === 0) {
+      console.log('[Admin] No matching mappings found for URL:', currentUrl);
       emptyState?.classList.remove('hidden');
       return;
     }
@@ -1785,14 +1924,19 @@ async function loadExistingMappings() {
  */
 function urlMatchesPattern(url, pattern) {
   if (!url || !pattern) return false;
-  
+
+  // Strip protocol and www. from both so matching works regardless
+  const normalize = (s) => s.replace(/^https?:\/\//, '').replace(/^www\./, '');
+  const normalizedUrl = normalize(url);
+  const normalizedPattern = normalize(pattern);
+
   // Convert pattern to regex
-  const regexPattern = pattern
+  const regexPattern = normalizedPattern
     .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
     .replace(/\*/g, '.*');
-  
+
   const regex = new RegExp(`^${regexPattern}$`, 'i');
-  return regex.test(url);
+  return regex.test(normalizedUrl);
 }
 
 /**
@@ -1853,6 +1997,17 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text || '';
   return div.innerHTML;
+}
+
+function escapeAttr(text) {
+  return (text || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
+}
+
+const COPY_ICON_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+
+function copyBtn(value) {
+  if (!value || value === '-') return '';
+  return `<button class="copy-field-btn" data-value="${escapeAttr(value)}" title="Copy">${COPY_ICON_SVG}</button>`;
 }
 
 /**

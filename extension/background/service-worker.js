@@ -52,6 +52,7 @@ async function initializeStorage() {
     trips: [],               // Array of trip objects (with expiry)
     travelers: [],           // Array of traveler objects (with expiry)
     travelerImages: {},      // Map of traveler ID to base64 image (with expiry)
+    pendingImageBuffer: [],  // Images that failed to deliver to side panel (retry buffer)
     settings: {
       serverUrl: SERVER_URL,
       autoExpiry: true
@@ -243,7 +244,11 @@ async function handleMessage(message, sender) {
     // Scan form fields on a specific tab (injects content script if needed)
     case 'SCAN_FIELDS_ON_TAB':
       return await scanFieldsOnTab(message.tabId);
-    
+
+    // Set autopaste value on active tab's content script
+    case 'SET_AUTOPASTE':
+      return await setAutoPasteOnTab(message.value);
+
     default:
       console.log('Unknown message type:', message.type);
       return { success: false, error: `Unknown message type: ${message.type}` };
@@ -411,11 +416,14 @@ async function pollSessionForImages(sessionId) {
   try {
     const settings = await chrome.storage.local.get('settings');
     const serverUrl = settings.settings?.serverUrl || SERVER_URL;
-    
+
+    // First, try to flush any previously failed images from the local buffer
+    await flushPendingImageBuffer();
+
     // Check session status and get any pending images
     const statusUrl = `${serverUrl}/api/sessions/${sessionId}`;
     console.log(`[Polling] Checking session: ${statusUrl}`);
-    
+
     const response = await fetch(statusUrl, {
       method: 'GET',
       headers: {
@@ -423,9 +431,9 @@ async function pollSessionForImages(sessionId) {
         'Cache-Control': 'no-cache'
       }
     });
-    
+
     console.log(`[Polling] Status response: ${response.status}`);
-    
+
     if (!response.ok) {
       // Session expired or not found
       console.log(`[Polling] Session ${sessionId} no longer valid (status ${response.status}), stopping`);
@@ -433,17 +441,17 @@ async function pollSessionForImages(sessionId) {
       notifySidePanel({ type: 'SESSION_EXPIRED', sessionId });
       return;
     }
-    
+
     const status = await response.json();
     console.log(`[Polling] Session status:`, JSON.stringify(status));
-    
+
     // If there are images, fetch and relay them
     if (status.imageCount > 0) {
       console.log(`[Polling] Found ${status.imageCount} images, fetching...`);
-      
+
       // Fetch images from a dedicated endpoint
       const imagesUrl = `${serverUrl}/api/sessions/${sessionId}/images`;
-      
+
       const imagesResponse = await fetch(imagesUrl, {
         method: 'GET',
         headers: {
@@ -451,37 +459,87 @@ async function pollSessionForImages(sessionId) {
           'Cache-Control': 'no-cache'
         }
       });
-      
+
       console.log(`[Polling] Images response: ${imagesResponse.status}`);
-      
+
       if (imagesResponse.ok) {
         const data = await imagesResponse.json();
         console.log(`[Polling] Received ${data.images?.length || 0} images from server`);
-        
+
         const images = data.images || [];
-        
-        // Send each image to the side panel
+
+        // Send each image to the side panel with retry logic
         for (let i = 0; i < images.length; i++) {
           const imageData = images[i];
           console.log(`[Polling] Relaying image ${i + 1}/${images.length} to side panel`);
-          
-          notifySidePanel({ 
-            type: 'IMAGE_RECEIVED', 
+
+          if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+
+          // Await delivery — if it fails, the image is stored in the local buffer
+          await notifySidePanelWithRetry({
+            type: 'IMAGE_RECEIVED',
             imageData,
-            sessionId 
+            sessionId
           });
         }
-        
+
         if (images.length > 0) {
-          console.log(`[Polling] Successfully relayed ${images.length} image(s)`);
+          console.log(`[Polling] Finished relaying ${images.length} image(s)`);
         }
       } else {
         console.error(`[Polling] Failed to fetch images: ${imagesResponse.status}`);
       }
     }
-    
+
   } catch (error) {
     console.error(`[Polling] Error:`, error.message);
+  }
+}
+
+/**
+ * Flush the local fallback buffer of images that failed to deliver previously.
+ * Called at the start of each poll cycle.
+ */
+async function flushPendingImageBuffer() {
+  try {
+    const data = await chrome.storage.local.get('pendingImageBuffer');
+    const buffer = data.pendingImageBuffer || [];
+
+    if (buffer.length === 0) return;
+
+    console.log(`[Background] Flushing ${buffer.length} pending image(s) from buffer`);
+
+    const stillPending = [];
+
+    for (const entry of buffer) {
+      // Discard entries older than 10 minutes (session likely expired)
+      if (Date.now() - entry.storedAt > 10 * 60 * 1000) {
+        console.log('[Background] Discarding expired buffered image');
+        continue;
+      }
+
+      const delivered = await notifySidePanelWithRetry({
+        type: 'IMAGE_RECEIVED',
+        imageData: entry.imageData,
+        sessionId: entry.sessionId
+      }, 1); // Single attempt during flush — don't block polling
+
+      if (!delivered) {
+        stillPending.push(entry);
+      }
+    }
+
+    // Update buffer with whatever is still undelivered
+    await chrome.storage.local.set({ pendingImageBuffer: stillPending });
+
+    if (stillPending.length > 0) {
+      console.log(`[Background] ${stillPending.length} image(s) still pending delivery`);
+    }
+
+  } catch (error) {
+    console.error('[Background] Error flushing pending buffer:', error);
   }
 }
 
@@ -493,26 +551,45 @@ async function pollSessionForImages(sessionId) {
  * Send image to server for OCR processing
  */
 async function processOCR(imageData) {
-  try {
-    const settings = await chrome.storage.local.get('settings');
-    const serverUrl = settings.settings?.serverUrl || SERVER_URL;
-    
-    const response = await fetch(`${serverUrl}/api/ocr`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: imageData })
-    });
-    
-    if (!response.ok) {
-      throw new Error(`OCR error: ${response.status}`);
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 3000; // 3 second base delay
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const settings = await chrome.storage.local.get('settings');
+      const serverUrl = settings.settings?.serverUrl || SERVER_URL;
+
+      const response = await fetch(`${serverUrl}/api/ocr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: imageData })
+      });
+
+      if (response.status === 429) {
+        if (attempt < MAX_RETRIES) {
+          const delay = RETRY_DELAY_MS * attempt;
+          console.log(`[OCR] Rate limited (429), retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw new Error('Rate limit exceeded after retries');
+      }
+
+      if (!response.ok) {
+        throw new Error(`OCR error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return { success: true, data: result };
+    } catch (error) {
+      console.error(`OCR processing failed (attempt ${attempt}):`, error);
+      if (attempt === MAX_RETRIES) {
+        return { success: false, error: error.message };
+      }
     }
-    
-    const result = await response.json();
-    return { success: true, data: result };
-  } catch (error) {
-    console.error('OCR processing failed:', error);
-    return { success: false, error: error.message };
   }
+
+  return { success: false, error: 'OCR failed after all retries' };
 }
 
 // ============================================================================
@@ -585,6 +662,33 @@ async function fillFormFields(tabId, data, mapping) {
       console.error('Failed to inject and fill form:', injectError);
       return { success: false, error: injectError.message };
     }
+  }
+}
+
+/**
+ * Set autopaste value on the active tab's content script
+ */
+async function setAutoPasteOnTab(value) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return { success: false, error: 'No active tab' };
+
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'SET_AUTOPASTE', value });
+      return { success: true };
+    } catch (error) {
+      // Content script not loaded - inject it first
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content/content-script.js']
+      });
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await chrome.tabs.sendMessage(tab.id, { type: 'SET_AUTOPASTE', value });
+      return { success: true };
+    }
+  } catch (error) {
+    console.error('Failed to set autopaste:', error);
+    return { success: false, error: error.message };
   }
 }
 
@@ -715,19 +819,59 @@ async function hideImageOverlayOnTab() {
 }
 
 /**
- * Send message to side panel
+ * Send message to side panel with retry logic.
+ * For IMAGE_RECEIVED messages, stores failed deliveries in chrome.storage.local
+ * so they can be recovered on the next successful poll.
+ *
+ * Returns true if delivered, false if stored for later retry.
+ */
+async function notifySidePanelWithRetry(message, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await chrome.runtime.sendMessage(message);
+      console.log(`[Background] Message delivered: ${message.type} (attempt ${attempt})`);
+      return true;
+    } catch (error) {
+      console.log(`[Background] Send attempt ${attempt}/${maxRetries} failed: ${error.message}`);
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 300 * attempt));
+      }
+    }
+  }
+
+  // All retries failed — store IMAGE_RECEIVED messages for later delivery
+  if (message.type === 'IMAGE_RECEIVED' && message.imageData) {
+    console.log('[Background] Storing undelivered image in local fallback buffer');
+    try {
+      const data = await chrome.storage.local.get('pendingImageBuffer');
+      const buffer = data.pendingImageBuffer || [];
+      buffer.push({
+        imageData: message.imageData,
+        sessionId: message.sessionId,
+        storedAt: Date.now()
+      });
+      await chrome.storage.local.set({ pendingImageBuffer: buffer });
+      console.log(`[Background] Stored image in buffer (${buffer.length} pending)`);
+    } catch (storageError) {
+      console.error('[Background] CRITICAL: Failed to store image in fallback buffer:', storageError);
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Send message to side panel (fire-and-forget for non-critical messages).
+ * IMAGE_RECEIVED messages use the retry version for reliability.
  */
 function notifySidePanel(message) {
-  console.log('[Background] Sending message to side panel:', message.type);
-  
-  chrome.runtime.sendMessage(message)
-    .then(() => {
-      console.log('[Background] Message sent successfully:', message.type);
-    })
-    .catch((error) => {
-      // Side panel might not be open - this is expected sometimes
-      console.log('[Background] Message send failed (sidepanel may be closed):', error.message);
-    });
+  if (message.type === 'IMAGE_RECEIVED') {
+    // Use the retry version for images — these are the critical path
+    notifySidePanelWithRetry(message);
+  } else {
+    // Non-critical messages: fire and forget
+    chrome.runtime.sendMessage(message).catch(() => {});
+  }
 }
 
 // ============================================================================
