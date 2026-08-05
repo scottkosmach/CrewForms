@@ -1,8 +1,8 @@
 /**
- * Admin Dashboard Page
+ * Admin Dashboard Page (Read-Only)
  * 
- * Main entry point for the admin interface.
- * Lists all field mappings and provides navigation to create/edit.
+ * View-only dashboard for field mappings.
+ * To create or edit mappings, use the Chrome extension's Admin tab.
  */
 
 'use client';
@@ -54,25 +54,6 @@ export default function AdminDashboard() {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
-    }
-  }
-  
-  async function deleteMapping(id: string) {
-    if (!confirm('Are you sure you want to delete this mapping?')) return;
-    
-    try {
-      const response = await fetch(`/api/mappings?id=${id}`, {
-        method: 'DELETE'
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete mapping');
-      }
-      
-      // Reload mappings
-      await loadMappings();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete');
     }
   }
   
@@ -145,13 +126,44 @@ export default function AdminDashboard() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-bottom: 30px;
+          margin-bottom: 20px;
         }
         
         .page-title {
           font-size: 24px;
           font-weight: 600;
           color: #1e293b;
+        }
+        
+        .info-banner {
+          background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+          border: 1px solid #93c5fd;
+          border-radius: 10px;
+          padding: 16px 20px;
+          margin-bottom: 30px;
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+        }
+        
+        .info-banner svg {
+          flex-shrink: 0;
+          color: #3b82f6;
+        }
+        
+        .info-banner-content {
+          flex: 1;
+        }
+        
+        .info-banner-title {
+          font-weight: 600;
+          color: #1e40af;
+          margin-bottom: 4px;
+        }
+        
+        .info-banner-text {
+          font-size: 14px;
+          color: #1e3a8a;
         }
         
         .btn {
@@ -168,15 +180,6 @@ export default function AdminDashboard() {
           transition: all 0.2s ease;
         }
         
-        .btn-primary {
-          background: #0891b2;
-          color: white;
-        }
-        
-        .btn-primary:hover {
-          background: #0e7490;
-        }
-        
         .btn-secondary {
           background: #e2e8f0;
           color: #475569;
@@ -184,15 +187,6 @@ export default function AdminDashboard() {
         
         .btn-secondary:hover {
           background: #cbd5e1;
-        }
-        
-        .btn-danger {
-          background: #fee2e2;
-          color: #dc2626;
-        }
-        
-        .btn-danger:hover {
-          background: #fecaca;
         }
         
         .btn-download {
@@ -291,11 +285,6 @@ export default function AdminDashboard() {
           font-size: 12px;
         }
         
-        .actions {
-          display: flex;
-          gap: 8px;
-        }
-        
         .empty-state {
           text-align: center;
           padding: 60px 20px;
@@ -310,7 +299,12 @@ export default function AdminDashboard() {
         }
         
         .empty-state p {
-          margin-bottom: 20px;
+          margin-bottom: 8px;
+        }
+        
+        .empty-state .hint {
+          font-size: 14px;
+          color: #94a3b8;
         }
         
         .loading {
@@ -357,28 +351,28 @@ export default function AdminDashboard() {
       {/* Header */}
       <header className="header">
         <div className="header-content">
-        <div className="logo">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
-          </svg>
-          CrewForms
-          <span className="badge">Admin</span>
-        </div>
-        {/* Download Extension Button */}
-        <a 
-          href="/crewforms-extension.zip"
-          className="btn btn-download"
-          download
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          Download Extension
-        </a>
+          <div className="logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+            CrewForms
+            <span className="badge">Dashboard</span>
+          </div>
+          {/* Download Extension Button */}
+          <a 
+            href="/crewforms-extension.zip"
+            className="btn btn-download"
+            download
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download Extension
+          </a>
         </div>
       </header>
       
@@ -386,13 +380,22 @@ export default function AdminDashboard() {
       <main className="container">
         <div className="page-header">
           <h1 className="page-title">Field Mappings</h1>
-          <Link href="/admin/mappings/new" className="btn btn-primary">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="5" x2="12" y2="19"/>
-              <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            New Mapping
-          </Link>
+        </div>
+        
+        {/* Info Banner - direct users to extension */}
+        <div className="info-banner">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 16v-4"/>
+            <path d="M12 8h.01"/>
+          </svg>
+          <div className="info-banner-content">
+            <div className="info-banner-title">Read-Only Dashboard</div>
+            <div className="info-banner-text">
+              To create, edit, or delete mappings, use the <strong>Admin tab</strong> in the CrewForms Chrome extension.
+              Navigate to the target form page, open the extension sidebar, and use the Mapping Assistant.
+            </div>
+          </div>
         </div>
         
         {/* Stats */}
@@ -439,9 +442,7 @@ export default function AdminDashboard() {
                 <line x1="12" y1="3" x2="12" y2="21"/>
               </svg>
               <p>No field mappings configured yet</p>
-              <Link href="/admin/mappings/new" className="btn btn-primary">
-                Create Your First Mapping
-              </Link>
+              <p className="hint">Use the Chrome extension&apos;s Admin tab to create your first mapping</p>
             </div>
           ) : (
             <table className="table">
@@ -476,17 +477,12 @@ export default function AdminDashboard() {
                     </td>
                     <td>{formatDate(mapping.updatedAt)}</td>
                     <td>
-                      <div className="actions">
-                        <Link href={`/admin/mappings/${mapping.id}`} className="btn btn-sm btn-secondary">
-                          Edit
-                        </Link>
-                        <button 
-                          onClick={() => deleteMapping(mapping.id)} 
-                          className="btn btn-sm btn-danger"
-                        >
-                          Delete
-                        </button>
-                      </div>
+                      <Link 
+                        href={`/admin/${mapping.id}`}
+                        className="btn btn-sm btn-secondary"
+                      >
+                        View Details
+                      </Link>
                     </td>
                   </tr>
                 ))}
@@ -498,4 +494,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-

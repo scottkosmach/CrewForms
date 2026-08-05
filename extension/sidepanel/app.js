@@ -105,44 +105,10 @@ const state = {
   editingCompanyId: null,
   // Admin mode state
   adminMode: false,
-  scannedFields: [],
-  fieldConfigs: {}, // Map of position -> config object
-  // Paste tracking - reset on URL change
-  pastedTravelerIds: new Set(),
-  lastPasteUrl: null,
-  hasMappingForCurrentPage: false,
-  // Image overlay tracking
-  imageOverlayVisible: false
+  scannedFrames: [],      // Array of { frameIndex, frameUrl, isMainFrame, collapsed, fields[] }
+  fieldConfigs: {},       // Map of "frameIndex:position" -> config object (e.g., "1:3")
+  editingMappingId: null  // Track if we're editing an existing mapping
 };
-
-// ============================================================================
-// OCR QUEUE - Process images 2 at a time to avoid overwhelming the API
-// ============================================================================
-
-const ocrQueue = [];       // Array of { travelerId, imageData }
-let ocrActiveCount = 0;    // How many OCR calls are currently in flight
-const OCR_CONCURRENCY = 2; // Max simultaneous OCR requests
-const processedImageHashes = new Set(); // Track processed images to prevent duplicates
-
-function enqueueOcr(travelerId, imageData) {
-  ocrQueue.push({ travelerId, imageData });
-  processOcrQueue();
-}
-
-function processOcrQueue() {
-  while (ocrQueue.length > 0 && ocrActiveCount < OCR_CONCURRENCY) {
-    const job = ocrQueue.shift();
-    ocrActiveCount++;
-    console.log(`[OCR Queue] Starting job for ${job.travelerId} (active: ${ocrActiveCount}, queued: ${ocrQueue.length})`);
-
-    processOcr(job.travelerId, job.imageData)
-      .finally(() => {
-        ocrActiveCount--;
-        console.log(`[OCR Queue] Job done for ${job.travelerId} (active: ${ocrActiveCount}, queued: ${ocrQueue.length})`);
-        processOcrQueue();
-      });
-  }
-}
 
 // ============================================================================
 // INITIALIZATION
@@ -161,6 +127,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupCompanyForm();
   setupTripForm();
   setupTravelerImport();
+  setupPasteAction();
+  setupExcelDownload();
   setupAdminMode();
   
   // Update UI
@@ -184,15 +152,15 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 async function loadAllData() {
   const data = await getStorage([
-    'captain', 'boats', 'companies', 'trips', 'travelers'
+    'captain', 'boats', 'companies', 'trips', 'travelers', 'travelerImages'
   ]);
-
+  
   state.captain = data.captain || null;
   state.boats = data.boats || [];
   state.companies = data.companies || [];
   state.trips = data.trips || [];
   state.travelers = data.travelers || [];
-  // travelerImages are kept in memory only (too large for chrome.storage)
+  state.travelerImages = data.travelerImages || {};
 }
 
 /**
@@ -247,9 +215,13 @@ function handleBackgroundMessage(message) {
       break;
     
     case 'IMAGE_OVERLAY_CLOSED':
-      // Image overlay was closed from the main page - reset toggle state
-      state.imageOverlayVisible = false;
-      document.querySelectorAll('.show-passport-image.active').forEach(b => b.classList.remove('active'));
+      // Image overlay was closed by user, collapse expanded card
+      const expandedCard = document.querySelector('.traveler-card.expanded');
+      if (expandedCard) {
+        expandedCard.classList.remove('expanded');
+        const btn = expandedCard.querySelector('.toggle-traveler');
+        if (btn) btn.textContent = 'Details';
+      }
       break;
   }
 }
@@ -271,21 +243,16 @@ function setupTabNavigation() {
 
 function switchTab(tabName) {
   state.currentTab = tabName;
-
+  
   // Update tab buttons
   document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.tab === tabName);
   });
-
+  
   // Update tab content
   document.querySelectorAll('.tab-content').forEach(content => {
     content.classList.toggle('active', content.id === `${tabName}-tab`);
   });
-
-  // Refresh existing mappings when switching to admin tab
-  if (tabName === 'admin') {
-    loadExistingMappings();
-  }
 }
 
 // ============================================================================
@@ -825,30 +792,10 @@ function displayQrCode(url) {
   }
 }
 
-function hashImageData(data) {
-  // Fast hash using a sample of the base64 string (full hash would be slow for large images)
-  const sample = data.length + '|' + data.substring(0, 200) + '|' + data.substring(data.length - 200);
-  let hash = 0;
-  for (let i = 0; i < sample.length; i++) {
-    const chr = sample.charCodeAt(i);
-    hash = ((hash << 5) - hash) + chr;
-    hash |= 0; // Convert to 32bit integer
-  }
-  return hash.toString(36);
-}
-
 function handleImageReceived(imageData, sessionId) {
   console.log('[SidePanel] handleImageReceived called');
   console.log('[SidePanel] Image data length:', imageData?.length || 0);
-
-  // Deduplicate - skip if we've already processed this exact image
-  const imageHash = hashImageData(imageData);
-  if (processedImageHashes.has(imageHash)) {
-    console.log('[SidePanel] Duplicate image detected, skipping. Hash:', imageHash);
-    return;
-  }
-  processedImageHashes.add(imageHash);
-
+  
   // Create a new traveler entry with the image
   const travelerId = generateId();
   console.log('[SidePanel] Generated traveler ID:', travelerId);
@@ -872,11 +819,12 @@ function handleImageReceived(imageData, sessionId) {
   state.travelers.push(traveler);
   console.log('[SidePanel] Added traveler to state, total travelers:', state.travelers.length);
   
-  // Save traveler metadata to storage (NOT images - they're too large for chrome.storage)
+  // Save to storage
   setStorage({
-    travelers: state.travelers
+    travelers: state.travelers,
+    travelerImages: state.travelerImages
   }).then(() => {
-    console.log('[SidePanel] Saved traveler metadata to storage');
+    console.log('[SidePanel] Saved to storage');
   }).catch(err => {
     console.error('[SidePanel] Failed to save to storage:', err);
   });
@@ -885,9 +833,9 @@ function handleImageReceived(imageData, sessionId) {
   console.log('[SidePanel] Rendering traveler list...');
   renderTravelerList();
   
-  // Queue OCR processing (max 2 concurrent)
-  console.log('[SidePanel] Enqueueing OCR processing...');
-  enqueueOcr(travelerId, imageData);
+  // Trigger OCR processing
+  console.log('[SidePanel] Starting OCR processing...');
+  processOcr(travelerId, imageData);
 }
 
 async function processOcr(travelerId, imageData) {
@@ -936,7 +884,7 @@ function handleOcrComplete(travelerId, data) {
   // Save and render
   setStorage({ travelers: state.travelers });
   renderTravelerList();
-
+  updatePasteSourceOptions();
   
   showToast(`Extracted data for ${traveler.firstName} ${traveler.lastName}`, 'success');
 }
@@ -968,17 +916,17 @@ function renderTravelerList() {
     const initials = getInitials(traveler.firstName, traveler.lastName);
     
     return `
-      <div class="traveler-card${state.pastedTravelerIds.has(traveler.id) ? ' pasted' : ''}" data-id="${traveler.id}">
+      <div class="traveler-card" data-id="${traveler.id}">
         <div class="traveler-card-header">
           <div class="traveler-thumbnail">
-            ${imageData ?
-              `<img src="${imageData.data}" alt="Passport">` :
+            ${imageData ? 
+              `<img src="${imageData.data}" alt="Passport">` : 
               `<span>${initials || '?'}</span>`
             }
           </div>
           <div class="traveler-info ${traveler.status === 'error' ? 'retry-ocr' : ''}" data-id="${traveler.id}" style="${traveler.status === 'error' ? 'cursor: pointer;' : ''}">
             <div class="traveler-name">
-              ${traveler.status === 'processing' ? 'Processing...' :
+              ${traveler.status === 'processing' ? 'Processing...' : 
                 traveler.status === 'error' ? '⚠️ Error - Tap to retry' :
                 `${traveler.firstName} ${traveler.lastName}` || 'Unknown'
               }
@@ -988,17 +936,9 @@ function renderTravelerList() {
             </div>
           </div>
           <div class="traveler-actions">
-            ${imageData ? `<button class="btn btn-sm btn-icon show-passport-image" data-id="${traveler.id}" title="View passport image"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>` : ''}
             <button class="btn btn-sm btn-secondary toggle-traveler" data-id="${traveler.id}">
               ${traveler.expanded ? 'Hide' : 'Details'}
             </button>
-          </div>
-        </div>
-        <div class="paste-popup hidden" data-id="${traveler.id}">
-          <span>Paste ${traveler.firstName || 'this traveler'}'s data?</span>
-          <div class="paste-popup-actions">
-            <button class="btn btn-sm btn-accent paste-confirm" data-id="${traveler.id}">Paste</button>
-            <button class="btn btn-sm btn-secondary paste-cancel" data-id="${traveler.id}">Cancel</button>
           </div>
         </div>
         <div class="traveler-card-body">
@@ -1010,33 +950,33 @@ function renderTravelerList() {
           <div class="traveler-fields" data-id="${traveler.id}">
             <div class="traveler-field">
               <div class="traveler-field-label">First Name</div>
-              <div class="traveler-field-value" data-field="firstName">${traveler.firstName || '-'}${copyBtn(traveler.firstName)}</div>
+              <div class="traveler-field-value" data-field="firstName">${traveler.firstName || '-'}</div>
               <input class="traveler-field-input hidden" data-field="firstName" type="text" value="${traveler.firstName || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Middle Name</div>
-              <div class="traveler-field-value" data-field="middleName">${traveler.middleName || '-'}${copyBtn(traveler.middleName)}</div>
+              <div class="traveler-field-value" data-field="middleName">${traveler.middleName || '-'}</div>
               <input class="traveler-field-input hidden" data-field="middleName" type="text" value="${traveler.middleName || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Last Name</div>
-              <div class="traveler-field-value" data-field="lastName">${traveler.lastName || '-'}${copyBtn(traveler.lastName)}</div>
+              <div class="traveler-field-value" data-field="lastName">${traveler.lastName || '-'}</div>
               <input class="traveler-field-input hidden" data-field="lastName" type="text" value="${traveler.lastName || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Passport #</div>
-              <div class="traveler-field-value" data-field="passportNumber">${traveler.passportNumber || '-'}${copyBtn(traveler.passportNumber)}</div>
+              <div class="traveler-field-value" data-field="passportNumber">${traveler.passportNumber || '-'}</div>
               <input class="traveler-field-input hidden" data-field="passportNumber" type="text" value="${traveler.passportNumber || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Nationality</div>
-              <div class="traveler-field-value" data-field="nationality">${traveler.nationality || '-'}${copyBtn(traveler.nationality)}</div>
+              <div class="traveler-field-value" data-field="nationality">${traveler.nationality || '-'}</div>
               <input class="traveler-field-input hidden" data-field="nationality" type="text" value="${traveler.nationality || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Birth</div>
               <div class="traveler-field-value" data-field="dateOfBirth">
-                ${formatDateObj(traveler.dateOfBirth)}${copyBtn(formatDateObj(traveler.dateOfBirth))}
+                ${formatDateObj(traveler.dateOfBirth)}
               </div>
               <div class="traveler-date-inputs hidden" data-field="dateOfBirth">
                 <input class="traveler-field-input date-part" data-part="day" type="text" placeholder="DD" maxlength="2" value="${traveler.dateOfBirth?.day || ''}">
@@ -1048,7 +988,7 @@ function renderTravelerList() {
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Gender</div>
-              <div class="traveler-field-value" data-field="gender">${traveler.gender || '-'}${copyBtn(traveler.gender)}</div>
+              <div class="traveler-field-value" data-field="gender">${traveler.gender || '-'}</div>
               <select class="traveler-field-input hidden" data-field="gender">
                 <option value="" ${!traveler.gender ? 'selected' : ''}>-</option>
                 <option value="M" ${traveler.gender === 'M' ? 'selected' : ''}>M</option>
@@ -1058,7 +998,7 @@ function renderTravelerList() {
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Issue</div>
               <div class="traveler-field-value" data-field="dateOfIssue">
-                ${formatDateObj(traveler.dateOfIssue || {})}${copyBtn(formatDateObj(traveler.dateOfIssue || {}))}
+                ${formatDateObj(traveler.dateOfIssue || {})}
               </div>
               <div class="traveler-date-inputs hidden" data-field="dateOfIssue">
                 <input class="traveler-field-input date-part" data-part="day" type="text" placeholder="DD" maxlength="2" value="${traveler.dateOfIssue?.day || ''}">
@@ -1071,7 +1011,7 @@ function renderTravelerList() {
             <div class="traveler-field">
               <div class="traveler-field-label">Date of Expiry</div>
               <div class="traveler-field-value" data-field="dateOfExpiry">
-                ${formatDateObj(traveler.dateOfExpiry || {})}${copyBtn(formatDateObj(traveler.dateOfExpiry || {}))}
+                ${formatDateObj(traveler.dateOfExpiry || {})}
               </div>
               <div class="traveler-date-inputs hidden" data-field="dateOfExpiry">
                 <input class="traveler-field-input date-part" data-part="day" type="text" placeholder="DD" maxlength="2" value="${traveler.dateOfExpiry?.day || ''}">
@@ -1083,17 +1023,17 @@ function renderTravelerList() {
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Place of Birth</div>
-              <div class="traveler-field-value" data-field="placeOfBirth">${traveler.placeOfBirth || '-'}${copyBtn(traveler.placeOfBirth)}</div>
+              <div class="traveler-field-value" data-field="placeOfBirth">${traveler.placeOfBirth || '-'}</div>
               <input class="traveler-field-input hidden" data-field="placeOfBirth" type="text" value="${traveler.placeOfBirth || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Issuing Authority</div>
-              <div class="traveler-field-value" data-field="issuingAuthority">${traveler.issuingAuthority || '-'}${copyBtn(traveler.issuingAuthority)}</div>
+              <div class="traveler-field-value" data-field="issuingAuthority">${traveler.issuingAuthority || '-'}</div>
               <input class="traveler-field-input hidden" data-field="issuingAuthority" type="text" value="${traveler.issuingAuthority || ''}">
             </div>
             <div class="traveler-field">
               <div class="traveler-field-label">Passport Type</div>
-              <div class="traveler-field-value" data-field="passportType">${traveler.passportType || '-'}${copyBtn(traveler.passportType)}</div>
+              <div class="traveler-field-value" data-field="passportType">${traveler.passportType || '-'}</div>
               <select class="traveler-field-input hidden" data-field="passportType">
                 <option value="" ${!traveler.passportType ? 'selected' : ''}>-</option>
                 <option value="passport" ${traveler.passportType === 'passport' ? 'selected' : ''}>Passport</option>
@@ -1116,28 +1056,7 @@ function renderTravelerList() {
       toggleTravelerCard(btn.dataset.id);
     });
   });
-
-  // Toggle passport image button
-  list.querySelectorAll('.show-passport-image').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (state.imageOverlayVisible) {
-        hideImageOverlayOnPage();
-        state.imageOverlayVisible = false;
-        btn.classList.remove('active');
-      } else {
-        const imageData = state.travelerImages[btn.dataset.id];
-        if (imageData) {
-          showImageOverlayOnPage(imageData.data);
-          state.imageOverlayVisible = true;
-          // Remove active from all other image buttons
-          list.querySelectorAll('.show-passport-image').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-        }
-      }
-    });
-  });
-
+  
   // Delete button (now at bottom of details)
   list.querySelectorAll('.delete-traveler-bottom').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -1179,108 +1098,6 @@ function renderTravelerList() {
       retryOcr(el.dataset.id);
     });
   });
-
-  // Card header click - show paste popup (only for ready travelers on mapped pages)
-  list.querySelectorAll('.traveler-card-header').forEach(header => {
-    header.addEventListener('click', (e) => {
-      // Don't trigger if they clicked a button inside the header
-      if (e.target.closest('button')) return;
-
-      const card = header.closest('.traveler-card');
-      const id = card.dataset.id;
-      const traveler = state.travelers.find(t => t.id === id);
-
-      if (!traveler || traveler.status !== 'ready') {
-        console.log('[SidePanel] Card click ignored - traveler not ready:', traveler?.status);
-        return;
-      }
-
-      if (!state.hasMappingForCurrentPage) {
-        showToast('Navigate to a mapped form page to paste data', 'info');
-        console.log('[SidePanel] Card click - no mapping for current page');
-        return;
-      }
-
-      // Hide any other open paste popups
-      list.querySelectorAll('.paste-popup').forEach(p => p.classList.add('hidden'));
-
-      // Show this card's paste popup
-      const popup = card.querySelector('.paste-popup');
-      if (popup) popup.classList.remove('hidden');
-    });
-  });
-
-  // Paste confirm button
-  list.querySelectorAll('.paste-confirm').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = btn.dataset.id;
-      btn.disabled = true;
-      btn.textContent = 'Pasting...';
-      try {
-        await pasteTravelerData(id);
-      } finally {
-        // Always reset button state so user can retry
-        btn.disabled = false;
-        btn.textContent = 'Paste';
-        // Hide the popup after paste
-        const popup = btn.closest('.paste-popup');
-        if (popup) popup.classList.add('hidden');
-      }
-    });
-  });
-
-  // Paste cancel button
-  list.querySelectorAll('.paste-cancel').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const popup = btn.closest('.paste-popup');
-      if (popup) {
-        // Reset the confirm button in this popup
-        const confirmBtn = popup.querySelector('.paste-confirm');
-        if (confirmBtn) {
-          confirmBtn.disabled = false;
-          confirmBtn.textContent = 'Paste';
-        }
-        popup.classList.add('hidden');
-      }
-    });
-  });
-
-  // Copy field value buttons
-  list.querySelectorAll('.copy-field-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const value = btn.dataset.value;
-      if (!value) return;
-
-      // Copy to clipboard
-      try {
-        await navigator.clipboard.writeText(value);
-      } catch (err) {
-        console.error('Clipboard write failed:', err);
-      }
-
-      // Tell the content script to auto-paste this value on next focus
-      try {
-        await sendMessage({
-          type: 'SET_AUTOPASTE',
-          value: value
-        });
-      } catch (err) {
-        console.log('Could not set autopaste:', err.message);
-      }
-
-      // Visual feedback - briefly change icon to checkmark
-      const originalHTML = btn.innerHTML;
-      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
-      btn.classList.add('copied');
-      setTimeout(() => {
-        btn.innerHTML = originalHTML;
-        btn.classList.remove('copied');
-      }, 1500);
-    });
-  });
 }
 
 function getInitials(firstName, lastName) {
@@ -1299,6 +1116,8 @@ function formatDateObj(dateObj) {
 function toggleTravelerCard(id) {
   const card = document.querySelector(`.traveler-card[data-id="${id}"]`);
   if (card) {
+    const wasExpanded = card.classList.contains('expanded');
+    
     // Collapse all other cards first
     document.querySelectorAll('.traveler-card.expanded').forEach(c => {
       if (c !== card) {
@@ -1313,6 +1132,15 @@ function toggleTravelerCard(id) {
     const btn = card.querySelector('.toggle-traveler');
     btn.textContent = isExpanded ? 'Hide' : 'Details';
     
+    // Show/hide image overlay based on expanded state
+    if (isExpanded) {
+      const imageData = state.travelerImages[id];
+      if (imageData) {
+        showImageOverlayOnPage(imageData.data);
+      }
+    } else {
+      hideImageOverlayOnPage();
+    }
   }
 }
 
@@ -1324,11 +1152,12 @@ async function deleteTraveler(id) {
   delete state.travelerImages[id];
   
   await setStorage({
-    travelers: state.travelers
+    travelers: state.travelers,
+    travelerImages: state.travelerImages
   });
   
   renderTravelerList();
-
+  updatePasteSourceOptions();
   showToast('Traveler deleted', 'success');
 }
 
@@ -1443,7 +1272,7 @@ async function saveEditedTraveler(travelerId) {
   // Exit edit mode and re-render
   exitEditMode(travelerId);
   renderTravelerList();
-
+  updatePasteSourceOptions();
   
   showToast('Traveler data saved', 'success');
 }
@@ -1508,81 +1337,126 @@ async function retryOcr(id) {
 // PASTE ACTION
 // ============================================================================
 
+function setupPasteAction() {
+  const pasteSource = document.getElementById('pasteSource');
+  const pasteBtn = document.getElementById('pasteBtn');
+  
+  pasteSource.addEventListener('change', () => {
+    pasteBtn.disabled = !pasteSource.value;
+  });
+  
+  pasteBtn.addEventListener('click', async () => {
+    const source = pasteSource.value;
+    if (!source) return;
+    
+    // Get data based on source
+    let data;
+    let dataType;
+    
+    if (source === 'captain') {
+      data = { captain: state.captain };
+      dataType = 'captain';
+    } else if (source === 'boat') {
+      const trip = state.trips[0];
+      const boat = state.boats.find(b => b.id === trip?.boatId);
+      data = { boat };
+      dataType = 'boat';
+    } else if (source === 'company') {
+      const trip = state.trips[0];
+      const company = state.companies.find(c => c.id === trip?.companyId);
+      data = { company };
+      dataType = 'company';
+    } else if (source === 'trip') {
+      data = { trip: state.trips[0] };
+      dataType = 'trip';
+    } else {
+      // Traveler ID
+      const traveler = state.travelers.find(t => t.id === source);
+      data = { traveler };
+      dataType = 'traveler';
+    }
+    
+    if (!data || !Object.values(data)[0]) {
+      showToast('No data available to paste', 'error');
+      return;
+    }
+    
+    // Get active tab
+    const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
+    if (!tabResult.success || !tabResult.tab) {
+      showToast('Could not detect active tab', 'error');
+      return;
+    }
+    
+    // Get mapping for current URL
+    const mappingResult = await sendMessage({
+      type: 'GET_MAPPING',
+      url: tabResult.tab.url
+    });
+    
+    if (!mappingResult.success || !mappingResult.mapping) {
+      showToast('No form mapping found for this website', 'warning');
+      return;
+    }
+    
+    // Log data being sent for debugging
+    console.log('[SidePanel] Sending paste data:', JSON.stringify(data, null, 2));
+    console.log('[SidePanel] Using mapping:', mappingResult.mapping.name, 'with', mappingResult.mapping.fields?.length, 'fields');
+    
+    // Send fill command
+    const fillResult = await sendMessage({
+      type: 'FILL_FORM',
+      tabId: tabResult.tab.id,
+      data,
+      mapping: mappingResult.mapping
+    });
+    
+    console.log('[SidePanel] Fill result:', fillResult);
+    
+    if (fillResult.success) {
+      // Show detailed feedback
+      let message = `Filled ${fillResult.filledCount}`;
+      if (fillResult.totalMapped) {
+        message += `/${fillResult.totalMapped}`;
+      }
+      message += ' fields';
+      
+      if (fillResult.skipped > 0) {
+        message += ` (${fillResult.skipped} skipped - no data)`;
+      }
+      
+      if (fillResult.filledCount === 0) {
+        showToast(message + ' - check console for details', 'warning');
+      } else if (fillResult.errors && fillResult.errors.length > 0) {
+        showToast(message + ' with some errors', 'warning');
+      } else {
+        showToast(message, 'success');
+      }
+    } else {
+      showToast('Failed to fill form: ' + fillResult.error, 'error');
+    }
+  });
+}
+
+function updatePasteSourceOptions() {
+  const optgroup = document.getElementById('pasteSourceTravelers');
+  
+  optgroup.innerHTML = state.travelers
+    .filter(t => t.status === 'ready')
+    .map((t, i) => `
+      <option value="${t.id}">
+        ${t.firstName} ${t.lastName} (Guest ${i + 1})
+      </option>
+    `).join('');
+}
 
 /**
- * Paste a traveler's data into the current form.
- * Returns true on success, false on failure.
+ * Set up Excel download button event listener
  */
-async function pasteTravelerData(travelerId) {
-  const traveler = state.travelers.find(t => t.id === travelerId);
-  if (!traveler) {
-    showToast('Traveler not found', 'error');
-    return false;
-  }
-
-  const data = { traveler };
-
-  // Get active tab
-  const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
-  if (!tabResult.success || !tabResult.tab) {
-    showToast('Could not detect active tab', 'error');
-    return false;
-  }
-
-  // Get mapping for current URL
-  const mappingResult = await sendMessage({
-    type: 'GET_MAPPING',
-    url: tabResult.tab.url
-  });
-
-  if (!mappingResult.success || !mappingResult.mapping) {
-    showToast('No form mapping found for this website', 'warning');
-    return false;
-  }
-
-  console.log('[SidePanel] Pasting traveler:', traveler.firstName, traveler.lastName);
-  console.log('[SidePanel] Using mapping:', mappingResult.mapping.name, 'with', mappingResult.mapping.fields?.length, 'fields');
-
-  // Send fill command
-  const fillResult = await sendMessage({
-    type: 'FILL_FORM',
-    tabId: tabResult.tab.id,
-    data,
-    mapping: mappingResult.mapping
-  });
-
-  console.log('[SidePanel] Fill result:', fillResult);
-
-  if (fillResult.success) {
-    let message = `Filled ${fillResult.filledCount}`;
-    if (fillResult.totalMapped) {
-      message += `/${fillResult.totalMapped}`;
-    }
-    message += ' fields';
-
-    if (fillResult.skipped > 0) {
-      message += ` (${fillResult.skipped} skipped - no data)`;
-    }
-
-    if (fillResult.filledCount === 0) {
-      showToast(message + ' - check console for details', 'warning');
-      return false;
-    } else if (fillResult.errors && fillResult.errors.length > 0) {
-      showToast(message + ' with some errors', 'warning');
-    } else {
-      showToast(message, 'success');
-    }
-
-    // Mark as pasted
-    state.pastedTravelerIds.add(travelerId);
-    state.lastPasteUrl = tabResult.tab.url;
-    const card = document.querySelector(`.traveler-card[data-id="${travelerId}"]`);
-    if (card) card.classList.add('pasted');
-
-    return true;
-  } else {
-    showToast('Failed to fill form: ' + fillResult.error, 'error');
-    return false;
+function setupExcelDownload() {
+  const excelBtn = document.getElementById('downloadExcelBtn');
+  if (excelBtn) {
+    excelBtn.addEventListener('click', handleExcelDownload);
   }
 }
 
@@ -1598,58 +1472,237 @@ async function checkCurrentTabMapping() {
   try {
     // Get the active tab
     const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
-
+    
     if (!tabResult.success || !tabResult.tab || !tabResult.tab.url) {
       console.log('No active tab found or no URL');
-      state.hasMappingForCurrentPage = false;
+      hideActionBar();
       return;
     }
-
+    
     const currentUrl = tabResult.tab.url;
     console.log('Checking mapping for URL:', currentUrl);
-
-    // Reset pasted state only if the root domain changed (not just the path)
-    if (state.lastPasteUrl) {
-      try {
-        const lastHost = new URL(state.lastPasteUrl).hostname.replace(/^www\./, '');
-        const currentHost = new URL(currentUrl).hostname.replace(/^www\./, '');
-        if (lastHost !== currentHost) {
-          state.pastedTravelerIds.clear();
-          state.lastPasteUrl = null;
-          renderTravelerList();
-        }
-      } catch (e) {
-        // If URL parsing fails, reset to be safe
-        state.pastedTravelerIds.clear();
-        state.lastPasteUrl = null;
-        renderTravelerList();
-      }
-    }
-
+    
     // Skip chrome:// and extension pages
     if (currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
       console.log('Skipping internal page');
-      state.hasMappingForCurrentPage = false;
+      hideActionBar();
       return;
     }
-
+    
     // Check if there's a mapping for this URL
     const mappingResult = await sendMessage({
       type: 'GET_MAPPING',
       url: currentUrl
     });
-
-    if (mappingResult.success && mappingResult.mapping) {
-      console.log('Found mapping for URL:', mappingResult.mapping);
-      state.hasMappingForCurrentPage = true;
+    
+    // Check if there's an Excel template for this URL
+    const excelResult = await sendMessage({
+      type: 'CHECK_EXCEL_TEMPLATE',
+      url: currentUrl
+    });
+    
+    const hasMapping = mappingResult.success && mappingResult.mapping;
+    const hasExcelTemplate = excelResult.success && excelResult.hasTemplate;
+    
+    if (hasMapping || hasExcelTemplate) {
+      console.log('Found mapping:', hasMapping, 'Excel template:', hasExcelTemplate);
+      showActionBar();
+      
+      // Show/hide Excel button based on template availability
+      updateExcelButton(hasExcelTemplate, excelResult.templateId, excelResult.templateName);
     } else {
-      console.log('No mapping found for URL');
-      state.hasMappingForCurrentPage = false;
+      console.log('No mapping or Excel template found for URL');
+      hideActionBar();
     }
   } catch (error) {
     console.error('Error checking tab mapping:', error);
-    state.hasMappingForCurrentPage = false;
+    hideActionBar();
   }
+}
+
+/**
+ * Show the action bar footer
+ */
+function showActionBar() {
+  const actionBar = document.getElementById('actionBar');
+  if (actionBar) {
+    actionBar.classList.remove('hidden');
+    console.log('Action bar shown');
+  }
+}
+
+/**
+ * Hide the action bar footer
+ */
+function hideActionBar() {
+  const actionBar = document.getElementById('actionBar');
+  if (actionBar) {
+    actionBar.classList.add('hidden');
+    console.log('Action bar hidden');
+  }
+}
+
+// Store the current Excel template info
+let currentExcelTemplate = null;
+
+/**
+ * Update the Excel download button visibility
+ */
+function updateExcelButton(hasTemplate, templateId, templateName) {
+  const excelBtn = document.getElementById('downloadExcelBtn');
+  if (!excelBtn) return;
+  
+  if (hasTemplate) {
+    excelBtn.classList.remove('hidden');
+    excelBtn.title = `Download ${templateName || 'Excel'}`;
+    currentExcelTemplate = { templateId, templateName };
+    console.log('Excel button shown for template:', templateName);
+  } else {
+    excelBtn.classList.add('hidden');
+    currentExcelTemplate = null;
+    console.log('Excel button hidden');
+  }
+}
+
+/**
+ * Handle Excel download
+ * Gathers current data and generates a filled Excel file
+ */
+async function handleExcelDownload() {
+  if (!currentExcelTemplate || !currentExcelTemplate.templateId) {
+    showToast('No Excel template available', 'error');
+    return;
+  }
+  
+  const btn = document.getElementById('downloadExcelBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '...';
+  }
+  
+  try {
+    // Get current boat and trip selections
+    const currentBoat = state.boats.find(b => b.id === getCurrentBoatId());
+    const currentTrip = state.trips.find(t => t.id === getCurrentTripId());
+    
+    // Prepare data for Excel generation
+    const data = {
+      travelers: state.travelers.map(t => ({
+        firstName: t.firstName,
+        middleName: t.middleName,
+        lastName: t.lastName,
+        passportNumber: t.passportNumber,
+        nationality: t.nationality,
+        gender: t.gender,
+        placeOfBirth: t.placeOfBirth,
+        dateOfBirth: t.dateOfBirth,
+        dateOfIssue: t.dateOfIssue,
+        dateOfExpiry: t.dateOfExpiry,
+        issuingAuthority: t.issuingAuthority,
+        passportType: t.passportType
+      })),
+      captain: state.captain ? {
+        firstName: state.captain.firstName,
+        middleName: state.captain.middleName,
+        lastName: state.captain.lastName,
+        passportNumber: state.captain.passportNumber,
+        nationality: state.captain.nationality,
+        licenseNumber: state.captain.licenseNumber,
+        email: state.captain.email,
+        phone: state.captain.phone,
+        dateOfBirth: state.captain.dateOfBirth,
+        passportExpiry: state.captain.passportExpiry
+      } : null,
+      crew: [], // Future: add crew members support
+      boat: currentBoat ? {
+        vesselName: currentBoat.vesselName,
+        registrationNumber: currentBoat.registrationNumber,
+        flagState: currentBoat.flagState,
+        homePort: currentBoat.homePort,
+        vesselType: currentBoat.vesselType,
+        capacity: currentBoat.capacity
+      } : null,
+      trip: currentTrip ? {
+        departurePort: currentTrip.departurePort,
+        destinationPorts: currentTrip.destinationPorts,
+        purpose: currentTrip.purpose,
+        guestCount: currentTrip.guestCount,
+        departureDate: currentTrip.departureDate,
+        returnDate: currentTrip.returnDate
+      } : null
+    };
+    
+    console.log('Generating Excel with data:', data);
+    
+    // Send generate request to background
+    const result = await sendMessage({
+      type: 'GENERATE_EXCEL',
+      templateId: currentExcelTemplate.templateId,
+      data
+    });
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to generate Excel');
+    }
+    
+    // Convert base64 back to blob (Chrome messaging can't pass blobs directly)
+    const binaryString = atob(result.base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: result.mimeType });
+    
+    // Create download link from blob
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = result.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast('Excel file downloaded!', 'success');
+    
+  } catch (error) {
+    console.error('Excel download error:', error);
+    showToast(error.message || 'Failed to download Excel', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <polyline points="9 15 12 18 15 15"/>
+        </svg>
+        Excel
+      `;
+    }
+  }
+}
+
+/**
+ * Get the currently selected boat ID from the trip form
+ */
+function getCurrentBoatId() {
+  const boatSelect = document.getElementById('tripBoat');
+  return boatSelect ? boatSelect.value : null;
+}
+
+/**
+ * Get the currently selected trip ID
+ */
+function getCurrentTripId() {
+  // Look for the active/selected trip in the trip selector or first trip
+  const tripSelect = document.getElementById('tripSelector');
+  if (tripSelect && tripSelect.value) {
+    return tripSelect.value;
+  }
+  // Fallback to the first trip
+  return state.trips.length > 0 ? state.trips[0].id : null;
 }
 
 /**
@@ -1692,7 +1745,7 @@ function renderAll() {
   updateTripSelectors();
   populateTripForm();
   renderTravelerList();
-
+  updatePasteSourceOptions();
   updateTripExpiryDisplay();
 }
 
@@ -1891,18 +1944,13 @@ async function loadExistingMappings() {
     const allMappings = data.mappings || [];
     
     // Filter mappings that match the current URL
-    console.log('[Admin] Current URL:', currentUrl);
-    console.log('[Admin] All mappings:', allMappings.map(m => m.urlPattern));
-    const matchingMappings = allMappings.filter(mapping => {
-      const matches = urlMatchesPattern(currentUrl, mapping.urlPattern);
-      console.log(`[Admin] Pattern "${mapping.urlPattern}" vs URL: ${matches}`);
-      return matches;
-    });
-
+    const matchingMappings = allMappings.filter(mapping => 
+      urlMatchesPattern(currentUrl, mapping.urlPattern)
+    );
+    
     loadingState?.classList.add('hidden');
-
+    
     if (matchingMappings.length === 0) {
-      console.log('[Admin] No matching mappings found for URL:', currentUrl);
       emptyState?.classList.remove('hidden');
       return;
     }
@@ -1924,19 +1972,14 @@ async function loadExistingMappings() {
  */
 function urlMatchesPattern(url, pattern) {
   if (!url || !pattern) return false;
-
-  // Strip protocol and www. from both so matching works regardless
-  const normalize = (s) => s.replace(/^https?:\/\//, '').replace(/^www\./, '');
-  const normalizedUrl = normalize(url);
-  const normalizedPattern = normalize(pattern);
-
+  
   // Convert pattern to regex
-  const regexPattern = normalizedPattern
+  const regexPattern = pattern
     .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
     .replace(/\*/g, '.*');
-
+  
   const regex = new RegExp(`^${regexPattern}$`, 'i');
-  return regex.test(normalizedUrl);
+  return regex.test(url);
 }
 
 /**
@@ -1999,19 +2042,11 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function escapeAttr(text) {
-  return (text || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
-}
-
-const COPY_ICON_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-
-function copyBtn(value) {
-  if (!value || value === '-') return '';
-  return `<button class="copy-field-btn" data-value="${escapeAttr(value)}" title="Copy">${COPY_ICON_SVG}</button>`;
-}
-
 /**
  * Edit an existing mapping - loads it into the editor
+ * 
+ * Uses executeScript with allFrames to scan all frames, then applies
+ * saved field configs using composite keys "frameIndex:position".
  */
 async function editExistingMapping(mappingId) {
   try {
@@ -2030,7 +2065,7 @@ async function editExistingMapping(mappingId) {
     const mapping = await response.json();
     console.log('Loaded mapping:', mapping);
     
-    // First scan the fields to get current page structure
+    // Get the active tab
     const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
     if (!tabResult.success || !tabResult.tab) {
       console.error('Could not get active tab:', tabResult);
@@ -2040,63 +2075,90 @@ async function editExistingMapping(mappingId) {
     
     console.log('Scanning fields on tab:', tabResult.tab.id);
     
-    // Try to scan fields - use sendMessage through background to ensure content script is injected
-    let result;
-    try {
-      result = await chrome.tabs.sendMessage(tabResult.tab.id, {
-        type: 'SCAN_FORM_FIELDS'
-      });
-    } catch (scanError) {
-      console.log('Direct message failed, trying via background:', scanError.message);
-      // Content script might not be loaded, try via background which will inject it
-      result = await sendMessage({ 
-        type: 'SCAN_FIELDS_ON_TAB',
-        tabId: tabResult.tab.id
-      });
-    }
+    // Use executeScript with allFrames to scan all frames
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabResult.tab.id, allFrames: true },
+      func: scanAllFramesForFields
+    });
     
-    if (!result || !result.success || !result.fields) {
-      console.error('Field scan failed:', result);
+    console.log('Raw scan results from all frames:', results);
+    
+    // Group results by frame
+    const frames = [];
+    let totalFields = 0;
+    
+    results.forEach((frameResult, index) => {
+      if (!frameResult.result || frameResult.result.length === 0) {
+        return;
+      }
+      
+      const frameIndex = frames.length;
+      const isMainFrame = frameResult.frameId === 0;
+      
+      const fields = frameResult.result.map(field => ({
+        ...field,
+        frameIndex
+      }));
+      
+      frames.push({
+        frameIndex,
+        frameId: frameResult.frameId,
+        frameUrl: fields[0]?.frameUrl || 'Unknown',
+        isMainFrame,
+        collapsed: false,
+        fields
+      });
+      
+      totalFields += fields.length;
+    });
+    
+    if (frames.length === 0 || totalFields === 0) {
       showToast('Could not scan form fields. Make sure you are on a form page.', 'error');
       return;
     }
     
-    console.log('Scanned fields:', result.fields.length);
+    console.log('Scanned frames:', frames.length, 'Total fields:', totalFields);
     
-    // Store scanned fields
-    state.scannedFields = result.fields;
+    // Store frames in state
+    state.scannedFrames = frames;
     state.fieldConfigs = {};
-    state.editingMappingId = mappingId; // Track that we're editing an existing mapping
+    state.editingMappingId = mappingId;
     
-    // Initialize field configs with defaults
-    result.fields.forEach(field => {
-      state.fieldConfigs[field.position] = {
-        status: 'unmapped',
-        dataSource: '',
-        staticValue: '',
-        inputType: 'paste',
-        fieldType: 'text',
-        dateFormat: '',
-        keypressMap: {},
-        keypressDelay: 100
-      };
+    // Initialize field configs with defaults using composite keys
+    frames.forEach(frame => {
+      frame.fields.forEach(field => {
+        const key = `${frame.frameIndex}:${field.position}`;
+        state.fieldConfigs[key] = {
+          status: 'unmapped',
+          dataSource: '',
+          staticValue: '',
+          inputType: 'paste',
+          fieldType: 'text',
+          dateFormat: '',
+          keypressMap: {},
+          keypressDelay: 100
+        };
+      });
     });
     
     // Apply the saved mapping config to fields
     console.log('Applying saved field configs:', mapping.fields);
     
     mapping.fields.forEach(savedField => {
-      console.log('Loading field:', savedField.position, savedField);
+      // Use frameIndex from saved mapping (default to 0 for backward compatibility)
+      const frameIndex = savedField.frameIndex ?? 0;
+      const key = `${frameIndex}:${savedField.position}`;
       
-      if (state.fieldConfigs[savedField.position]) {
+      console.log('Loading field:', key, savedField);
+      
+      if (state.fieldConfigs[key]) {
         // Determine status: use saved status, or infer from data
         let status = savedField.status;
         if (!status) {
-          // Fallback: infer status if not explicitly saved
           status = savedField.staticValue ? 'static' : (savedField.dataSource ? 'data' : 'unmapped');
         }
         
-        state.fieldConfigs[savedField.position] = {
+        state.fieldConfigs[key] = {
           status: status,
           dataSource: savedField.dataSource || '',
           staticValue: savedField.staticValue || '',
@@ -2107,9 +2169,9 @@ async function editExistingMapping(mappingId) {
           keypressDelay: savedField.config?.keypressDelay || 100
         };
         
-        console.log('Applied config for field', savedField.position, ':', state.fieldConfigs[savedField.position]);
+        console.log('Applied config for field', key, ':', state.fieldConfigs[key]);
       } else {
-        console.warn('Field position not found in scanned fields:', savedField.position);
+        console.warn('Field key not found in scanned fields:', key);
       }
     });
     
@@ -2129,12 +2191,6 @@ async function editExistingMapping(mappingId) {
     document.getElementById('adminFieldList')?.classList.remove('hidden');
     document.getElementById('mappingNameSection')?.classList.remove('hidden');
     document.getElementById('saveMappingBtn').disabled = false;
-    
-    // Update field count
-    const fieldCount = document.getElementById('fieldCount');
-    if (fieldCount) {
-      fieldCount.textContent = `${result.fields.length} fields found`;
-    }
     
     // Render the field list with the loaded configs
     renderFieldList();
@@ -2177,10 +2233,13 @@ async function deleteExistingMapping(mappingId, mappingName) {
 }
 
 /**
- * Scan form fields on the current page
+ * Scan form fields on the current page (including iframes)
+ * 
+ * Uses chrome.scripting.executeScript with allFrames:true to scan all frames.
+ * Results are grouped by frame with collapsible sections in the UI.
  */
 async function scanFormFields() {
-  console.log('Scanning form fields...');
+  console.log('Scanning form fields across all frames...');
   
   // Get the active tab
   const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
@@ -2198,80 +2257,343 @@ async function scanFormFields() {
   }
   
   try {
-    // Send scan message to content script via background
-    const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
-      type: 'SCAN_FORM_FIELDS'
+    // Use executeScript with allFrames to scan ALL frames (including iframes)
+    // This returns an array of results, one per frame
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabResult.tab.id, allFrames: true },
+      func: scanAllFramesForFields
     });
     
-    if (result.success && result.fields) {
-      state.scannedFields = result.fields;
-      state.fieldConfigs = {};
+    console.log('Raw scan results from all frames:', results);
+    
+    // Group results by frame, filtering out empty results
+    const frames = [];
+    let totalFields = 0;
+    
+    results.forEach((frameResult, index) => {
+      // Skip frames with no results or errors
+      if (!frameResult.result || frameResult.result.length === 0) {
+        return;
+      }
       
-      // Initialize default configs for each field
-      result.fields.forEach(field => {
-        state.fieldConfigs[field.position] = {
+      const frameIndex = frames.length;
+      const isMainFrame = frameResult.frameId === 0;
+      
+      // Add frame info to each field
+      const fields = frameResult.result.map(field => ({
+        ...field,
+        frameIndex
+      }));
+      
+      frames.push({
+        frameIndex,
+        frameId: frameResult.frameId,
+        frameUrl: fields[0]?.frameUrl || 'Unknown',
+        isMainFrame,
+        collapsed: false,
+        fields
+      });
+      
+      totalFields += fields.length;
+    });
+    
+    if (frames.length === 0 || totalFields === 0) {
+      showToast('No form fields found on this page', 'warning');
+      return;
+    }
+    
+    // Store frames in state
+    state.scannedFrames = frames;
+    state.fieldConfigs = {};
+    state.editingMappingId = null;
+    
+    // Initialize default configs for each field using composite keys
+    frames.forEach(frame => {
+      frame.fields.forEach(field => {
+        const key = `${frame.frameIndex}:${field.position}`;
+        state.fieldConfigs[key] = {
           status: 'unmapped',
           dataSource: '',
           staticValue: '',
           inputType: 'paste',
-          fieldType: 'text', // Explicit field type: text, date, dropdown
+          fieldType: 'text',
           dateFormat: '',
           keypressMap: {},
-          keypressDelay: 100 // Default delay between keystrokes in ms
+          keypressDelay: 100
         };
       });
-      
-      // Update URL pattern
-      const mappingUrl = document.getElementById('mappingUrl');
-      if (mappingUrl) {
-        // Extract base URL pattern
-        const urlObj = new URL(url);
-        mappingUrl.value = `${urlObj.origin}${urlObj.pathname}*`;
-      }
-      
-      // Show the field list and mapping name section
-      document.getElementById('adminEmptyState').classList.add('hidden');
-      document.getElementById('adminFieldList').classList.remove('hidden');
-      document.getElementById('mappingNameSection').classList.remove('hidden');
-      document.getElementById('saveMappingBtn').disabled = false;
-      
-      // Render the field list
-      renderFieldList();
-      
-      showToast(`Found ${result.fields.length} fields`, 'success');
-    } else {
-      showToast('No form fields found on this page', 'warning');
+    });
+    
+    // Update URL pattern
+    const mappingUrl = document.getElementById('mappingUrl');
+    if (mappingUrl) {
+      const urlObj = new URL(url);
+      mappingUrl.value = `${urlObj.origin}${urlObj.pathname}*`;
     }
+    
+    // Show the field list and mapping name section
+    document.getElementById('adminEmptyState').classList.add('hidden');
+    document.getElementById('adminFieldList').classList.remove('hidden');
+    document.getElementById('mappingNameSection').classList.remove('hidden');
+    document.getElementById('saveMappingBtn').disabled = false;
+    
+    // Render the grouped field list
+    renderFieldList();
+    
+    const frameWord = frames.length === 1 ? 'frame' : 'frames';
+    showToast(`Found ${totalFields} fields across ${frames.length} ${frameWord}`, 'success');
+    
   } catch (error) {
     console.error('Scan error:', error);
-    // Content script might not be loaded, try injecting it
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tabResult.tab.id },
-        files: ['content/content-script.js']
-      });
-      
-      // Wait a moment and retry
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
-        type: 'SCAN_FORM_FIELDS'
-      });
-      
-      if (result.success && result.fields) {
-        state.scannedFields = result.fields;
-        // ... same processing as above
-        showToast(`Found ${result.fields.length} fields`, 'success');
-        renderFieldList();
-      }
-    } catch (injectError) {
-      showToast('Could not scan page: ' + error.message, 'error');
-    }
+    showToast('Could not scan page: ' + error.message, 'error');
   }
 }
 
 /**
- * Render the list of scanned fields
+ * Function injected into all frames to scan for form fields.
+ * Must be self-contained (no external dependencies) since it runs in page context.
+ */
+function scanAllFramesForFields() {
+  const form = document.querySelector('form') || document.body;
+  
+  // Extended selector to include Angular Material and custom dropdowns
+  const elements = form.querySelectorAll(
+    'input, select, textarea, mat-select, [role="combobox"], [role="listbox"]'
+  );
+  
+  /**
+   * Check if element is visible
+   */
+  function isElementVisible(element) {
+    const style = window.getComputedStyle(element);
+    return (
+      style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      style.opacity !== '0' &&
+      element.offsetWidth > 0 &&
+      element.offsetHeight > 0
+    );
+  }
+  
+  /**
+   * Find the label text associated with a form element
+   */
+  function findLabelFor(element) {
+    // 1. Check for label with matching 'for' attribute
+    if (element.id) {
+      const label = document.querySelector(`label[for="${element.id}"]`);
+      if (label) return label.textContent.trim().replace(/\*$/, '').trim();
+    }
+    
+    // 2. Check aria-label attribute
+    const ariaLabel = element.getAttribute('aria-label');
+    if (ariaLabel) return ariaLabel.trim();
+    
+    // 3. Check aria-labelledby attribute
+    const ariaLabelledBy = element.getAttribute('aria-labelledby');
+    if (ariaLabelledBy) {
+      const labelEl = document.getElementById(ariaLabelledBy);
+      if (labelEl) return labelEl.textContent.trim().replace(/\*$/, '').trim();
+    }
+    
+    // 4. Check for parent label element (wrapping pattern)
+    const parentLabel = element.closest('label');
+    if (parentLabel) {
+      const clone = parentLabel.cloneNode(true);
+      const inputs = clone.querySelectorAll('input, select, textarea');
+      inputs.forEach(i => i.remove());
+      const text = clone.textContent.trim().replace(/\*$/, '').trim();
+      if (text) return text;
+    }
+    
+    // 5. Check for Angular Material mat-label
+    const formField = element.closest('mat-form-field, .mat-form-field');
+    if (formField) {
+      const matLabel = formField.querySelector('mat-label');
+      if (matLabel) return matLabel.textContent.trim().replace(/\*$/, '').trim();
+    }
+    
+    // 6. Check for Bootstrap/common form-group pattern
+    const formGroup = element.closest('.form-group, .form-row');
+    if (formGroup) {
+      const label = formGroup.querySelector('label, .control-label, .form-label');
+      if (label) return label.textContent.trim().replace(/\*$/, '').trim();
+    }
+    
+    // 7. Check previous sibling for label
+    let prevSibling = element.previousElementSibling;
+    while (prevSibling) {
+      if (prevSibling.tagName === 'LABEL' || prevSibling.classList.contains('label')) {
+        return prevSibling.textContent.trim().replace(/\*$/, '').trim();
+      }
+      prevSibling = prevSibling.previousElementSibling;
+    }
+    
+    // 8. Use placeholder as fallback
+    if (element.placeholder && element.placeholder !== '--Select--') {
+      return element.placeholder;
+    }
+    
+    // 9. Use name attribute as last resort (convert to readable)
+    if (element.name) {
+      return element.name
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/_/g, ' ')
+        .trim()
+        .replace(/^\w/, c => c.toUpperCase());
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Detect the UI component type for an element
+   * Returns component type and recommended input strategy
+   */
+  function detectComponentType(element) {
+    const classes = element.className || '';
+    const tagName = element.tagName.toLowerCase();
+    
+    // Check parent/ancestor classes for wrapper components
+    const parent = element.parentElement;
+    const grandparent = parent?.parentElement;
+    const wrapper = element.closest('[class*="Rad"], [class*="k-"], [class*="mat-"], [class*="ng-"]');
+    const wrapperClasses = wrapper?.className || '';
+    const parentClasses = parent?.className || '';
+    const gpClasses = grandparent?.className || '';
+    
+    // Telerik RadComboBox - input inside RadComboBox wrapper
+    if (classes.includes('rcbInput') || 
+        parentClasses.includes('rcbInputCell') || 
+        wrapperClasses.includes('RadComboBox')) {
+      return { 
+        type: 'telerik-combobox', 
+        label: 'Telerik ComboBox',
+        strategy: 'paste',
+        hint: 'Type/paste value - component filters automatically'
+      };
+    }
+    
+    // Telerik RadDropDownList
+    if (wrapperClasses.includes('RadDropDownList')) {
+      return { 
+        type: 'telerik-dropdown', 
+        label: 'Telerik Dropdown',
+        strategy: 'click-select',
+        hint: 'Click to open, then select option'
+      };
+    }
+    
+    // Angular Material mat-select
+    if (tagName === 'mat-select' || classes.includes('mat-select')) {
+      return { 
+        type: 'mat-select', 
+        label: 'Angular Material',
+        strategy: 'select-match',
+        hint: 'Will click and match option text'
+      };
+    }
+    
+    // Kendo UI ComboBox
+    if (classes.includes('k-input') || wrapperClasses.includes('k-combobox')) {
+      return { 
+        type: 'kendo-combobox', 
+        label: 'Kendo ComboBox',
+        strategy: 'paste',
+        hint: 'Type/paste value directly'
+      };
+    }
+    
+    // Kendo UI DropDownList
+    if (wrapperClasses.includes('k-dropdown') || wrapperClasses.includes('k-dropdownlist')) {
+      return { 
+        type: 'kendo-dropdown', 
+        label: 'Kendo Dropdown',
+        strategy: 'click-select',
+        hint: 'Click to open, then select option'
+      };
+    }
+    
+    // Bootstrap form-select
+    if (classes.includes('form-select') || classes.includes('custom-select')) {
+      return { 
+        type: 'bootstrap-select', 
+        label: 'Bootstrap Select',
+        strategy: 'select-match',
+        hint: 'Native select with Bootstrap styling'
+      };
+    }
+    
+    // ng-select (Angular)
+    if (tagName === 'ng-select' || classes.includes('ng-select')) {
+      return { 
+        type: 'ng-select', 
+        label: 'ng-select',
+        strategy: 'click-select',
+        hint: 'Click to open, type to filter'
+      };
+    }
+    
+    // Native <select>
+    if (tagName === 'select') {
+      return { 
+        type: 'native-select', 
+        label: 'Native Select',
+        strategy: 'select-match',
+        hint: 'Standard HTML select'
+      };
+    }
+    
+    // Generic combobox role
+    if (element.getAttribute('role') === 'combobox') {
+      return { 
+        type: 'combobox', 
+        label: 'Combobox',
+        strategy: 'paste',
+        hint: 'Try paste first, or click-select'
+      };
+    }
+    
+    // Default text input
+    return { 
+      type: 'text-input', 
+      label: 'Text Input',
+      strategy: 'paste',
+      hint: 'Standard text input'
+    };
+  }
+  
+  // Map elements to field info
+  return Array.from(elements).map((el, index) => {
+    const component = detectComponentType(el);
+    return {
+      position: index + 1,
+      tagName: el.tagName.toLowerCase(),
+      type: el.type || el.getAttribute('role') || 'unknown',
+      id: el.id || null,
+      name: el.name || null,
+      formControlName: el.getAttribute('formcontrolname') || null,
+      placeholder: el.placeholder || null,
+      label: findLabelFor(el),
+      isRequired: el.required || el.getAttribute('aria-required') === 'true',
+      isDisabled: el.disabled || el.getAttribute('aria-disabled') === 'true',
+      classes: el.className,
+      visible: isElementVisible(el),
+      frameUrl: window.location.href,
+      // Component detection info
+      componentType: component.type,
+      componentLabel: component.label,
+      suggestedStrategy: component.strategy,
+      strategyHint: component.hint
+    };
+  });
+}
+
+/**
+ * Render the list of scanned fields grouped by frame
+ * 
+ * Shows collapsible sections for each frame (main frame + iframes).
+ * Uses composite keys "frameIndex:position" for field identification.
  */
 function renderFieldList() {
   const container = document.getElementById('fieldListContainer');
@@ -2279,13 +2601,32 @@ function renderFieldList() {
   
   if (!container) return;
   
-  const fields = state.scannedFields;
-  countEl.textContent = `${fields.length} fields found`;
+  const frames = state.scannedFrames;
+  const totalFields = frames.reduce((sum, f) => sum + f.fields.length, 0);
+  const frameWord = frames.length === 1 ? 'frame' : 'frames';
+  countEl.textContent = `${totalFields} fields in ${frames.length} ${frameWord}`;
   
   // Debug: log field configs before rendering
-  console.log('Rendering field list. Field configs:', JSON.stringify(state.fieldConfigs, null, 2));
+  console.log('Rendering field list. Frames:', frames.length, 'Field configs:', Object.keys(state.fieldConfigs).length);
   
-  container.innerHTML = fields.map(field => renderFieldItem(field)).join('');
+  // Render each frame as a collapsible group
+  container.innerHTML = frames.map(frame => renderFrameGroup(frame)).join('');
+  
+  // Add event listeners for frame collapse toggles
+  container.querySelectorAll('.frame-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      // Don't toggle if clicking the collapse button directly (it handles itself)
+      if (e.target.closest('.frame-collapse-btn')) return;
+      toggleFrameCollapse(parseInt(header.dataset.frameIndex));
+    });
+  });
+  
+  container.querySelectorAll('.frame-collapse-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFrameCollapse(parseInt(btn.dataset.frameIndex));
+    });
+  });
   
   // Add event listeners for field status changes
   container.querySelectorAll('.field-status').forEach(select => {
@@ -2310,6 +2651,11 @@ function renderFieldList() {
     select.addEventListener('change', handleDateFormatChange);
   });
   
+  // Add event listeners for Tab After Fill checkbox
+  container.querySelectorAll('.tab-after-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('change', handleTabAfterChange);
+  });
+  
   // Add event listeners for field type selector
   container.querySelectorAll('.field-type-select').forEach(select => {
     select.addEventListener('change', handleFieldTypeChange);
@@ -2319,33 +2665,36 @@ function renderFieldList() {
   container.querySelectorAll('.add-keypress').forEach(btn => {
     btn.addEventListener('click', () => {
       const entriesContainer = btn.closest('.keypress-config').querySelector('.keypress-entries');
-      const position = parseInt(entriesContainer.dataset.position);
-      addKeypressEntry(position);
+      const key = entriesContainer.dataset.fieldKey; // Composite key: "frameIndex:position"
+      addKeypressEntry(key);
     });
   });
   
   container.querySelectorAll('.btn-remove-keypress').forEach(btn => {
     btn.addEventListener('click', () => {
-      const position = parseInt(btn.dataset.position);
+      const key = btn.dataset.fieldKey; // Composite key
       const index = parseInt(btn.dataset.index);
-      removeKeypressEntry(position, index);
+      removeKeypressEntry(key, index);
     });
   });
   
   // Add event listeners for keypress delay inputs
   container.querySelectorAll('.keypress-delay').forEach(input => {
     input.addEventListener('change', (e) => {
-      const position = parseInt(e.target.dataset.position);
+      const key = e.target.dataset.fieldKey; // Composite key
       const delay = parseInt(e.target.value) || 100;
-      state.fieldConfigs[position].keypressDelay = delay;
+      if (state.fieldConfigs[key]) {
+        state.fieldConfigs[key].keypressDelay = delay;
+      }
     });
   });
   
   // Add event listeners for test buttons
   container.querySelectorAll('.btn-test').forEach(btn => {
     btn.addEventListener('click', () => {
+      const frameIndex = parseInt(btn.dataset.frameIndex);
       const position = parseInt(btn.dataset.position);
-      testField(position);
+      testField(frameIndex, position);
     });
   });
   
@@ -2356,10 +2705,60 @@ function renderFieldList() {
 }
 
 /**
- * Render a single field item
+ * Render a collapsible frame group containing its fields
  */
-function renderFieldItem(field) {
-  const config = state.fieldConfigs[field.position] || {};
+function renderFrameGroup(frame) {
+  const isCollapsed = frame.collapsed;
+  const fieldCount = frame.fields.length;
+  const frameLabel = frame.isMainFrame ? 'Main Frame' : 'Iframe';
+  
+  // Extract just the pathname from the URL for cleaner display
+  let displayUrl = frame.frameUrl;
+  try {
+    const urlObj = new URL(frame.frameUrl);
+    displayUrl = urlObj.pathname || '/';
+  } catch (e) {
+    // Keep full URL if parsing fails
+  }
+  
+  return `
+    <div class="frame-group ${isCollapsed ? 'collapsed' : ''}" data-frame-index="${frame.frameIndex}">
+      <div class="frame-header" data-frame-index="${frame.frameIndex}">
+        <span class="frame-collapse-icon">${isCollapsed ? '▶' : '▼'}</span>
+        <span class="frame-badge ${frame.isMainFrame ? 'main' : 'iframe'}">${frameLabel}</span>
+        <span class="frame-url" title="${frame.frameUrl}">${displayUrl}</span>
+        <span class="frame-field-count">${fieldCount} field${fieldCount !== 1 ? 's' : ''}</span>
+        <button class="frame-collapse-btn" data-frame-index="${frame.frameIndex}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+          ${isCollapsed ? 'Expand' : 'Collapse'}
+        </button>
+      </div>
+      <div class="frame-fields ${isCollapsed ? 'hidden' : ''}">
+        ${frame.fields.map(field => renderFieldItem(field, frame.frameIndex)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Toggle collapse state for a frame
+ */
+function toggleFrameCollapse(frameIndex) {
+  const frame = state.scannedFrames.find(f => f.frameIndex === frameIndex);
+  if (frame) {
+    frame.collapsed = !frame.collapsed;
+    renderFieldList();
+  }
+}
+
+/**
+ * Render a single field item
+ * 
+ * @param {Object} field - Field data from scan
+ * @param {number} frameIndex - Index of the frame this field belongs to
+ */
+function renderFieldItem(field, frameIndex) {
+  const key = `${frameIndex}:${field.position}`; // Composite key
+  const config = state.fieldConfigs[key] || {};
   // Ensure status has a default value
   const status = config.status || 'unmapped';
   const isDisabled = field.isDisabled;
@@ -2367,30 +2766,42 @@ function renderFieldItem(field) {
   
   // Debug log for each field being rendered
   if (status !== 'unmapped') {
-    console.log(`Rendering field #${field.position} with status: ${status}`);
+    console.log(`Rendering field ${key} with status: ${status}`);
   }
   
   // Pass the normalized status to config for renderFieldConfigDetails
   const configWithStatus = { ...config, status };
   
+  // Component type badge - show detected UI component type
+  const componentBadge = field.componentLabel && field.componentType !== 'text-input'
+    ? `<span class="component-type-badge ${field.componentType}">${field.componentLabel}</span>`
+    : '';
+  
+  // Strategy hint - show suggested input behavior
+  const strategyHint = field.strategyHint && field.componentType !== 'text-input'
+    ? `<div class="strategy-hint">💡 ${field.strategyHint}</div>`
+    : '';
+  
   return `
-    <div class="field-item ${status === 'ignore' ? 'ignore' : ''}" data-position="${field.position}">
+    <div class="field-item ${status === 'ignore' ? 'ignore' : ''}" data-field-key="${key}" data-frame-index="${frameIndex}" data-position="${field.position}">
       <div class="field-header">
         <span class="field-position">#${field.position}</span>
         <span class="field-label">${field.label || field.name || field.formControlName || 'Unlabeled'}</span>
+        ${componentBadge}
         <span class="field-type ${isDisabled ? 'disabled' : ''}">${field.type}${isDisabled ? ' (disabled)' : ''}</span>
-        ${isMapped ? `<button class="btn btn-sm btn-test" data-position="${field.position}" title="Test this field">Test</button>` : ''}
+        ${isMapped ? `<button class="btn btn-sm btn-test" data-frame-index="${frameIndex}" data-position="${field.position}" title="Test this field">Test</button>` : ''}
       </div>
+      ${strategyHint}
       <div class="field-config">
         <div class="field-config-row">
-          <select class="field-status" data-position="${field.position}">
+          <select class="field-status" data-field-key="${key}">
             <option value="unmapped" ${status === 'unmapped' ? 'selected' : ''}>Unmapped</option>
             <option value="ignore" ${status === 'ignore' ? 'selected' : ''}>Ignore</option>
             <option value="data" ${status === 'data' ? 'selected' : ''}>Map to Data</option>
             <option value="static" ${status === 'static' ? 'selected' : ''}>Static Value</option>
           </select>
         </div>
-        ${renderFieldConfigDetails(field, configWithStatus)}
+        ${renderFieldConfigDetails(field, frameIndex, configWithStatus)}
       </div>
     </div>
   `;
@@ -2398,11 +2809,17 @@ function renderFieldItem(field) {
 
 /**
  * Render configuration details based on field status
+ * 
+ * @param {Object} field - Field data
+ * @param {number} frameIndex - Frame index for composite key
+ * @param {Object} config - Field configuration
  */
-function renderFieldConfigDetails(field, config) {
+function renderFieldConfigDetails(field, frameIndex, config) {
   if (config.status === 'unmapped' || config.status === 'ignore') {
     return '';
   }
+  
+  const key = `${frameIndex}:${field.position}`; // Composite key
   
   let html = '<div class="field-config-details">';
   
@@ -2411,7 +2828,7 @@ function renderFieldConfigDetails(field, config) {
     html += `
       <div class="config-group">
         <label>Data Source</label>
-        <select class="data-source-select" data-position="${field.position}">
+        <select class="data-source-select" data-field-key="${key}">
           <option value="">-- Select Data Source --</option>
           <optgroup label="Traveler">
             ${DATA_SOURCES.traveler.map(s => 
@@ -2448,7 +2865,7 @@ function renderFieldConfigDetails(field, config) {
     html += `
       <div class="config-group">
         <label>Static Value</label>
-        <input type="text" class="static-value-input" data-position="${field.position}" 
+        <input type="text" class="static-value-input" data-field-key="${key}" 
                value="${config.staticValue || ''}" placeholder="Enter fixed value">
       </div>
     `;
@@ -2458,7 +2875,7 @@ function renderFieldConfigDetails(field, config) {
   html += `
     <div class="config-group">
       <label>Field Type</label>
-      <select class="field-type-select" data-position="${field.position}">
+      <select class="field-type-select" data-field-key="${key}">
         ${FIELD_TYPES.map(t => 
           `<option value="${t.value}" ${config.fieldType === t.value ? 'selected' : ''}>${t.label}</option>`
         ).join('')}
@@ -2470,11 +2887,22 @@ function renderFieldConfigDetails(field, config) {
   html += `
     <div class="config-group">
       <label>Input Behavior</label>
-      <select class="input-behavior-select" data-position="${field.position}">
+      <select class="input-behavior-select" data-field-key="${key}">
         ${INPUT_BEHAVIORS.map(b => 
           `<option value="${b.value}" ${config.inputType === b.value ? 'selected' : ''}>${b.label}</option>`
         ).join('')}
       </select>
+    </div>
+  `;
+  
+  // Tab After Fill checkbox - triggers dependent dropdowns (e.g., Telerik)
+  html += `
+    <div class="config-group config-checkbox">
+      <label>
+        <input type="checkbox" class="tab-after-checkbox" data-field-key="${key}"
+               ${config.tabAfter ? 'checked' : ''}>
+        Tab After Fill (triggers dependent dropdowns)
+      </label>
     </div>
   `;
   
@@ -2486,7 +2914,7 @@ function renderFieldConfigDetails(field, config) {
     html += `
       <div class="config-group">
         <label>Date Format</label>
-        <select class="date-format-select" data-position="${field.position}">
+        <select class="date-format-select" data-field-key="${key}">
           <option value="">-- Select Format --</option>
           ${DATE_FORMATS.map(f => 
             `<option value="${f.value}" ${config.dateFormat === f.value ? 'selected' : ''}>${f.label}</option>`
@@ -2501,7 +2929,7 @@ function renderFieldConfigDetails(field, config) {
     html += `
       <div class="config-group">
         <label>Test Value (for testing paste)</label>
-        <input type="text" class="test-value-input" data-position="${field.position}" 
+        <input type="text" class="test-value-input" data-field-key="${key}" 
                value="${config.testValue || ''}" placeholder="Enter a value to test with">
       </div>
     `;
@@ -2509,7 +2937,7 @@ function renderFieldConfigDetails(field, config) {
   
   // Keypress map builder (for select-keypress behavior)
   if (config.inputType === 'select-keypress') {
-    html += renderKeypressMapBuilder(field.position, config.keypressMap || {});
+    html += renderKeypressMapBuilder(key, config.keypressMap || {});
   }
   
   html += '</div>';
@@ -2518,18 +2946,21 @@ function renderFieldConfigDetails(field, config) {
 
 /**
  * Render keypress map builder UI
+ * 
+ * @param {string} fieldKey - Composite key "frameIndex:position"
+ * @param {Object} keypressMap - Current keypress configuration
  */
-function renderKeypressMapBuilder(position, keypressMap) {
+function renderKeypressMapBuilder(fieldKey, keypressMap) {
   const entries = Object.entries(keypressMap);
   // Get current delay from field config, default to 100ms
-  const currentDelay = state.fieldConfigs[position]?.keypressDelay || 100;
+  const currentDelay = state.fieldConfigs[fieldKey]?.keypressDelay || 100;
   
   return `
     <div class="config-group">
       <label>Keypress Navigation Map</label>
       <div class="keypress-config">
         <p>Define keystroke sequence (executes all rows in order):</p>
-        <div class="keypress-entries" data-position="${position}">
+        <div class="keypress-entries" data-field-key="${fieldKey}">
           ${entries.length > 0 ? entries.map(([value, config], index) => `
             <div class="keypress-entry" data-index="${index}">
               <input type="text" class="keypress-value" value="${value}" placeholder="Label (e.g., step1)">
@@ -2552,17 +2983,17 @@ function renderKeypressMapBuilder(position, keypressMap) {
                 </optgroup>
               </select>
               <input type="number" class="keypress-count" value="${config.count || 1}" placeholder="#" min="1" title="Repeat count">
-              <button type="button" class="btn-remove-keypress" data-position="${position}" data-index="${index}">×</button>
+              <button type="button" class="btn-remove-keypress" data-field-key="${fieldKey}" data-index="${index}">×</button>
             </div>
           `).join('') : ''}
         </div>
         <button type="button" class="btn btn-sm btn-secondary add-keypress">+ Add Entry</button>
         <div class="keypress-delay-config">
-          <label for="keypressDelay-${position}">Delay between keystrokes (ms):</label>
+          <label for="keypressDelay-${fieldKey.replace(':', '-')}">Delay between keystrokes (ms):</label>
           <input type="number" 
-                 id="keypressDelay-${position}" 
+                 id="keypressDelay-${fieldKey.replace(':', '-')}" 
                  class="keypress-delay" 
-                 data-position="${position}"
+                 data-field-key="${fieldKey}"
                  value="${currentDelay}" 
                  placeholder="100" 
                  min="0" 
@@ -2576,17 +3007,20 @@ function renderKeypressMapBuilder(position, keypressMap) {
 
 /**
  * Handle field status change
+ * Uses composite key "frameIndex:position" for field identification
  */
 function handleFieldStatusChange(event) {
-  const position = parseInt(event.target.dataset.position);
+  const key = event.target.dataset.fieldKey; // Composite key
   const status = event.target.value;
   
-  state.fieldConfigs[position].status = status;
+  if (!state.fieldConfigs[key]) return;
+  
+  state.fieldConfigs[key].status = status;
   
   // Reset dependent values when status changes
   if (status === 'unmapped' || status === 'ignore') {
-    state.fieldConfigs[position].dataSource = '';
-    state.fieldConfigs[position].staticValue = '';
+    state.fieldConfigs[key].dataSource = '';
+    state.fieldConfigs[key].staticValue = '';
   }
   
   // Re-render the field list to update config details
@@ -2597,14 +3031,17 @@ function handleFieldStatusChange(event) {
  * Handle data source change
  */
 function handleDataSourceChange(event) {
-  const position = parseInt(event.target.dataset.position);
+  const key = event.target.dataset.fieldKey; // Composite key
   const dataSource = event.target.value;
-  state.fieldConfigs[position].dataSource = dataSource;
+  
+  if (!state.fieldConfigs[key]) return;
+  
+  state.fieldConfigs[key].dataSource = dataSource;
   
   // Auto-set fieldType to 'date' when a full date source is selected
   // This triggers the date format picker to appear
   if (isFullDateSource(dataSource)) {
-    state.fieldConfigs[position].fieldType = 'date';
+    state.fieldConfigs[key].fieldType = 'date';
   }
   
   // Re-render to show/hide date format based on data source
@@ -2615,16 +3052,20 @@ function handleDataSourceChange(event) {
  * Handle static value change
  */
 function handleStaticValueChange(event) {
-  const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].staticValue = event.target.value;
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (state.fieldConfigs[key]) {
+    state.fieldConfigs[key].staticValue = event.target.value;
+  }
 }
 
 /**
  * Handle input behavior change
  */
 function handleInputBehaviorChange(event) {
-  const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].inputType = event.target.value;
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (!state.fieldConfigs[key]) return;
+  
+  state.fieldConfigs[key].inputType = event.target.value;
   
   // Re-render to show/hide keypress map builder
   renderFieldList();
@@ -2634,16 +3075,31 @@ function handleInputBehaviorChange(event) {
  * Handle date format change
  */
 function handleDateFormatChange(event) {
-  const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].dateFormat = event.target.value;
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (state.fieldConfigs[key]) {
+    state.fieldConfigs[key].dateFormat = event.target.value;
+  }
+}
+
+/**
+ * Handle Tab After Fill checkbox change
+ */
+function handleTabAfterChange(event) {
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (!state.fieldConfigs[key]) {
+    state.fieldConfigs[key] = {};
+  }
+  state.fieldConfigs[key].tabAfter = event.target.checked;
 }
 
 /**
  * Handle field type change
  */
 function handleFieldTypeChange(event) {
-  const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].fieldType = event.target.value;
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (!state.fieldConfigs[key]) return;
+  
+  state.fieldConfigs[key].fieldType = event.target.value;
   
   // Re-render to show/hide date format picker
   renderFieldList();
@@ -2653,32 +3109,43 @@ function handleFieldTypeChange(event) {
  * Handle test value change
  */
 function handleTestValueChange(event) {
-  const position = parseInt(event.target.dataset.position);
-  state.fieldConfigs[position].testValue = event.target.value;
+  const key = event.target.dataset.fieldKey; // Composite key
+  if (state.fieldConfigs[key]) {
+    state.fieldConfigs[key].testValue = event.target.value;
+  }
 }
 
 /**
  * Add a keypress entry
+ * 
+ * @param {string} fieldKey - Composite key "frameIndex:position"
  */
-function addKeypressEntry(position) {
-  if (!state.fieldConfigs[position].keypressMap) {
-    state.fieldConfigs[position].keypressMap = {};
+function addKeypressEntry(fieldKey) {
+  if (!state.fieldConfigs[fieldKey]) return;
+  
+  if (!state.fieldConfigs[fieldKey].keypressMap) {
+    state.fieldConfigs[fieldKey].keypressMap = {};
   }
   
   // Add empty entry with unique key
   const newKey = `value_${Date.now()}`;
-  state.fieldConfigs[position].keypressMap[newKey] = { key: '', count: 1 };
+  state.fieldConfigs[fieldKey].keypressMap[newKey] = { key: '', count: 1 };
   
   renderFieldList();
 }
 
 /**
  * Remove a keypress entry
+ * 
+ * @param {string} fieldKey - Composite key "frameIndex:position"
+ * @param {number} index - Index of entry to remove
  */
-function removeKeypressEntry(position, index) {
-  const entries = Object.entries(state.fieldConfigs[position].keypressMap || {});
+function removeKeypressEntry(fieldKey, index) {
+  if (!state.fieldConfigs[fieldKey]) return;
+  
+  const entries = Object.entries(state.fieldConfigs[fieldKey].keypressMap || {});
   if (entries[index]) {
-    delete state.fieldConfigs[position].keypressMap[entries[index][0]];
+    delete state.fieldConfigs[fieldKey].keypressMap[entries[index][0]];
   }
   renderFieldList();
 }
@@ -2686,10 +3153,13 @@ function removeKeypressEntry(position, index) {
 /**
  * Collect keypress map values before saving
  * Reads from the key select dropdown (supports special keys like Enter)
+ * Uses composite keys "frameIndex:position" for field identification
  */
 function collectKeypressMaps() {
   document.querySelectorAll('.keypress-entries').forEach(container => {
-    const position = parseInt(container.dataset.position);
+    const fieldKey = container.dataset.fieldKey; // Composite key
+    if (!fieldKey || !state.fieldConfigs[fieldKey]) return;
+    
     const newMap = {};
     
     container.querySelectorAll('.keypress-entry').forEach((entry, index) => {
@@ -2706,12 +3176,15 @@ function collectKeypressMaps() {
       }
     });
     
-    state.fieldConfigs[position].keypressMap = newMap;
+    state.fieldConfigs[fieldKey].keypressMap = newMap;
   });
 }
 
 /**
  * Save the mapping to the server
+ * 
+ * Includes frameIndex in each field for proper frame targeting during fill.
+ * Uses composite keys "frameIndex:position" to identify fields.
  */
 async function saveMapping() {
   const mappingName = document.getElementById('mappingName').value.trim();
@@ -2733,18 +3206,28 @@ async function saveMapping() {
   collectKeypressMaps();
   
   // Build the fields array from configs
+  // Key format is "frameIndex:position", e.g., "1:3"
   const fields = [];
   
-  for (const [posStr, config] of Object.entries(state.fieldConfigs)) {
-    const position = parseInt(posStr);
+  for (const [key, config] of Object.entries(state.fieldConfigs)) {
+    // Parse composite key to get frameIndex and position
+    const [frameIndexStr, positionStr] = key.split(':');
+    const frameIndex = parseInt(frameIndexStr);
+    const position = parseInt(positionStr);
     
     // Skip unmapped and ignored fields
     if (config.status === 'unmapped' || config.status === 'ignore') {
       continue;
     }
     
+    // Get frame URL for this field (used by content script to filter by frame)
+    const frame = state.scannedFrames.find(f => f.frameIndex === frameIndex);
+    const frameUrl = frame ? frame.frameUrl : null;
+    
     const fieldMapping = {
       position,
+      frameIndex,   // Include frame info for multi-frame support
+      frameUrl,     // Frame URL for content script filtering
       status: config.status,
       inputType: config.inputType || 'paste'
     };
@@ -2759,6 +3242,10 @@ async function saveMapping() {
     
     if (config.dateFormat) {
       fieldMapping.dateFormat = config.dateFormat;
+    }
+    
+    if (config.tabAfter) {
+      fieldMapping.tabAfter = true;
     }
     
     if (config.inputType === 'select-keypress' && Object.keys(config.keypressMap || {}).length > 0) {
@@ -2805,7 +3292,7 @@ async function saveMapping() {
       showToast(isEditing ? 'Mapping updated successfully!' : 'Mapping saved successfully!', 'success');
       
       // Clear the form and editing state
-      state.scannedFields = [];
+      state.scannedFrames = [];
       state.fieldConfigs = {};
       state.editingMappingId = null; // Clear editing state
       document.getElementById('mappingName').value = '';
@@ -2829,9 +3316,13 @@ async function saveMapping() {
 
 /**
  * Test filling a single field
+ * 
+ * @param {number} frameIndex - Index of the frame containing the field
+ * @param {number} position - Position of the field within the frame
  */
-async function testField(position) {
-  const config = state.fieldConfigs[position];
+async function testField(frameIndex, position) {
+  const key = `${frameIndex}:${position}`; // Composite key
+  const config = state.fieldConfigs[key];
   
   if (!config || (config.status !== 'data' && config.status !== 'static')) {
     showToast('Field is not mapped', 'warning');
@@ -2886,20 +3377,31 @@ async function testField(position) {
     return;
   }
   
-  try {
-    // Send test fill message to content script
-    const result = await chrome.tabs.sendMessage(tabResult.tab.id, {
+  // Get the frame info to find the frameId for targeted message
+  const frame = state.scannedFrames.find(f => f.frameIndex === frameIndex);
+  const frameId = frame ? frame.frameId : 0;
+  
+  // Helper to send test fill message
+  async function sendTestFill() {
+    return await chrome.tabs.sendMessage(tabResult.tab.id, {
       type: 'TEST_FILL_FIELD',
+      frameIndex,
       position,
       value,
       config: {
         inputType,
         dateFormat: config.dateFormat,
         keypressMap: config.keypressMap,
-        keypressDelay: config.keypressDelay || 100, // Delay between keystrokes in ms
-        useKeystrokes // Flag to indicate keystrokes should be executed
+        keypressDelay: config.keypressDelay || 100,
+        tabAfter: config.tabAfter || false,
+        useKeystrokes
       }
-    });
+    }, { frameId });
+  }
+  
+  try {
+    // Send test fill message to content script in the specific frame
+    const result = await sendTestFill();
     
     if (result.success) {
       showToast(`Field #${position} filled successfully`, 'success');
@@ -2908,7 +3410,47 @@ async function testField(position) {
     }
   } catch (error) {
     console.error('Test fill error:', error);
-    showToast('Could not test field: ' + error.message, 'error');
+    
+    // Check if content script is not loaded (common after page refresh)
+    if (error.message.includes('Receiving end does not exist') || 
+        error.message.includes('Could not establish connection')) {
+      console.log('Content script not loaded, injecting...');
+      
+      try {
+        // Inject the content script into all frames
+        // We use allFrames because the content script needs to be in every frame
+        // to handle multi-frame forms
+        await chrome.scripting.executeScript({
+          target: { 
+            tabId: tabResult.tab.id, 
+            allFrames: true
+          },
+          files: ['content/content-script.js']
+        });
+        
+        // Wait for script to initialize (longer wait for iframes)
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Retry the test fill
+        const result = await sendTestFill();
+        
+        if (result.success) {
+          showToast(`Field #${position} filled successfully`, 'success');
+        } else {
+          showToast('Failed to fill field: ' + (result.error || 'Unknown error'), 'error');
+        }
+      } catch (injectError) {
+        console.error('Failed to inject content script:', injectError);
+        // More helpful error message
+        if (injectError.message.includes('Cannot access')) {
+          showToast('Cannot access this page - it may be a protected or cross-origin page.', 'error');
+        } else {
+          showToast('Page not ready. Please refresh the page and wait for it to fully load.', 'error');
+        }
+      }
+    } else {
+      showToast('Could not test field: ' + error.message, 'error');
+    }
   }
 }
 

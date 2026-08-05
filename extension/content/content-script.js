@@ -9,44 +9,11 @@
  */
 
 // ============================================================================
-// CONTEXT VALIDITY CHECK
-// ============================================================================
-
-/**
- * Check if this content script's extension context is still valid.
- * When the extension is reloaded, old content scripts remain on the page
- * but lose their connection. This prevents stale scripts from interfering.
- */
-function isContextValid() {
-  try {
-    return !!chrome.runtime?.id;
-  } catch (e) {
-    return false;
-  }
-}
-
-/**
- * Remove all event listeners and stop this content script from doing anything.
- * Called when we detect the extension context has been invalidated.
- */
-function selfDestruct() {
-  console.log('[CrewForms] Extension context invalidated — cleaning up old content script');
-  document.removeEventListener('focusin', handleFocusIn);
-  document.removeEventListener('focusout', handleFocusOut);
-  document.removeEventListener('click', handleClick);
-  autoPasteValue = null;
-  focusedElement = null;
-}
-
-// ============================================================================
 // STATE
 // ============================================================================
 
 // Track the currently focused element
 let focusedElement = null;
-
-// Autopaste: when set, the next focused form field will receive this value
-let autoPasteValue = null;
 
 // Current field mapping for this page (if any)
 let currentMapping = null;
@@ -81,9 +48,6 @@ function initialize() {
   // Track focus changes
   document.addEventListener('focusin', handleFocusIn);
   document.addEventListener('focusout', handleFocusOut);
-
-  // Track clicks on form fields (for autopaste when focusin doesn't fire)
-  document.addEventListener('click', handleClick);
   
   // Listen for messages from background script
   chrome.runtime.onMessage.addListener(handleMessage);
@@ -109,60 +73,15 @@ function notifyReady() {
 // ============================================================================
 
 /**
- * Apply the pending autopaste value to a form element.
- * Called from both focusin and click handlers to ensure it works
- * even when focus doesn't technically change (e.g. side panel interaction).
- */
-function applyAutoPaste(element) {
-  if (!isContextValid()) { selfDestruct(); return; }
-  if (autoPasteValue === null) return;
-
-  const value = autoPasteValue;
-  autoPasteValue = null; // Clear immediately so it only pastes once
-
-  // Use the element that was passed in — this is event.target from
-  // the focusin or click handler, i.e. the field the user just interacted with.
-  // No setTimeout — fill immediately so we don't risk targeting a stale element.
-  const target = element;
-
-  // Set the value using native setter for React/Angular compatibility
-  const nativeSetter = Object.getOwnPropertyDescriptor(
-    Object.getPrototypeOf(target), 'value'
-  )?.set || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-
-  if (nativeSetter) {
-    nativeSetter.call(target, value);
-  } else {
-    target.value = value;
-  }
-
-  // Dispatch events so frameworks (Angular/React) pick up the change
-  target.dispatchEvent(new Event('input', { bubbles: true }));
-  target.dispatchEvent(new Event('change', { bubbles: true }));
-
-  // Brief green flash to confirm
-  const origOutline = target.style.outline;
-  target.style.outline = '2px solid #22c55e';
-  setTimeout(() => { target.style.outline = origOutline; }, 800);
-
-  console.log('[CrewForms] Auto-pasted value into', target.tagName, target.name || target.id);
-}
-
-/**
  * Handle focus entering an element
  */
 function handleFocusIn(event) {
-  if (!isContextValid()) { selfDestruct(); return; }
   const element = event.target;
-
+  
   // Only track form input elements
   if (isFormElement(element)) {
     focusedElement = element;
-
-    // Do NOT auto-paste on focusin — when focus returns from the side panel,
-    // the browser restores focus to the previously focused field, which is
-    // the wrong target. We only auto-paste on explicit click (see handleClick).
-
+    
     // Notify side panel of focus change
     chrome.runtime.sendMessage({
       type: 'FOCUS_CHANGED',
@@ -172,29 +91,8 @@ function handleFocusIn(event) {
 }
 
 /**
- * Handle click on a form element.
- *
- * Auto-paste ONLY fires on click, not on focusin. This is because:
- * 1. When the user clicks the copy icon in the side panel then clicks a form
- *    field, the browser first fires focusin on the PREVIOUSLY focused field
- *    (restoring focus from the side panel), and only then fires click on the
- *    field the user actually clicked. Using click ensures we target the right field.
- * 2. Click always fires regardless of prior focus state.
- */
-function handleClick(event) {
-  if (!isContextValid()) { selfDestruct(); return; }
-  const element = event.target;
-  if (isFormElement(element)) {
-    focusedElement = element;
-    if (autoPasteValue !== null) {
-      applyAutoPaste(element);
-    }
-  }
-}
-
-/**
  * Handle focus leaving an element
- *
+ * 
  * Note: We intentionally do NOT clear focusedElement when focus leaves
  * the page entirely (e.g., when clicking into the side panel).
  * We only update focusedElement when a NEW form element is focused.
@@ -266,12 +164,6 @@ function handleMessage(message, sender, sendResponse) {
     
     case 'SET_MAPPING':
       currentMapping = message.mapping;
-      sendResponse({ success: true });
-      break;
-
-    case 'SET_AUTOPASTE':
-      autoPasteValue = message.value;
-      console.log('[CrewForms] Autopaste armed with value:', message.value);
       sendResponse({ success: true });
       break;
     
@@ -452,11 +344,17 @@ function findLabelFor(element) {
 /**
  * Fill form fields based on data and mapping
  * 
+ * With all_frames enabled, this runs in each frame (main + iframes).
+ * Each content script filters fields by frameUrl to only fill fields meant for its frame.
+ * 
  * Added delay between fields to allow Angular/React forms to process changes.
  * Default delay is 100ms but can be configured via mapping.fillDelay
  */
 async function handleFillFields(data, mapping) {
-  console.log('[CrewForms] handleFillFields called');
+  const currentFrameUrl = window.location.href;
+  const isMainFrame = window === window.top;
+  
+  console.log(`[CrewForms] handleFillFields called in ${isMainFrame ? 'main frame' : 'iframe'}: ${currentFrameUrl}`);
   console.log('[CrewForms] Data received:', JSON.stringify(data, null, 2));
   console.log('[CrewForms] Mapping fields count:', mapping?.fields?.length);
   
@@ -464,29 +362,43 @@ async function handleFillFields(data, mapping) {
     console.error('[CrewForms] No field mapping provided');
     return { success: false, error: 'No field mapping provided' };
   }
-
-  // If we lost focus (e.g. user clicked into side panel), try to refocus
-  // the last known element, or fall back to finding the form on the page
-  if (focusedElement) {
-    // Re-focus to restore context (it may have lost focus to the side panel)
-    focusedElement.focus();
-    console.log('[CrewForms] Re-focused last known element:', focusedElement.tagName, focusedElement.name || focusedElement.id);
-  } else {
-    console.log('[CrewForms] No focused element - will search for form on page');
-  }
-
-  try {
-    // Find the form block - use focused element if available, otherwise find first form
-    let formBlock;
-    if (focusedElement) {
-      formBlock = findFormBlock(focusedElement, mapping.formType);
-    } else {
-      // No focused element at all (e.g. fresh content script injection)
-      // For static forms, find the first form on the page
-      formBlock = document.querySelector('form') || document.body;
-      console.log('[CrewForms] Using fallback form block:', formBlock.tagName);
+  
+  // Filter fields to only those meant for this frame
+  // Match by frameUrl, or include fields with no frameUrl for backward compatibility
+  const fieldsForThisFrame = mapping.fields.filter(f => {
+    // No frameUrl means legacy mapping - only main frame handles these
+    if (!f.frameUrl) {
+      return isMainFrame;
     }
-    console.log('[CrewForms] Form block found:', formBlock.tagName, formBlock.className);
+    // Match by URL (normalize both to handle trailing slashes, etc.)
+    return normalizeUrl(f.frameUrl) === normalizeUrl(currentFrameUrl);
+  });
+  
+  console.log(`[CrewForms] Fields for this frame: ${fieldsForThisFrame.length} of ${mapping.fields.length}`);
+  
+  // If no fields for this frame, return success (another frame will handle them)
+  if (fieldsForThisFrame.length === 0) {
+    console.log('[CrewForms] No fields to fill in this frame, skipping');
+    return { success: true, filledCount: 0, totalMapped: 0, skipped: 0 };
+  }
+  
+  try {
+    let formBlock;
+    
+    // For static forms, we don't need a focused element - just use the form directly
+    // This allows pasting without clicking into a field first
+    if (mapping.formType === 'static' || !mapping.formType) {
+      formBlock = document.querySelector('form') || document.body;
+      console.log('[CrewForms] Static form - using form directly:', formBlock.tagName);
+    } else {
+      // For dynamic-guest-blocks, we need a focused element to identify which guest block to fill
+      if (!focusedElement) {
+        console.error('[CrewForms] No field is currently focused');
+        return { success: false, error: 'No field is currently focused. Click on a form field first.' };
+      }
+      formBlock = findFormBlock(focusedElement, mapping.formType);
+      console.log('[CrewForms] Dynamic form block found:', formBlock.tagName, formBlock.className);
+    }
     
     // Must match selector in scanAllFormFields() for consistent field positions!
     // Includes Angular Material mat-select and custom dropdown components.
@@ -504,8 +416,8 @@ async function handleFillFields(data, mapping) {
     const fillDelay = mapping.fillDelay || 100;
     console.log('[CrewForms] Using fill delay:', fillDelay, 'ms');
     
-    // Fill each mapped field
-    for (const fieldMapping of mapping.fields) {
+    // Fill each mapped field (only fields for this frame)
+    for (const fieldMapping of fieldsForThisFrame) {
       const fieldIndex = fieldMapping.position - 1; // Convert 1-based to 0-based
       
       if (fieldIndex < 0 || fieldIndex >= fields.length) {
@@ -560,7 +472,7 @@ async function handleFillFields(data, mapping) {
       }
     }
     
-    console.log(`[CrewForms] Fill complete: ${filledCount}/${mapping.fields.length} fields filled`);
+    console.log(`[CrewForms] Fill complete: ${filledCount}/${fieldsForThisFrame.length} fields filled in this frame`);
     if (skipped.length > 0) {
       console.log('[CrewForms] Skipped fields:', skipped);
     }
@@ -571,13 +483,26 @@ async function handleFillFields(data, mapping) {
     return { 
       success: true, 
       filledCount,
-      totalMapped: mapping.fields.length,
+      totalMapped: fieldsForThisFrame.length,
       skipped: skipped.length,
       errors: errors.length > 0 ? errors : undefined
     };
   } catch (error) {
     console.error('[CrewForms] Error filling fields:', error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Normalize URL for comparison (handles trailing slashes, protocol differences)
+ */
+function normalizeUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    // Normalize: lowercase host, remove trailing slash from pathname
+    return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`;
+  } catch (e) {
+    return url;
   }
 }
 
@@ -642,6 +567,7 @@ async function handleTestFillField(position, value, config) {
       const fieldMapping = {
         inputType,
         dateFormat: config.dateFormat,
+        tabAfter: config.tabAfter || false, // Include Tab After option
         config: {
           keypressMap: config.keypressMap
         }
@@ -738,6 +664,7 @@ function getValueFromData(data, dataSource) {
  */
 async function fillField(field, value, mapping) {
   const inputType = mapping.inputType || 'paste';
+  const tabAfter = mapping.tabAfter || false;
   
   // Format date if dateFormat is specified and value is an object with date parts
   if (mapping.dateFormat && typeof value === 'object' && (value.day || value.month || value.year)) {
@@ -747,19 +674,32 @@ async function fillField(field, value, mapping) {
   switch (inputType) {
     case 'paste':
     case 'text':
-      await fillTextField(field, value);
+      await fillTextField(field, value, { tabAfter });
       break;
     
     case 'select-match':
       await fillSelectMatch(field, value);
+      // If tabAfter is set, simulate tab after select
+      if (tabAfter) {
+        await sleep(50);
+        await simulateTabAndBlur(field);
+      }
       break;
     
     case 'select-keypress':
       await fillSelectKeypress(field, value, mapping.config);
+      if (tabAfter) {
+        await sleep(50);
+        await simulateTabAndBlur(field);
+      }
       break;
     
     case 'click-select':
       await fillClickSelect(field, value, mapping.config);
+      if (tabAfter) {
+        await sleep(50);
+        await simulateTabAndBlur(field);
+      }
       break;
     
     case 'date-text':
@@ -784,7 +724,7 @@ async function fillField(field, value, mapping) {
       break;
     
     default:
-      await fillTextField(field, value);
+      await fillTextField(field, value, { tabAfter });
   }
 }
 
@@ -807,10 +747,20 @@ function formatDateWithConfig(dateObj, format) {
 /**
  * Fill a dropdown using click-to-select approach
  * This handles custom dropdown components that require clicking to open
+ * 
+ * Supports:
+ * - Telerik RadComboBox (.RadComboBoxDropDown, .rcbItem)
+ * - Angular Material (.mat-select-panel)
+ * - ng-select (.ng-dropdown-panel)
+ * - Bootstrap (.dropdown-menu)
+ * - Generic ([role="listbox"], .select-options)
  */
 async function fillClickSelect(field, value, config) {
-  const delay = config?.openDelay || 100;
-  const optionSelector = config?.optionSelector || '[role="option"], .option, li';
+  const delay = config?.openDelay || 150; // Slightly longer default for Telerik
+  
+  // Default option selectors include common patterns
+  const optionSelector = config?.optionSelector || 
+    '[role="option"], .option, li, .rcbItem, .k-item';
   
   // Click to open the dropdown
   field.click();
@@ -822,18 +772,34 @@ async function fillClickSelect(field, value, config) {
   // Look for the option to click
   const searchValue = String(value).toLowerCase();
   
-  // Try to find options in a nearby dropdown container
+  // Try to find dropdown container - check multiple common patterns
+  // Order matters: more specific selectors first
   const dropdownContainer = document.querySelector(
-    '.dropdown-menu, .mat-select-panel, .ng-dropdown-panel, [role="listbox"], .select-options'
+    // Telerik RadComboBox
+    '.RadComboBoxDropDown, .rcbSlide, ' +
+    // Kendo UI
+    '.k-animation-container, .k-list-container, ' +
+    // Angular Material
+    '.mat-select-panel, .cdk-overlay-pane, ' +
+    // ng-select
+    '.ng-dropdown-panel, ' +
+    // Bootstrap
+    '.dropdown-menu, ' +
+    // Generic patterns
+    '[role="listbox"], .select-options'
   );
+  
+  console.log(`[CrewForms] Click-select: Found container:`, dropdownContainer?.className);
   
   if (dropdownContainer) {
     const options = dropdownContainer.querySelectorAll(optionSelector);
+    console.log(`[CrewForms] Click-select: Found ${options.length} options`);
     
     for (const option of options) {
       const optionText = option.textContent.trim().toLowerCase();
       
       if (optionText === searchValue || optionText.includes(searchValue)) {
+        console.log(`[CrewForms] Click-select: Clicking option "${option.textContent.trim()}"`);
         option.click();
         await sleep(50);
         triggerInputEvents(field);
@@ -843,7 +809,7 @@ async function fillClickSelect(field, value, config) {
   }
   
   // Fallback: try match approach
-  console.warn(`Click-select fallback for: ${value}`);
+  console.warn(`[CrewForms] Click-select fallback for: ${value}`);
   await fillSelectMatch(field, value);
 }
 
@@ -856,20 +822,49 @@ async function fillClickSelect(field, value, config) {
  * 
  * Focuses the field first to ensure Angular/React forms recognize the change.
  * Uses a small delay after focus for framework change detection.
+ * 
+ * @param {HTMLElement} field - The input field to fill
+ * @param {string} value - The value to fill
+ * @param {Object} options - Options for filling
+ * @param {boolean} options.tabAfter - Simulate Tab key after fill (for dependent dropdowns)
  */
-async function fillTextField(field, value) {
+async function fillTextField(field, value, options = {}) {
+  // Reset any existing component state by clicking elsewhere first
+  // This is important for repeated fills (e.g., Telerik RadComboBox)
+  document.body.click();
+  await sleep(30);
+  
   // Focus the field first - critical for Angular reactive forms
   field.focus();
+  field.click(); // Click to activate
   await sleep(10);
   
   // Clear existing value
+  field.select();
+  await sleep(10);
   field.value = '';
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  await sleep(50);
   
   // Set new value
   field.value = String(value);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  await sleep(50);
   
-  // Trigger events to notify any listeners
-  triggerInputEvents(field);
+  // Trigger change event
+  field.dispatchEvent(new Event('change', { bubbles: true }));
+  
+  // If tabAfter is enabled, simulate Tab key to trigger dependent dropdowns
+  if (options.tabAfter) {
+    await sleep(100); // Wait for any filtering/processing
+    await simulateTabAndBlur(field);
+    console.log('[CrewForms] Text field filled with Tab after:', value);
+  } else {
+    // Standard blur
+    field.blur();
+    field.dispatchEvent(new Event('blur', { bubbles: true }));
+    field.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+  }
   
   // Small delay after events for framework processing
   await sleep(10);
@@ -1079,12 +1074,51 @@ function formatDate(dateObj, format) {
 
 /**
  * Trigger input events on a field
+ * 
+ * Important: We call field.blur() to actually move focus away from the field.
+ * Just dispatching 'blur' event isn't enough for some frameworks (Telerik, ASP.NET)
+ * that check actual focus state before triggering dependent dropdowns.
  */
 function triggerInputEvents(field) {
   // Dispatch events that forms typically listen for
   field.dispatchEvent(new Event('input', { bubbles: true }));
   field.dispatchEvent(new Event('change', { bubbles: true }));
+  
+  // Actually blur the field (moves focus away)
+  // This is critical for dependent dropdowns that wait for real focus loss
+  field.blur();
+  
+  // Dispatch blur-related events for frameworks that listen to them
   field.dispatchEvent(new Event('blur', { bubbles: true }));
+  field.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+}
+
+/**
+ * Simulate Tab key press and blur
+ * 
+ * This is specifically for components like Telerik RadComboBox that listen
+ * for the Tab keydown event to trigger selection and update dependent dropdowns.
+ * Just calling blur() is not enough - the Tab keydown must fire first.
+ */
+async function simulateTabAndBlur(field) {
+  // Simulate Tab keydown - this triggers Telerik's selection logic
+  field.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'Tab',
+    code: 'Tab',
+    keyCode: 9,
+    which: 9,
+    bubbles: true,
+    cancelable: true
+  }));
+  
+  await sleep(50);
+  
+  // Then blur the field
+  field.blur();
+  field.dispatchEvent(new Event('blur', { bubbles: true }));
+  field.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+  
+  console.log('[CrewForms] Simulated Tab + blur for dependent dropdown trigger');
 }
 
 /**

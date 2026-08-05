@@ -609,6 +609,71 @@ body {
 }
 
 /* ============================================================================
+   ACTION BAR
+   ============================================================================ */
+
+.action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-white);
+  border-top: 1px solid var(--color-gray-200);
+  flex-shrink: 0;
+}
+
+.action-bar.hidden {
+  display: none;
+}
+
+.action-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  flex: 1;
+  min-width: 0;
+}
+
+.action-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+}
+
+.action-info select {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  background: var(--color-white);
+}
+
+.action-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+/* Excel download button - green Excel theme */
+.btn-excel {
+  background: #107c41;
+  color: var(--color-white);
+}
+
+.btn-excel:hover {
+  background: #0b5a2e;
+}
+
+.btn-excel:disabled {
+  background: var(--color-gray-300);
+  cursor: not-allowed;
+}
+
+.btn-excel.hidden {
+  display: none;
+}
+
+/* ============================================================================
    TRIP EXPIRY NOTICE
    ============================================================================ */
 
@@ -702,36 +767,6 @@ body {
   border-color: var(--color-accent);
 }
 
-.traveler-card.pasted {
-  border-color: #22c55e;
-  background: #f0fdf4;
-}
-
-.traveler-card.pasted:hover {
-  border-color: #16a34a;
-}
-
-/* Paste popup */
-.paste-popup {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-xs) var(--spacing-md);
-  background: #eff6ff;
-  border-top: 1px solid #bfdbfe;
-  font-size: var(--font-size-sm);
-  color: var(--color-gray-700);
-}
-
-.paste-popup.hidden {
-  display: none;
-}
-
-.paste-popup-actions {
-  display: flex;
-  gap: var(--spacing-xs);
-}
-
 .traveler-card-header {
   display: flex;
   align-items: center;
@@ -773,38 +808,6 @@ body {
 .traveler-actions {
   display: flex;
   gap: var(--spacing-xs);
-  align-items: center;
-}
-
-.btn-icon {
-  background: none;
-  border: 1px solid var(--color-gray-300);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  padding: 4px 6px;
-  line-height: 1;
-  transition: background-color 0.15s, color 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-gray-600);
-}
-
-.btn-icon svg {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.btn-icon:hover {
-  background-color: var(--color-gray-100);
-  color: var(--color-gray-800);
-}
-
-.btn-icon.active {
-  background-color: var(--color-accent);
-  border-color: var(--color-accent);
-  color: white;
 }
 
 .traveler-card-body {
@@ -843,35 +846,6 @@ body {
 .traveler-field-value {
   color: var(--color-gray-900);
   font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.copy-field-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 1px 2px;
-  color: var(--color-gray-400);
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
-  flex-shrink: 0;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-}
-
-.traveler-field:hover .copy-field-btn {
-  opacity: 1;
-}
-
-.copy-field-btn:hover {
-  color: var(--color-accent);
-}
-
-.copy-field-btn.copied {
-  opacity: 1;
 }
 
 /* ============================================================================
@@ -1150,8 +1124,105 @@ body {
 }
 
 #fieldListContainer {
-  max-height: 400px;
+  max-height: 500px;
   overflow-y: auto;
+}
+
+/* ============================================================================
+   FRAME GROUPS - Collapsible sections for multi-frame form scanning
+   ============================================================================ */
+
+.frame-group {
+  border-bottom: 2px solid var(--color-gray-300);
+}
+
+.frame-group:last-child {
+  border-bottom: none;
+}
+
+.frame-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-gray-100);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--color-gray-200);
+}
+
+.frame-header:hover {
+  background: var(--color-gray-200);
+}
+
+.frame-collapse-icon {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+  width: 12px;
+}
+
+.frame-badge {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.frame-badge.main {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.frame-badge.iframe {
+  background: var(--color-accent);
+  color: var(--color-white);
+}
+
+.frame-url {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-600);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.frame-field-count {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+  padding: 2px 8px;
+  background: var(--color-white);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-gray-300);
+}
+
+.frame-collapse-btn {
+  font-size: var(--font-size-xs);
+  padding: 2px 8px;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-gray-600);
+}
+
+.frame-collapse-btn:hover {
+  background: var(--color-gray-50);
+  border-color: var(--color-gray-400);
+}
+
+.frame-fields {
+  /* Visible state - fields shown */
+}
+
+.frame-fields.hidden {
+  display: none;
+}
+
+.frame-group.collapsed .frame-header {
+  background: var(--color-gray-50);
 }
 
 /* Field Item */
@@ -1215,6 +1286,71 @@ body {
 .field-type.disabled {
   background: var(--color-warning);
   color: var(--color-white);
+}
+
+/* Component Type Badge - shows detected UI component type */
+.component-type-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+/* Telerik components */
+.component-type-badge.telerik-combobox,
+.component-type-badge.telerik-dropdown {
+  background: #ff6358;
+  color: white;
+}
+
+/* Angular Material */
+.component-type-badge.mat-select {
+  background: #673ab7;
+  color: white;
+}
+
+/* Kendo UI */
+.component-type-badge.kendo-combobox,
+.component-type-badge.kendo-dropdown {
+  background: #ff6358;
+  color: white;
+}
+
+/* Bootstrap */
+.component-type-badge.bootstrap-select {
+  background: #7952b3;
+  color: white;
+}
+
+/* ng-select */
+.component-type-badge.ng-select {
+  background: #dd0031;
+  color: white;
+}
+
+/* Native select */
+.component-type-badge.native-select {
+  background: var(--color-gray-500);
+  color: white;
+}
+
+/* Generic combobox */
+.component-type-badge.combobox {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* Strategy Hint - shows recommended input behavior */
+.strategy-hint {
+  font-size: 11px;
+  color: var(--color-gray-600);
+  padding: 4px var(--spacing-md);
+  padding-left: calc(var(--spacing-md) + 36px); /* Align with field label */
+  background: var(--color-gray-50);
+  border-bottom: 1px dashed var(--color-gray-200);
 }
 
 /* Test Button */
@@ -1287,6 +1423,30 @@ body {
   font-size: var(--font-size-xs);
   color: var(--color-gray-600);
   margin-bottom: 4px;
+}
+
+/* Checkbox config group - inline label and checkbox */
+.config-group.config-checkbox {
+  display: flex;
+  align-items: center;
+  padding: var(--spacing-xs) 0;
+}
+
+.config-group.config-checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-700);
+  margin-bottom: 0;
+}
+
+.config-group.config-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
 }
 
 .config-group input,
