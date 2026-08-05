@@ -1641,3 +1641,41 @@ body {
   background: var(--color-gray-400);
 }
 
+
+/* ---------------------------------------------------------------------------
+   Copy for Claude bar (Travelers tab)
+   Always visible: an AI browser assistant cannot read this extension's storage,
+   so the clipboard is the only bridge, and it must be reachable on any page.
+   --------------------------------------------------------------------------- */
+.ai-copy-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin: 0 0 4px;
+  background: var(--surface-2, #f6f7f9);
+  border: 1px solid var(--border, #e2e5ea);
+  border-radius: 8px;
+}
+.ai-copy-label {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+.ai-copy-bar select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border, #e2e5ea);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+}
+.ai-copy-bar .btn { white-space: nowrap; }
+.ai-copy-hint {
+  margin: 0 2px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.65;
+}

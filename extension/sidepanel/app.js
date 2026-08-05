@@ -890,6 +890,8 @@ function handleOcrComplete(travelerId, data) {
 }
 
 function renderTravelerList() {
+  // keep the guest count in the Copy-for-Claude hint current
+  if (typeof updateAgentHint === 'function') updateAgentHint();
   const list = document.getElementById('travelerList');
   
   // Debug: Log to verify new code is running
@@ -1462,6 +1464,7 @@ function setupExcelDownload() {
   if (copyBtn) {
     copyBtn.addEventListener('click', handleCopyForAgent);
   }
+  initAgentSite();
 }
 
 // ============================================================================
@@ -1491,91 +1494,274 @@ function agentDates(d) {
   return { bvi: `${dd}/${mm}/${yyyy}`, sailclear: `${mm}-${dd}-${yyyy}`, enoad: `${yyyy}-${mm}-${dd}` };
 }
 
-function dateLine(label, d) {
+/**
+ * One date, in the selected site's format only.
+ *
+ * Emitting all three at once invites the assistant to pick the wrong one, and
+ * a mis-formatted date is not a visible error — it is a valid-looking wrong
+ * filing. 6 August as 08/06/2026 files 8 June.
+ */
+function dateFor(site, d) {
   const f = agentDates(d);
-  if (!f) return `  ${label}: (missing - check the passport)`;
-  return `  ${label}: ${f.bvi}  [BVI]   ${f.sailclear}  [SailClear]   ${f.enoad}  [eNOAD]`;
+  return f ? f[site] : null;
 }
 
-function buildAgentText() {
+function dateLine(site, label, d) {
+  const v = dateFor(site, d);
+  return `  ${label}: ${v ?? '(MISSING — read it off the passport image)'}`;
+}
+
+/** Each site validates against its own spelling of the same country. */
+const SITE_PROFILE = {
+  bvi: {
+    name: 'BVI Preclearance Portal',
+    url: 'eta.bviportals.com',
+    dateFormat: 'DD/MM/YYYY (DAY FIRST)',
+    countryStyle: 'UPPERCASE, with brackets: VIRGIN ISLANDS (BRITISH), VIRGIN ISLANDS (U.S.), UNITED STATES, UNITED KINGDOM',
+    upperNames: true,
+  },
+  enoad: {
+    name: 'USCG eNOAD',
+    url: 'enoad.nvmc.uscg.gov',
+    dateFormat: 'YYYY-MM-DD',
+    countryStyle: 'UPPERCASE: UNITED STATES, UNITED KINGDOM, "VIRGIN ISLANDS, BRITISH"',
+    upperNames: false,
+  },
+  sailclear: {
+    name: 'SailClear',
+    url: 'sailclear.com',
+    dateFormat: 'MM-DD-YYYY (as used by their spreadsheet — confirm the web form matches)',
+    countryStyle: 'Title case: United States, United Kingdom, British Virgin Islands',
+    upperNames: false,
+  },
+};
+
+/**
+ * Render a country the way the target site spells it.
+ *
+ * Stating the convention in the prompt is not enough — the assistant will type
+ * what it is given. BVI and eNOAD both use uppercase; SailClear uses title
+ * case. The bracketed BVI forms like VIRGIN ISLANDS (BRITISH) still have to be
+ * matched against the live dropdown, which the prompt tells it to do.
+ */
+function countryFor(site, value) {
+  const v = String(value || '').trim();
+  if (!v) return '(missing)';
+  return site === 'sailclear' ? v : v.toUpperCase();
+}
+
+/** The site-specific half of the prompt — the part that is hard-won. */
+function siteRules(site) {
+  if (site === 'bvi') {
+    return [
+      'HOW THIS FORM BEHAVES (verified against the live site):',
+      '  • Dates are DAY FIRST. Every date below is already in DD/MM/YYYY — type it exactly.',
+      '  • Names and passport numbers must be UPPERCASE. Lowercase fails validation',
+      '    rather than being corrected.',
+      '  • Dropdowns (nationality, country, ports, gender, purpose of visit,',
+      '    accommodation, transport type) MUST be clicked from the list. Typing the',
+      '    text alone leaves the field empty as far as the form is concerned, and',
+      '    submit then fails without saying why.',
+      '  • Step 1 has an "I agree to the Terms of Services" checkbox at the BOTTOM.',
+      '    "Save and Continue" stays greyed out until it is ticked — the form looks',
+      '    broken otherwise.',
+      '  • Time is 24-hour with separate hour and minute pickers; minutes are only',
+      '    00, 15, 30 or 45.',
+      '  • Port of entry options include: ROAD TOWN, TORTOLA / GREAT HARBOUR, JOST VAN DYKE /',
+      '    GUN CREEK, VIRGIN GORDA / SPANISH TOWN, VIRGIN GORDA.',
+      '  • Embarkation ports are "CODE - NAME", e.g. VICHA - CHARLOTTE AMALIE HARBOR, ST. THOMAS.',
+      '    Type a distinctive word like CHARLOTTE to find it; the list only shows ~10 at a time.',
+      '  • Transport type options: CREWED CHARTER / BAREBOAT RENTAL / COMMERCIAL PLEASURE / PLEASURE.',
+      '  • The wizard is Transport → Captain → Travelers → Review. Travelers are added',
+      '    ONE AT A TIME with "Save & Add Traveler". Travel document type is fixed to PASSPORT.',
+      '  • At the end it shows a Manifest ID — tell the captain to write it down. Editing',
+      '    later needs that ID plus the vessel registration number.',
+    ];
+  }
+  if (site === 'enoad') {
+    return [
+      'BEFORE YOU START:',
+      '  There is a faster path. The CrewForms extension can generate a filled NOAD',
+      '  workbook, and eNOAD accepts it via "Add Notice → Import Notice". Ask the',
+      '  captain whether they have that file before typing anything. Use the steps',
+      '  below only if they want it entered by hand.',
+      '',
+      'HOW THIS FORM BEHAVES:',
+      '  • Dates are YYYY-MM-DD. Every date below is already in that form.',
+      '  • The field is "Sex" (renamed from Gender) and accepts only Male or Female.',
+      '  • Country names are UPPERCASE.',
+      '  • The US Virgin Islands is NOT a country here. Embark Country is UNITED STATES',
+      '    and Embark State is Virgin Islands.',
+      '  • The passenger form lives inside an IFRAME (menu/EditNonCrew.aspx). It is',
+      '    ASP.NET with Telerik controls that reload the page on change, so change one',
+      '    field at a time and wait for it to settle before the next.',
+      '  • The session times out after 15 MINUTES of inactivity and unsaved work is',
+      '    lost. Save each section as you finish it.',
+      '  • Submit only becomes available once every section icon has turned green.',
+      '  • These are required but appear on no passport, so ask the captain: Country of',
+      '    Residence, and the Embark Port / Place / Date.',
+    ];
+  }
+  return [
+    'BEFORE YOU START:',
+    '  There is a faster path for the people. SailClear accepts a bulk spreadsheet',
+    '  upload at /dashboard/individuals that covers every passport field, and the',
+    '  CrewForms extension can generate it. Ask the captain whether they have that',
+    '  file. What the spreadsheet does NOT cover — and what you are most useful for —',
+    '  is the vessel record, the voyage/notification, and the health declaration.',
+    '',
+    'HOW THIS FORM BEHAVES:',
+    '  • Country names are Title Case here: United States, British Virgin Islands.',
+    '  • Gender is Male or Female. Document type is Passport, ID Card or Seaman Passport.',
+    '  • Rank is Master, Crew or Passenger, and the manifest needs EXACTLY ONE Master —',
+    '    the captain. Everyone listed below is a Passenger.',
+    '  • Marital status is required; NA is a valid value if unknown.',
+    '',
+    'IMPORTANT — read the form rather than trusting me here:',
+    '  SailClear was rebuilt in July 2026 and we have NOT verified the live form\'s',
+    '  field labels or its date format. Match fields by the labels you see on screen,',
+    '  and before typing a date, confirm the expected order from the placeholder or an',
+    '  existing value. Dates below are MM-DD-YYYY, which is what their spreadsheet uses.',
+  ];
+}
+
+function buildAgentText(site) {
+  const p = SITE_PROFILE[site] || SITE_PROFILE.bvi;
   const travelers = state.travelers || [];
+  const up = (s) => String(s || '').toUpperCase();
+  const cased = (s) => (p.upperNames ? up(s) : String(s || ''));
   const lines = [];
 
-  lines.push('PASSPORT ROSTER — for filling government arrival forms');
+  lines.push(`Please help me fill in the ${p.name} form at ${p.url}.`);
   lines.push('');
-  lines.push('FORMAT RULES — these differ per site and a wrong one is silently accepted:');
-  lines.push('  • Dates: each is given below already formatted for each site. Copy the');
-  lines.push('    one labelled for the site you are on. Do NOT convert dates yourself.');
-  lines.push('    BVI is DAY FIRST (DD/MM/YYYY) — 6 August is 06/08, not 08/06.');
-  lines.push('  • BVI eta.bviportals.com: names and passport numbers must be UPPERCASE,');
-  lines.push('    letters/digits only, or the field fails validation.');
-  lines.push('  • BVI dropdowns (nationality, country, ports, gender, purpose): you must');
-  lines.push('    CLICK an option from the list. Typing the text alone leaves the field');
-  lines.push('    empty as far as the form is concerned and submit will fail.');
-  lines.push('  • BVI country names are uppercase with brackets, e.g. VIRGIN ISLANDS (BRITISH),');
-  lines.push('    VIRGIN ISLANDS (U.S.), UNITED STATES, UNITED KINGDOM.');
-  lines.push('  • BVI step 1 has a "I agree to the Terms of Services" checkbox at the');
-  lines.push('    bottom — Save and Continue stays greyed out until it is ticked.');
-  lines.push('  • Never submit. Fill the form, then let the captain review and submit.');
+  lines.push('I am a boat captain filing a required government arrival declaration for');
+  lines.push('my guests. Below is passport data read from their passports, already');
+  lines.push(`formatted for this site (dates are ${p.dateFormat}).`);
   lines.push('');
-  lines.push(`TRAVELERS (${travelers.length})`);
+  lines.push('PLEASE:');
+  lines.push('  • Fill the fields using exactly the values below. Do not reformat them.');
+  lines.push('  • DO NOT SUBMIT. Fill the form and stop, so I can check it first.');
+  lines.push('  • If a value does not match any option offered, stop and tell me rather');
+  lines.push('    than picking the closest one. A wrong entry here is a false declaration.');
+  lines.push('  • Tell me about any required field you could not fill.');
+  lines.push('');
+  siteRules(site).forEach((l) => lines.push(l));
+  lines.push('');
+  lines.push(`Country names on this site are written: ${p.countryStyle}`);
+  lines.push('');
+  lines.push('─'.repeat(60));
+  lines.push(`GUESTS (${travelers.length})`);
   lines.push('');
 
   travelers.forEach((t, i) => {
     const full = [t.firstName, t.middleName, t.lastName].filter(Boolean).join(' ');
-    lines.push(`${i + 1}. ${String(full).toUpperCase()}`);
-    lines.push(`  Surname: ${String(t.lastName || '').toUpperCase()}`);
-    lines.push(`  Given names: ${[t.firstName, t.middleName].filter(Boolean).join(' ').toUpperCase()}`);
+    lines.push(`${i + 1}. ${up(full)}`);
+    lines.push(`  Surname: ${cased(t.lastName)}`);
+    lines.push(`  Given names: ${cased([t.firstName, t.middleName].filter(Boolean).join(' '))}`);
     lines.push(`  Sex: ${t.gender === 'F' ? 'Female' : t.gender === 'M' ? 'Male' : t.gender || '(missing)'}`);
-    lines.push(`  Nationality: ${t.nationality || '(missing)'}`);
-    lines.push(`  Passport number: ${String(t.passportNumber || '').toUpperCase()}`);
-    lines.push(`  Country of issue: ${t.issuingAuthority || '(missing)'}`);
-    lines.push(dateLine('Date of birth', t.dateOfBirth));
-    lines.push(dateLine('Date of issue', t.dateOfIssue));
-    lines.push(dateLine('Expiry date', t.dateOfExpiry));
-    if (t.placeOfBirth) {
+    lines.push(`  Nationality: ${countryFor(site, t.nationality)}`);
+    lines.push(`  Passport number: ${up(t.passportNumber)}`);
+    lines.push(`  Country of issue: ${countryFor(site, t.issuingAuthority)}`);
+    lines.push(dateLine(site, 'Date of birth', t.dateOfBirth));
+    lines.push(dateLine(site, 'Passport issued', t.dateOfIssue));
+    lines.push(dateLine(site, 'Passport expires', t.dateOfExpiry));
+    if (site !== 'bvi' && t.placeOfBirth) {
+      // BVI never asks for it; SailClear requires a COUNTRY and passports print a city.
       lines.push(`  Place of birth: ${t.placeOfBirth}`);
-      lines.push('    (SailClear wants a COUNTRY here — if the above is a city, supply the country)');
+      if (site === 'sailclear') {
+        lines.push('    (this field wants a COUNTRY — if the above is a city, ask me for the country)');
+      }
     }
+    if (site === 'sailclear') lines.push('  Rank: Passenger');
     lines.push('');
   });
 
-  const boat = (state.boats || []).find(b => b.id === getCurrentBoatId());
+  const boat = (state.boats || []).find((b) => b.id === getCurrentBoatId());
   if (boat) {
     lines.push('VESSEL');
-    lines.push(`  Name: ${String(boat.vesselName || '').toUpperCase()}`);
-    lines.push(`  Registration: ${String(boat.registrationNumber || '').toUpperCase()}`);
-    if (boat.flagState) lines.push(`  Flag: ${boat.flagState}`);
+    lines.push(`  Name: ${cased(boat.vesselName)}`);
+    lines.push(`  Registration: ${up(boat.registrationNumber)}`);
+    if (boat.flagState) lines.push(`  Flag / country of registration: ${countryFor(site, boat.flagState)}`);
     if (boat.homePort) lines.push(`  Home port: ${boat.homePort}`);
     lines.push('');
   }
 
-  const trip = (state.trips || []).find(t => t.id === getCurrentTripId());
+  const trip = (state.trips || []).find((t) => t.id === getCurrentTripId());
   if (trip) {
     lines.push('TRIP');
-    if (trip.departurePort) lines.push(`  Departure port: ${trip.departurePort}`);
-    if (trip.destinationPorts) lines.push(`  Destination: ${trip.destinationPorts}`);
+    if (trip.departurePort) lines.push(`  Departing from: ${trip.departurePort}`);
+    if (trip.destinationPorts) lines.push(`  Arriving at: ${trip.destinationPorts}`);
     if (trip.purpose) lines.push(`  Purpose: ${trip.purpose}`);
-    const dep = agentDates(trip.departureDate);
-    const ret = agentDates(trip.returnDate);
-    if (dep) lines.push(`  Departure date: ${dep.bvi} [BVI]  ${dep.enoad} [eNOAD]`);
-    if (ret) lines.push(`  Return date: ${ret.bvi} [BVI]  ${ret.enoad} [eNOAD]`);
+    const dep = dateFor(site, trip.departureDate);
+    const ret = dateFor(site, trip.returnDate);
+    if (dep) lines.push(`  Departure date: ${dep}`);
+    if (ret) lines.push(`  Return date: ${ret}`);
     lines.push('');
   }
 
+  lines.push('Anything not listed above (contact details, purpose of visit, where we are');
+  lines.push('staying) I will give you — just ask.');
+
   return lines.join('\n');
+}
+
+function currentAgentSite() {
+  const sel = document.getElementById('agentSite');
+  return (sel && sel.value) || 'bvi';
+}
+
+function updateAgentHint() {
+  const hint = document.getElementById('agentSiteHint');
+  if (!hint) return;
+  const p = SITE_PROFILE[currentAgentSite()];
+  const n = (state.travelers || []).length;
+  hint.textContent = `${n} guest${n === 1 ? '' : 's'} · dates as ${p.dateFormat} · paste into Claude on ${p.url}`;
+}
+
+async function handleAgentSiteChange() {
+  await setStorage({ agentSite: currentAgentSite() });
+  updateAgentHint();
+}
+
+/** Preselect the site the captain is already looking at; fall back to last used. */
+async function initAgentSite() {
+  const sel = document.getElementById('agentSite');
+  if (!sel) return;
+
+  let chosen = null;
+  try {
+    const tabResult = await sendMessage({ type: 'GET_ACTIVE_TAB' });
+    const url = tabResult?.tab?.url || '';
+    if (url.includes('bviportals.com')) chosen = 'bvi';
+    else if (url.includes('nvmc.uscg.gov')) chosen = 'enoad';
+    else if (url.includes('sailclear.com')) chosen = 'sailclear';
+  } catch {
+    // Not important enough to fail over.
+  }
+
+  if (!chosen) {
+    const stored = await getStorage(['agentSite']);
+    if (stored && stored.agentSite && SITE_PROFILE[stored.agentSite]) chosen = stored.agentSite;
+  }
+
+  sel.value = chosen || 'bvi';
+  sel.addEventListener('change', handleAgentSiteChange);
+  updateAgentHint();
 }
 
 async function handleCopyForAgent() {
   const travelers = state.travelers || [];
   if (!travelers.length) {
-    showToast('No travelers scanned yet', 'error');
+    showToast('No guests scanned yet — import passports first', 'error');
     return;
   }
+  const site = currentAgentSite();
   try {
-    const text = buildAgentText();
-    await navigator.clipboard.writeText(text);
-    showToast(`Copied ${travelers.length} traveler(s) — paste into the AI assistant`, 'success');
+    await navigator.clipboard.writeText(buildAgentText(site));
+    showToast(
+      `Copied ${travelers.length} guest(s) for ${SITE_PROFILE[site].name} — paste into Claude`,
+      'success',
+    );
   } catch (err) {
     console.error('[CrewForms] Copy for AI failed:', err);
     showToast('Could not copy to clipboard', 'error');

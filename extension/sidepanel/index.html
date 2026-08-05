@@ -101,7 +101,29 @@
             Import Guests
           </button>
         </div>
-        
+
+        <!-- Always visible: an AI browser assistant cannot read local files or
+             this extension's storage, so the roster reaches it by clipboard.
+             Deliberately NOT inside the action bar below, which only appears
+             when the open tab matches a known site — the BVI portal matches
+             nothing, and that is where this is needed most. -->
+        <div class="ai-copy-bar">
+          <label class="ai-copy-label" for="agentSite">Copy for Claude:</label>
+          <select id="agentSite">
+            <option value="bvi">BVI Preclearance</option>
+            <option value="enoad">USCG eNOAD</option>
+            <option value="sailclear">SailClear</option>
+          </select>
+          <button class="btn btn-accent" id="copyForAgentBtn" title="Copy passport data plus instructions for the selected site">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copy
+          </button>
+        </div>
+        <p class="ai-copy-hint" id="agentSiteHint"></p>
+
         <!-- QR Code Modal (hidden by default) -->
         <div class="qr-modal hidden" id="qrModal">
           <div class="qr-content">
@@ -549,16 +571,11 @@
           </svg>
           Excel
         </button>
-        <!-- Copies the whole roster as text for pasting into an AI browser
-             assistant, which cannot read local files or this extension's storage -->
-        <button class="btn" id="copyForAgentBtn" title="Copy all passport data as text for an AI assistant">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-          </svg>
-          Copy for AI
-        </button>
-        <button class="btn btn-accent" id="pasteBtn" disabled>
+        <!-- Paste drove the ordinal site_mappings, which were retired on
+             2026-08-05 because their positions no longer pointed anywhere.
+             Hidden rather than removed so the fill engine stays available for
+             a future mapping that carries real field identity. -->
+        <button class="btn btn-accent hidden" id="pasteBtn" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
             <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
