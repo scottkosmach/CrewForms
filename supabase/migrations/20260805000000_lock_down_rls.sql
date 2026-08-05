@@ -44,6 +44,20 @@ DROP POLICY IF EXISTS "Anyone can delete site_mappings"       ON site_mappings;
 ALTER TABLE site_mappings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON site_mappings FROM anon, authenticated;
 
+-- excel_templates ------------------------------------------------------------
+-- Same allow-all pattern as the tables above, and arguably the worst of them:
+-- these rows define which spreadsheet cell each passport field lands in. Anyone
+-- able to rewrite them could silently corrupt filings submitted to CBP and the
+-- Coast Guard. Reads happen server-side in /api/excel/generate, so nothing
+-- client-side needs access.
+DROP POLICY IF EXISTS "Allow read on excel_templates"   ON excel_templates;
+DROP POLICY IF EXISTS "Allow insert on excel_templates" ON excel_templates;
+DROP POLICY IF EXISTS "Allow update on excel_templates" ON excel_templates;
+DROP POLICY IF EXISTS "Allow delete on excel_templates" ON excel_templates;
+
+ALTER TABLE excel_templates ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON excel_templates FROM anon, authenticated;
+
 -- connection_tests -----------------------------------------------------------
 -- Demo scaffolding from project setup. Locked down here; scheduled for deletion
 -- along with the components that read it.

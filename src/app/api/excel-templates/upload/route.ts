@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 // Valid MIME types for Excel files
 const VALID_MIME_TYPES = [
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     const blob = new Blob([arrayBuffer], { type: file.type });
     
     // Upload to Supabase Storage
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     
     const { data, error } = await supabase.storage
       .from('templates')
@@ -121,7 +121,7 @@ export async function DELETE(request: NextRequest) {
   }
   
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     
     const { error } = await supabase.storage
       .from('templates')
