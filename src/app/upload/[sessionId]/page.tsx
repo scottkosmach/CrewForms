@@ -15,9 +15,82 @@ import { useParams } from 'next/navigation';
 // ============================================================================
 
 interface UploadState {
-  status: 'idle' | 'selecting' | 'uploading' | 'success' | 'error' | 'expired';
+  status: 'idle' | 'selecting' | 'converting' | 'uploading' | 'success' | 'error' | 'expired';
   message: string;
   progress: number;
+}
+
+// Maximum dimension (width or height) for converted images
+const MAX_IMAGE_DIMENSION = 2400;
+// JPEG quality (0.0 - 1.0). 0.85 is a good balance of quality vs size
+const JPEG_QUALITY = 0.85;
+
+/**
+ * Convert any image file to JPEG using canvas.
+ * Handles HEIC, HEIF (live photos), PNG (iPhone screenshots), WebP, etc.
+ * Also resizes if the image exceeds MAX_IMAGE_DIMENSION to reduce payload size.
+ */
+function convertToJpeg(file: File): Promise<{ blob: Blob; dataUrl: string }> {
+  return new Promise((resolve, reject) => {
+    // Create an object URL for the file — this lets the browser decode
+    // HEIC/HEIF natively on iOS Safari without a separate library
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      try {
+        let { width, height } = img;
+
+        // Scale down if either dimension exceeds the max
+        if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+          const scale = MAX_IMAGE_DIMENSION / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Failed to get canvas context'));
+          return;
+        }
+
+        // Draw image onto canvas (this converts any format the browser can decode)
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Export as JPEG
+        canvas.toBlob(
+          (blob) => {
+            URL.revokeObjectURL(objectUrl);
+            if (!blob) {
+              reject(new Error('Failed to convert image to JPEG'));
+              return;
+            }
+            // Also generate a data URL for preview
+            const reader = new FileReader();
+            reader.onload = () => resolve({ blob, dataUrl: reader.result as string });
+            reader.onerror = () => reject(new Error('Failed to read converted blob'));
+            reader.readAsDataURL(blob);
+          },
+          'image/jpeg',
+          JPEG_QUALITY
+        );
+      } catch (err) {
+        URL.revokeObjectURL(objectUrl);
+        reject(err);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(`Browser cannot decode image: ${file.name} (${file.type})`));
+    };
+
+    img.src = objectUrl;
+  });
 }
 
 // ============================================================================
@@ -35,6 +108,7 @@ export default function UploadPage() {
   });
   
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [convertedBlobs, setConvertedBlobs] = useState<Blob[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -63,16 +137,18 @@ export default function UploadPage() {
   }
   
   /**
-   * Handle file selection
+   * Handle file selection — converts all images to JPEG for maximum
+   * compatibility with the OpenAI Vision OCR API.
+   * Handles HEIC/HEIF (iPhone live photos), PNG (screenshots), WebP, etc.
    */
-  function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || []);
-    
+
     if (files.length === 0) return;
-    
-    // Filter to only images
+
+    // Filter to only images (includes HEIC/HEIF which report as image/heic)
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
-    
+
     if (imageFiles.length === 0) {
       setState({
         status: 'error',
@@ -81,84 +157,134 @@ export default function UploadPage() {
       });
       return;
     }
-    
+
     setSelectedFiles(imageFiles);
-    
-    // Generate previews
-    const newPreviews: string[] = [];
-    imageFiles.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        newPreviews.push(e.target?.result as string);
-        if (newPreviews.length === imageFiles.length) {
-          setPreviews([...newPreviews]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-    
+
+    // Show converting status
     setState({
-      status: 'selecting',
-      message: `${imageFiles.length} image(s) selected`,
+      status: 'converting',
+      message: `Converting ${imageFiles.length} image(s) to JPEG...`,
       progress: 0
     });
+
+    // Convert all images to JPEG
+    const newPreviews: string[] = [];
+    const newBlobs: Blob[] = [];
+    let failedCount = 0;
+
+    for (let i = 0; i < imageFiles.length; i++) {
+      try {
+        setState({
+          status: 'converting',
+          message: `Converting image ${i + 1} of ${imageFiles.length}...`,
+          progress: Math.round(((i) / imageFiles.length) * 100)
+        });
+
+        const { blob, dataUrl } = await convertToJpeg(imageFiles[i]);
+        newBlobs.push(blob);
+        newPreviews.push(dataUrl);
+      } catch (error) {
+        console.error(`Failed to convert ${imageFiles[i].name}:`, error);
+        failedCount++;
+      }
+    }
+
+    setConvertedBlobs(newBlobs);
+    setPreviews(newPreviews);
+
+    if (newBlobs.length === 0) {
+      setState({
+        status: 'error',
+        message: 'Could not convert any images. Please try different photos.',
+        progress: 0
+      });
+    } else {
+      setState({
+        status: 'selecting',
+        message: failedCount > 0
+          ? `${newBlobs.length} image(s) ready. ${failedCount} could not be converted.`
+          : `${newBlobs.length} image(s) ready to upload`,
+        progress: 0
+      });
+    }
   }
   
   /**
-   * Upload selected files
+   * Upload converted JPEG blobs
    */
   async function handleUpload() {
-    if (selectedFiles.length === 0) return;
-    
+    if (convertedBlobs.length === 0) return;
+
+    const total = convertedBlobs.length;
+    let uploaded = 0;
+    let failed = 0;
+
     setState({
       status: 'uploading',
-      message: 'Uploading...',
+      message: `Uploading image 1 of ${total}...`,
       progress: 0
     });
-    
-    try {
-      const formData = new FormData();
-      selectedFiles.forEach(file => {
-        formData.append('images', file);
-      });
-      
-      const response = await fetch(`/api/sessions/${sessionId}/upload`, {
-        method: 'POST',
-        body: formData
-      });
-      
-      if (response.status === 404 || response.status === 410) {
-        setState({
-          status: 'expired',
-          message: 'This upload session has expired. Please generate a new QR code.',
-          progress: 0
+
+    // Upload images one at a time to stay under Vercel's 4.5MB body limit
+    for (let i = 0; i < total; i++) {
+      try {
+        const formData = new FormData();
+        // Send as .jpg file — the blob is already JPEG from convertToJpeg()
+        const jpegFile = new File([convertedBlobs[i]], `passport-${i + 1}.jpg`, {
+          type: 'image/jpeg'
         });
-        return;
+        formData.append('images', jpegFile);
+
+        setState({
+          status: 'uploading',
+          message: `Uploading image ${i + 1} of ${total}...`,
+          progress: Math.round((i / total) * 100)
+        });
+
+        const response = await fetch(`/api/sessions/${sessionId}/upload`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.status === 404 || response.status === 410) {
+          setState({
+            status: 'expired',
+            message: 'This upload session has expired. Please generate a new QR code.',
+            progress: 0
+          });
+          return;
+        }
+
+        if (!response.ok) {
+          console.error(`Upload failed for image ${i + 1}: status ${response.status}`);
+          failed++;
+          continue;
+        }
+
+        uploaded++;
+      } catch (error) {
+        console.error(`Upload error for image ${i + 1}:`, error);
+        failed++;
       }
-      
-      if (!response.ok) {
-        throw new Error('Upload failed');
-      }
-      
-      const result = await response.json();
-      
-      setState({
-        status: 'success',
-        message: `${result.uploaded} passport image(s) uploaded successfully!`,
-        progress: 100
-      });
-      
-      // Clear selection
-      setSelectedFiles([]);
-      setPreviews([]);
-      
-    } catch (error) {
-      console.error('Upload error:', error);
+    }
+
+    if (uploaded === 0) {
       setState({
         status: 'error',
         message: 'Failed to upload images. Please try again.',
         progress: 0
       });
+    } else {
+      setState({
+        status: 'success',
+        message: failed > 0
+          ? `${uploaded} of ${total} image(s) uploaded. ${failed} failed.`
+          : `${uploaded} passport image(s) uploaded successfully!`,
+        progress: 100
+      });
+      setSelectedFiles([]);
+      setConvertedBlobs([]);
+      setPreviews([]);
     }
   }
   
@@ -167,6 +293,7 @@ export default function UploadPage() {
    */
   function handleClear() {
     setSelectedFiles([]);
+    setConvertedBlobs([]);
     setPreviews([]);
     setState({
       status: 'idle',
@@ -231,17 +358,23 @@ export default function UploadPage() {
         }
         
         .select-area {
-          border: 2px dashed #cbd5e1;
+          border: 2px dashed #0891b2;
           border-radius: 12px;
           padding: 40px 20px;
           text-align: center;
           cursor: pointer;
           transition: all 0.2s ease;
+          background: rgba(8, 145, 178, 0.06);
         }
         
         .select-area:hover {
           border-color: #0891b2;
-          background: rgba(8, 145, 178, 0.05);
+          background: rgba(8, 145, 178, 0.1);
+        }
+
+        .select-area:active {
+          transform: scale(0.98);
+          background: rgba(8, 145, 178, 0.12);
         }
         
         .select-area.has-files {
@@ -254,13 +387,14 @@ export default function UploadPage() {
           width: 48px;
           height: 48px;
           margin: 0 auto 16px;
-          color: #64748b;
+          color: #0891b2;
         }
         
         .select-text {
           font-size: 16px;
           font-weight: 500;
           margin-bottom: 8px;
+          color: #0891b2;
         }
         
         .select-hint {
@@ -435,12 +569,24 @@ export default function UploadPage() {
           </div>
         )}
         
+        {state.status === 'converting' && (
+          <div className="status-message status-uploading">
+            <p>{state.message}</p>
+            <div className="progress-bar">
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${state.progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {state.status === 'uploading' && (
           <div className="status-message status-uploading">
             <p>{state.message}</p>
             <div className="progress-bar">
-              <div 
-                className="progress-bar-fill" 
+              <div
+                className="progress-bar-fill"
                 style={{ width: `${state.progress}%` }}
               />
             </div>
@@ -497,18 +643,22 @@ export default function UploadPage() {
             {/* Upload Button */}
             <button
               className="btn btn-primary"
-              onClick={handleUpload}
-              disabled={selectedFiles.length === 0 || state.status === 'uploading'}
+              onClick={convertedBlobs.length === 0 ? () => fileInputRef.current?.click() : handleUpload}
+              disabled={state.status === 'uploading' || state.status === 'converting'}
               style={{ marginTop: '20px' }}
             >
-              {state.status === 'uploading' 
-                ? 'Uploading...' 
-                : `Upload ${selectedFiles.length || ''} Image${selectedFiles.length !== 1 ? 's' : ''}`
+              {state.status === 'converting'
+                ? 'Converting...'
+                : state.status === 'uploading'
+                  ? 'Uploading...'
+                  : convertedBlobs.length === 0
+                    ? 'Select Passport Images'
+                    : `Upload ${convertedBlobs.length} Image${convertedBlobs.length !== 1 ? 's' : ''}`
               }
             </button>
-            
+
             {/* Clear Button */}
-            {selectedFiles.length > 0 && state.status !== 'uploading' && (
+            {selectedFiles.length > 0 && state.status !== 'uploading' && state.status !== 'converting' && (
               <button
                 className="btn btn-secondary"
                 onClick={handleClear}
