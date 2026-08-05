@@ -1458,6 +1458,128 @@ function setupExcelDownload() {
   if (excelBtn) {
     excelBtn.addEventListener('click', handleExcelDownload);
   }
+  const copyBtn = document.getElementById('copyForAgentBtn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', handleCopyForAgent);
+  }
+}
+
+// ============================================================================
+// COPY FOR AI ASSISTANT
+// ============================================================================
+
+/**
+ * An AI browser assistant cannot read local files or this extension's storage,
+ * so the roster has to reach it through the clipboard.
+ *
+ * Each value is pre-formatted for every target site. The formats genuinely
+ * differ and getting one wrong is not a visible error - it is a valid-looking
+ * wrong filing - so the assistant is handed the exact string to type rather
+ * than being asked to convert anything:
+ *
+ *   BVI eta.bviportals.com   DD/MM/YYYY   (day first)
+ *   SailClear                MM-DD-YYYY
+ *   USCG eNOAD               YYYY-MM-DD
+ */
+
+/** Dates arrive from OCR as { day, month, year }. */
+function agentDates(d) {
+  if (!d || !d.day || !d.month || !d.year) return null;
+  const dd = String(d.day).padStart(2, '0');
+  const mm = String(d.month).padStart(2, '0');
+  const yyyy = String(d.year).padStart(4, '0');
+  return { bvi: `${dd}/${mm}/${yyyy}`, sailclear: `${mm}-${dd}-${yyyy}`, enoad: `${yyyy}-${mm}-${dd}` };
+}
+
+function dateLine(label, d) {
+  const f = agentDates(d);
+  if (!f) return `  ${label}: (missing - check the passport)`;
+  return `  ${label}: ${f.bvi}  [BVI]   ${f.sailclear}  [SailClear]   ${f.enoad}  [eNOAD]`;
+}
+
+function buildAgentText() {
+  const travelers = state.travelers || [];
+  const lines = [];
+
+  lines.push('PASSPORT ROSTER — for filling government arrival forms');
+  lines.push('');
+  lines.push('FORMAT RULES — these differ per site and a wrong one is silently accepted:');
+  lines.push('  • Dates: each is given below already formatted for each site. Copy the');
+  lines.push('    one labelled for the site you are on. Do NOT convert dates yourself.');
+  lines.push('    BVI is DAY FIRST (DD/MM/YYYY) — 6 August is 06/08, not 08/06.');
+  lines.push('  • BVI eta.bviportals.com: names and passport numbers must be UPPERCASE,');
+  lines.push('    letters/digits only, or the field fails validation.');
+  lines.push('  • BVI dropdowns (nationality, country, ports, gender, purpose): you must');
+  lines.push('    CLICK an option from the list. Typing the text alone leaves the field');
+  lines.push('    empty as far as the form is concerned and submit will fail.');
+  lines.push('  • BVI country names are uppercase with brackets, e.g. VIRGIN ISLANDS (BRITISH),');
+  lines.push('    VIRGIN ISLANDS (U.S.), UNITED STATES, UNITED KINGDOM.');
+  lines.push('  • BVI step 1 has a "I agree to the Terms of Services" checkbox at the');
+  lines.push('    bottom — Save and Continue stays greyed out until it is ticked.');
+  lines.push('  • Never submit. Fill the form, then let the captain review and submit.');
+  lines.push('');
+  lines.push(`TRAVELERS (${travelers.length})`);
+  lines.push('');
+
+  travelers.forEach((t, i) => {
+    const full = [t.firstName, t.middleName, t.lastName].filter(Boolean).join(' ');
+    lines.push(`${i + 1}. ${String(full).toUpperCase()}`);
+    lines.push(`  Surname: ${String(t.lastName || '').toUpperCase()}`);
+    lines.push(`  Given names: ${[t.firstName, t.middleName].filter(Boolean).join(' ').toUpperCase()}`);
+    lines.push(`  Sex: ${t.gender === 'F' ? 'Female' : t.gender === 'M' ? 'Male' : t.gender || '(missing)'}`);
+    lines.push(`  Nationality: ${t.nationality || '(missing)'}`);
+    lines.push(`  Passport number: ${String(t.passportNumber || '').toUpperCase()}`);
+    lines.push(`  Country of issue: ${t.issuingAuthority || '(missing)'}`);
+    lines.push(dateLine('Date of birth', t.dateOfBirth));
+    lines.push(dateLine('Date of issue', t.dateOfIssue));
+    lines.push(dateLine('Expiry date', t.dateOfExpiry));
+    if (t.placeOfBirth) {
+      lines.push(`  Place of birth: ${t.placeOfBirth}`);
+      lines.push('    (SailClear wants a COUNTRY here — if the above is a city, supply the country)');
+    }
+    lines.push('');
+  });
+
+  const boat = (state.boats || []).find(b => b.id === getCurrentBoatId());
+  if (boat) {
+    lines.push('VESSEL');
+    lines.push(`  Name: ${String(boat.vesselName || '').toUpperCase()}`);
+    lines.push(`  Registration: ${String(boat.registrationNumber || '').toUpperCase()}`);
+    if (boat.flagState) lines.push(`  Flag: ${boat.flagState}`);
+    if (boat.homePort) lines.push(`  Home port: ${boat.homePort}`);
+    lines.push('');
+  }
+
+  const trip = (state.trips || []).find(t => t.id === getCurrentTripId());
+  if (trip) {
+    lines.push('TRIP');
+    if (trip.departurePort) lines.push(`  Departure port: ${trip.departurePort}`);
+    if (trip.destinationPorts) lines.push(`  Destination: ${trip.destinationPorts}`);
+    if (trip.purpose) lines.push(`  Purpose: ${trip.purpose}`);
+    const dep = agentDates(trip.departureDate);
+    const ret = agentDates(trip.returnDate);
+    if (dep) lines.push(`  Departure date: ${dep.bvi} [BVI]  ${dep.enoad} [eNOAD]`);
+    if (ret) lines.push(`  Return date: ${ret.bvi} [BVI]  ${ret.enoad} [eNOAD]`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+async function handleCopyForAgent() {
+  const travelers = state.travelers || [];
+  if (!travelers.length) {
+    showToast('No travelers scanned yet', 'error');
+    return;
+  }
+  try {
+    const text = buildAgentText();
+    await navigator.clipboard.writeText(text);
+    showToast(`Copied ${travelers.length} traveler(s) — paste into the AI assistant`, 'success');
+  } catch (err) {
+    console.error('[CrewForms] Copy for AI failed:', err);
+    showToast('Could not copy to clipboard', 'error');
+  }
 }
 
 // ============================================================================

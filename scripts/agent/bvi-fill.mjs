@@ -330,6 +330,21 @@ await typeText('Name of the vessel', vessel.name, { transform: upper });
 await typeText('Email', voyage.contactEmail, { transform: upper });
 await typeText('Phone', voyage.contactPhone);
 
+// "Save and Continue" stays disabled until this is ticked, which reads as the
+// form being broken rather than incomplete.
+const terms = page.locator('mat-checkbox, .mat-mdc-checkbox').filter({ hasText: /Terms of Service/i }).first();
+if (await terms.count()) {
+  const box = terms.locator('input[type="checkbox"]').first();
+  if (!(await box.isChecked())) {
+    await terms.locator('label, .mdc-checkbox').first().click();
+    await page.waitForTimeout(300);
+  }
+  console.log(`  Terms of Services                      ${(await box.isChecked()) ? 'accepted' : 'NOT ticked'}`);
+  if (!(await box.isChecked())) note('Terms checkbox did not tick — Save stays disabled until it does');
+} else {
+  note('Terms of Services checkbox not found');
+}
+
 await page.screenshot({ path: resolve(OUT, 'bvi-filled-step1.png'), fullPage: true });
 
 console.log('\n=== people queued for the Travelers step ===');
