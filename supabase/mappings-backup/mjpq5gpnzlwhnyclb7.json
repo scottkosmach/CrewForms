@@ -1,0 +1,1 @@
+{"id":"mjpq5gpnzlwhnyclb7","name":"Arrival Voyage Details","urlPattern":"https://www.sailclear.com/notification/save*","formType":"static","fillDelay":250,"fields":[{"status":"data","position":8,"inputType":"select-match","dataSource":"boat.vesselName"}],"createdAt":1766926045599,"updatedAt":1766926045599,"version":1}

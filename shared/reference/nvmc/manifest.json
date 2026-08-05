@@ -1,0 +1,30 @@
+{
+  "source": "nvmc-noad-workbook-8.2.xlsx",
+  "extractedAt": "2026-08-05",
+  "tables": {
+    "personCountry": {
+      "file": "personCountry.json",
+      "range": "AJ1:AK242",
+      "entries": 242,
+      "duplicateKeysSkipped": 0
+    },
+    "travelCountry": {
+      "file": "travelCountry.json",
+      "range": "C1:D248",
+      "entries": 242,
+      "duplicateKeysSkipped": 0
+    },
+    "usState": {
+      "file": "usState.json",
+      "range": "AB1:AC73",
+      "entries": 58,
+      "duplicateKeysSkipped": 0
+    },
+    "port": {
+      "file": "port.json",
+      "range": "H1:I12332",
+      "entries": 12113,
+      "duplicateKeysSkipped": 112
+    }
+  }
+}

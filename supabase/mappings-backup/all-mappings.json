@@ -1,0 +1,372 @@
+[
+  {
+    "id": "mjsl97t9crk5cfsrb5t",
+    "name": "enoad-Passanger",
+    "urlPattern": "https://enoad.nvmc.uscg.gov/*",
+    "formType": "static",
+    "fillDelay": 200,
+    "fields": [
+      {
+        "status": "data",
+        "frameUrl": "https://enoad.nvmc.uscg.gov/menu/EditNonCrew.aspx",
+        "position": 8,
+        "inputType": "paste",
+        "dataSource": "traveler.lastName",
+        "frameIndex": 2
+      },
+      {
+        "status": "data",
+        "frameUrl": "https://enoad.nvmc.uscg.gov/menu/EditNonCrew.aspx",
+        "position": 10,
+        "inputType": "paste",
+        "dataSource": "traveler.firstName",
+        "frameIndex": 2
+      },
+      {
+        "status": "data",
+        "frameUrl": "https://enoad.nvmc.uscg.gov/menu/EditNonCrew.aspx",
+        "position": 26,
+        "inputType": "paste",
+        "dataSource": "traveler.gender",
+        "frameIndex": 2
+      },
+      {
+        "status": "static",
+        "frameUrl": "https://enoad.nvmc.uscg.gov/menu/EditNonCrew.aspx",
+        "position": 52,
+        "tabAfter": true,
+        "inputType": "paste",
+        "frameIndex": 2,
+        "staticValue": "Virgin Island"
+      }
+    ],
+    "createdAt": 1767099230975,
+    "updatedAt": 1767099230975,
+    "version": 1
+  },
+  {
+    "id": "mjpq5gpnzlwhnyclb7",
+    "name": "Arrival Voyage Details",
+    "urlPattern": "https://www.sailclear.com/notification/save*",
+    "formType": "static",
+    "fillDelay": 250,
+    "fields": [
+      {
+        "status": "data",
+        "position": 8,
+        "inputType": "select-match",
+        "dataSource": "boat.vesselName"
+      }
+    ],
+    "createdAt": 1766926045599,
+    "updatedAt": 1766926045599,
+    "version": 1
+  },
+  {
+    "id": "mjopxm8gruafsdlxo1",
+    "name": "sailclear",
+    "urlPattern": "https://sailclear.com/individual/save*",
+    "formType": "static",
+    "fillDelay": 200,
+    "fields": [
+      {
+        "config": {
+          "keypressMap": {
+            "value_1766869082365": {
+              "key": "p",
+              "count": 1
+            },
+            "value_1766869083225": {
+              "key": "Enter",
+              "count": 1
+            }
+          },
+          "keypressDelay": 250
+        },
+        "status": "static",
+        "position": 1,
+        "inputType": "select-keypress",
+        "staticValue": ""
+      },
+      {
+        "config": {
+          "keypressMap": {
+            "value_1766869350169": {
+              "key": "p",
+              "count": 1
+            },
+            "value_1766869352534": {
+              "key": "Enter",
+              "count": 1
+            }
+          },
+          "keypressDelay": 250
+        },
+        "status": "static",
+        "position": 3,
+        "inputType": "select-keypress",
+        "staticValue": ""
+      },
+      {
+        "status": "data",
+        "position": 4,
+        "inputType": "paste",
+        "dataSource": "traveler.passportNumber"
+      },
+      {
+        "status": "data",
+        "position": 5,
+        "inputType": "paste",
+        "dataSource": "traveler.lastName"
+      },
+      {
+        "config": {
+          "keypressMap": {
+            "value_1766865136322": {
+              "key": "u",
+              "count": 5
+            },
+            "value_1766865137284": {
+              "key": "Enter",
+              "count": 1
+            }
+          },
+          "keypressDelay": 250
+        },
+        "status": "static",
+        "position": 6,
+        "inputType": "select-keypress",
+        "staticValue": ""
+      },
+      {
+        "status": "data",
+        "position": 7,
+        "inputType": "paste",
+        "dataSource": "traveler.firstName"
+      },
+      {
+        "status": "data",
+        "position": 8,
+        "inputType": "paste",
+        "dataSource": "traveler.dateOfIssue",
+        "dateFormat": "MM/DD/YYYY"
+      },
+      {
+        "status": "data",
+        "position": 10,
+        "inputType": "paste",
+        "dataSource": "traveler.dateOfExpiry",
+        "dateFormat": "MM/DD/YYYY"
+      },
+      {
+        "status": "data",
+        "position": 11,
+        "inputType": "paste",
+        "dataSource": "traveler.dateOfBirth",
+        "dateFormat": "MM/DD/YYYY"
+      },
+      {
+        "config": {
+          "keypressMap": {
+            "value_1766886149610": {
+              "key": "u",
+              "count": 5
+            },
+            "value_1766886150658": {
+              "key": "Enter",
+              "count": 1
+            }
+          },
+          "keypressDelay": 200
+        },
+        "status": "static",
+        "position": 12,
+        "inputType": "select-keypress",
+        "staticValue": ""
+      },
+      {
+        "config": {
+          "keypressMap": {
+            "value_1766874859650": {
+              "key": "u",
+              "count": 5
+            },
+            "value_1766874860397": {
+              "key": "Enter",
+              "count": 1
+            }
+          },
+          "keypressDelay": 200
+        },
+        "status": "static",
+        "position": 13,
+        "inputType": "select-keypress",
+        "staticValue": ""
+      },
+      {
+        "config": {
+          "keypressMap": {
+            "F": {
+              "key": "f",
+              "count": 1
+            },
+            "M": {
+              "key": "m",
+              "count": 1
+            }
+          },
+          "keypressDelay": 250
+        },
+        "status": "data",
+        "position": 14,
+        "inputType": "select-keypress",
+        "dataSource": "traveler.gender"
+      }
+    ],
+    "createdAt": 1766865214586,
+    "updatedAt": 1766886421989,
+    "version": 16
+  },
+  {
+    "id": "example-port-authority",
+    "name": "Example Port Authority",
+    "urlPattern": "https://portauthority.example.gov/*",
+    "formType": "dynamic-guest-blocks",
+    "fillDelay": 100,
+    "fields": [
+      {
+        "position": 1,
+        "inputType": "text",
+        "dataSource": "traveler.firstName"
+      },
+      {
+        "position": 2,
+        "inputType": "text",
+        "dataSource": "traveler.middleName"
+      },
+      {
+        "position": 3,
+        "inputType": "text",
+        "dataSource": "traveler.lastName"
+      },
+      {
+        "position": 4,
+        "inputType": "text",
+        "dataSource": "traveler.passportNumber"
+      },
+      {
+        "position": 5,
+        "inputType": "select-match",
+        "dataSource": "traveler.dateOfBirth.month"
+      },
+      {
+        "position": 6,
+        "inputType": "select-match",
+        "dataSource": "traveler.dateOfBirth.day"
+      },
+      {
+        "position": 7,
+        "inputType": "select-match",
+        "dataSource": "traveler.dateOfBirth.year"
+      },
+      {
+        "position": 8,
+        "inputType": "radio",
+        "dataSource": "traveler.gender"
+      },
+      {
+        "config": {
+          "keypressMap": {
+            "Canada": {
+              "key": "C",
+              "count": 2
+            },
+            "Australia": {
+              "key": "A",
+              "count": 2
+            },
+            "United States": {
+              "key": "U",
+              "count": 4
+            },
+            "United Kingdom": {
+              "key": "U",
+              "count": 5
+            }
+          }
+        },
+        "position": 9,
+        "inputType": "select-keypress",
+        "dataSource": "traveler.nationality"
+      },
+      {
+        "config": {
+          "format": "MM/DD/YYYY"
+        },
+        "position": 10,
+        "inputType": "date-text",
+        "dataSource": "traveler.dateOfExpiry"
+      }
+    ],
+    "createdAt": 1766857322223,
+    "updatedAt": 1766857322223,
+    "version": 1
+  },
+  {
+    "id": "example-boat-registry",
+    "name": "Example Boat Registry",
+    "urlPattern": "https://boats.example.gov/*",
+    "formType": "static",
+    "fillDelay": 100,
+    "fields": [
+      {
+        "position": 1,
+        "inputType": "text",
+        "dataSource": "boat.vesselName"
+      },
+      {
+        "position": 2,
+        "inputType": "text",
+        "dataSource": "boat.registrationNumber"
+      },
+      {
+        "position": 3,
+        "inputType": "select-match",
+        "dataSource": "boat.flagState"
+      },
+      {
+        "position": 4,
+        "inputType": "text",
+        "dataSource": "boat.homePort"
+      },
+      {
+        "position": 5,
+        "inputType": "select-match",
+        "dataSource": "boat.vesselType"
+      },
+      {
+        "position": 6,
+        "inputType": "text",
+        "dataSource": "boat.capacity"
+      },
+      {
+        "position": 7,
+        "inputType": "text",
+        "dataSource": "captain.firstName"
+      },
+      {
+        "position": 8,
+        "inputType": "text",
+        "dataSource": "captain.lastName"
+      },
+      {
+        "position": 9,
+        "inputType": "text",
+        "dataSource": "captain.licenseNumber"
+      }
+    ],
+    "createdAt": 1766857322223,
+    "updatedAt": 1766857322223,
+    "version": 1
+  }
+]
