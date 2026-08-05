@@ -75,14 +75,20 @@ function rowToMapping(row: SiteMappingRow): SiteMapping & { fillDelay: number } 
  * Check if a URL matches a pattern (supports * wildcards)
  */
 function urlMatchesPattern(url: string, pattern: string): boolean {
+  // Strip protocol and www. from both URL and pattern so matching works
+  // regardless of whether https:// or www. is included
+  const normalizeUrl = (s: string) => s.replace(/^https?:\/\//, '').replace(/^www\./, '');
+  const normalizedUrl = normalizeUrl(url);
+  const normalizedPattern = normalizeUrl(pattern);
+
   // Convert pattern to regex
   // Escape special regex chars except *
-  const regexPattern = pattern
+  const regexPattern = normalizedPattern
     .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
     .replace(/\*/g, '.*');
-  
+
   const regex = new RegExp(`^${regexPattern}$`, 'i');
-  return regex.test(url);
+  return regex.test(normalizedUrl);
 }
 
 /**
