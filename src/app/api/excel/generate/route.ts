@@ -26,7 +26,8 @@ import ExcelJS from 'exceljs';
 interface ColumnMapping {
   col: string;           // Column letter (e.g., 'C', 'D')
   row?: number;          // Fixed row for 'single' dataType
-  source: string;        // Data source path (e.g., 'traveler.lastName')
+  source?: string;       // Data source path (e.g., 'traveler.lastName')
+  constant?: string;     // Literal value, written verbatim (ignores source)
   required?: boolean;    // Whether the field is required
   format?: string;       // Date format (e.g., 'YYYY-MM-DD')
   valueMap?: Record<string, string>;  // Value transformations
@@ -135,11 +136,19 @@ function fillCell(
   value: string | undefined,
   mapping: ColumnMapping
 ): void {
+  // A constant is written verbatim on every row. Both targets need this for
+  // fields no passport carries: SailClear requires MaritalStatus and
+  // DefaultRankKey, NVMC requires ID Type and the embark country/state.
+  if (mapping.constant !== undefined) {
+    worksheet.getCell(row, colLetterToNumber(col)).value = mapping.constant;
+    return;
+  }
+
   // Skip if no value and not required
   if (!value && !mapping.required) {
     return;
   }
-  
+
   // Apply date formatting if specified
   let finalValue = value || '';
   if (mapping.format && value) {
@@ -170,7 +179,7 @@ function fillTravelerSheet(
     
     // Fill each column for this traveler
     sheetConfig.columns.forEach(mapping => {
-      const value = getValue(dataContext, mapping.source);
+      const value = mapping.source ? getValue(dataContext, mapping.source) : undefined;
       fillCell(worksheet, rowNum, mapping.col, value, mapping);
     });
   });
@@ -207,7 +216,7 @@ function fillCrewSheet(
     
     // Fill each column
     sheetConfig.columns.forEach(mapping => {
-      const value = getValue(dataContext, mapping.source);
+      const value = mapping.source ? getValue(dataContext, mapping.source) : undefined;
       fillCell(worksheet, rowNum, mapping.col, value, mapping);
     });
   });
@@ -232,7 +241,7 @@ function fillSingleSheet(
   sheetConfig.columns.forEach(mapping => {
     // For 'single' type, row is specified in the mapping
     const rowNum = mapping.row || sheetConfig.startRow;
-    const value = getValue(dataContext, mapping.source);
+    const value = mapping.source ? getValue(dataContext, mapping.source) : undefined;
     fillCell(worksheet, rowNum, mapping.col, value, mapping);
   });
 }

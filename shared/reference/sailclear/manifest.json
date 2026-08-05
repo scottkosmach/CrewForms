@@ -1,0 +1,12 @@
+{
+  "source": "sailclear-individual-format.xlsx",
+  "extractedAt": "2026-08-05",
+  "counts": {
+    "countries": 261,
+    "documentType": 3,
+    "maritalStatus": 8,
+    "rank": 3,
+    "gender": 2,
+    "individualsHeader": 16
+  }
+}
