@@ -1701,8 +1701,48 @@ function buildAgentText(site) {
 
   lines.push('Anything not listed above (contact details, purpose of visit, where we are');
   lines.push('staying) I will give you — just ask.');
+  lines.push('');
+  debriefSection(site).forEach((l) => lines.push(l));
 
   return lines.join('\n');
+}
+
+/**
+ * Ask for a debrief once the form is filled.
+ *
+ * Every real filing is the only chance we get to learn how these forms actually
+ * behave — they are login-walled or behind bot protection, so we cannot probe
+ * them offline. What comes back here is the raw material for label-based field
+ * matching later: exact label text, control types, and the real option strings,
+ * which is exactly what we could not obtain any other way.
+ *
+ * Deliberately asks only about friction. A full field inventory would be long
+ * and mostly uninteresting; the fields that fought back are the ones worth
+ * knowing about.
+ */
+function debriefSection(site) {
+  const p = SITE_PROFILE[site] || SITE_PROFILE.bvi;
+  return [
+    '─'.repeat(60),
+    'WHEN YOU HAVE FINISHED FILLING (before I submit), please write a short',
+    'debrief. We are building automation for this form and this is the only way',
+    `we learn how ${p.url} really behaves. Keep it to what actually gave trouble:`,
+    '',
+    '  1. Fields that did not go smoothly — for each, the label exactly as shown',
+    '     on screen, what kind of control it is (text / dropdown / date picker /',
+    '     radio / checkbox), and what you had to do to make it take the value.',
+    '  2. Any dropdown where my value did not match an option: list the exact',
+    '     option strings it offered. Verbatim, including any code prefixes.',
+    '  3. Required fields I did not give you data for.',
+    '  4. Any validation message you hit, quoted exactly, and what cleared it.',
+    '  5. Formats you confirmed from the page itself — date order, whether it',
+    '     insists on uppercase, character limits.',
+    '  6. Anything that appeared or disappeared depending on another field, or',
+    '     that silently reverted after you set it.',
+    '  7. Anything you could not do without me.',
+    '',
+    'Short and specific is better than thorough. If something went cleanly, skip it.',
+  ];
 }
 
 function currentAgentSite() {
