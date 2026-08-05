@@ -19,7 +19,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const DEFAULT_TEMPLATE = resolve(
   REPO,
-  'extension/assets/templates/sailclear-individual-format.xlsx',
+  'assets/templates/sailclear-individual-format.xlsx',
 );
 const OUT_DIR = resolve(REPO, 'shared/reference/sailclear');
 

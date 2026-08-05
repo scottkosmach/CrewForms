@@ -1,6 +1,6 @@
 # NVMC reference tables
 
-Extracted from the official **NOAD Workbook 8.2** (`extension/assets/templates/nvmc-noad-workbook-8.2.xlsx`) by `scripts/extract-nvmc-lookups.mjs`. Regenerate whenever NVMC publishes a new workbook version:
+Extracted from the official **NOAD Workbook 8.2** (`assets/templates/nvmc-noad-workbook-8.2.xlsx`) by `scripts/extract-nvmc-lookups.mjs`. Regenerate whenever NVMC publishes a new workbook version:
 
 ```bash
 node scripts/extract-nvmc-lookups.mjs

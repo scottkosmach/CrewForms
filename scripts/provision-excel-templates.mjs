@@ -147,7 +147,7 @@ const TEMPLATES = [
       'Official NVMC NOAD Workbook 8.2. Import via Add Notice > Import Notice, ' +
       'or email to enoad@nvmc.uscg.gov. Country codes are written as literals ' +
       'because the workbook VLOOKUPs do not recalculate outside Excel.',
-    file: 'extension/assets/templates/nvmc-noad-workbook-8.2.xlsx',
+    file: 'assets/templates/nvmc-noad-workbook-8.2.xlsx',
     storagePath: 'nvmc-noad-workbook-8.2.xlsx',
     sheets: [nvmcNonCrew, nvmcCrew],
     unfilledRequired: [
@@ -165,7 +165,7 @@ const TEMPLATES = [
       'SailClear bulk individual upload. Upload at /dashboard/individuals. ' +
       'Covers the person record only; vessel, voyage and health declaration ' +
       'are still entered in the wizard.',
-    file: 'extension/assets/templates/sailclear-individual-format.xlsx',
+    file: 'assets/templates/sailclear-individual-format.xlsx',
     storagePath: 'sailclear-individual-format.xlsx',
     sheets: [sailclearIndividuals],
     unfilledRequired: ['G BirthCountry when the passport prints a city rather than a country'],

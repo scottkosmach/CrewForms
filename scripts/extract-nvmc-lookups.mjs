@@ -23,7 +23,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const DEFAULT_WORKBOOK = resolve(
   REPO,
-  'extension/assets/templates/nvmc-noad-workbook-8.2.xlsx',
+  'assets/templates/nvmc-noad-workbook-8.2.xlsx',
 );
 const OUT_DIR = resolve(REPO, 'shared/reference/nvmc');
 

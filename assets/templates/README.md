@@ -16,7 +16,7 @@ $url = "https://www.nvmc.uscg.gov/Forms/Official%20NVMC%20NOAD%20Workbook%20-%20
 $ref = "https://www.nvmc.uscg.gov/Items.aspx?id=32D47D72-5CDB-4A21-B119-1A623D27D833"
 $ua  = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 Invoke-WebRequest -Uri $url -Headers @{ Referer = $ref; "User-Agent" = $ua } `
-  -OutFile "extension/assets/templates/nvmc-noad-workbook-8.2.xlsx"
+  -OutFile "assets/templates/nvmc-noad-workbook-8.2.xlsx"
 ```
 
 ### Sheets
