@@ -93,13 +93,31 @@ function aliasesFor(pair) {
 }
 
 /**
+ * BVI Immigration uses a third spelling again: UPPERCASE, with the inverted
+ * suffix in parentheses rather than after a comma. Verified against the live
+ * dropdown — "VIRGIN ISLANDS (BRITISH)", "VIRGIN ISLANDS (U.S.)",
+ * "UNITED STATES", "UNITED KINGDOM".
+ */
+export function toBviCountry(nvmcName) {
+  const upper = String(nvmcName).toUpperCase();
+  const i = upper.indexOf(', ');
+  if (i === -1) return upper;
+  return `${upper.slice(0, i)} (${upper.slice(i + 2)})`;
+}
+
+/**
  * valueMap for a display column: any accepted spelling -> the target's exact
- * string. `target` is 'nvmc' or 'sailclear'.
+ * string. `target` is 'nvmc', 'sailclear' or 'bvi'.
  */
 export function buildCountryNameMap(target) {
   const map = {};
   for (const pair of buildCountryPairs()) {
-    const value = target === 'nvmc' ? pair.nvmc : pair.sailclear;
+    const value =
+      target === 'nvmc'
+        ? pair.nvmc
+        : target === 'bvi'
+          ? toBviCountry(pair.nvmc)
+          : pair.sailclear;
     if (!value) continue;
     for (const alias of aliasesFor(pair)) {
       // First writer wins so an alias shared by two countries cannot be

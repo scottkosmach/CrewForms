@@ -1,0 +1,53 @@
+{
+  "_comment": [
+    "Vessel and voyage details for one filing. The passport data comes from the",
+    "generated SailClear XLSX; this file supplies everything a passport does not",
+    "carry. Copy to trip.json and fill in. trip.json is gitignored — it is",
+    "operational data, not source.",
+    "",
+    "direction: 'arrival' means arriving INTO the BVI from the USVI.",
+    "Run it again with 'departure' for the return leg."
+  ],
+
+  "direction": "arrival",
+
+  "vessel": {
+    "name": "SEA BREEZE",
+    "registrationNumber": "VI-1234-AB",
+    "countryOfRegistration": "United States",
+    "transportType": "CREWED CHARTER",
+    "type": "SEA VESSEL"
+  },
+
+  "voyage": {
+    "intendedDate": "2026-08-06",
+    "intendedTime": "14:30",
+
+    "portOfEntry": "ROAD TOWN, TORTOLA",
+    "portOfEmbarkation": "CHARLOTTE AMALIE HARBOR, ST. THOMAS",
+    "initialPortOfEmbarkation": "CHARLOTTE AMALIE HARBOR, ST. THOMAS",
+    "finalDestination": "ROAD TOWN, TORTOLA",
+
+    "embarkCountry": "United States",
+    "embarkState": "Virgin Islands",
+    "embarkDate": "2026-08-06",
+
+    "purposeOfVisit": "Tourism",
+    "durationOfStay": "7",
+
+    "contactEmail": "captain@example.com",
+    "contactPhone": "+1 340 555 0100"
+  },
+
+  "accommodation": {
+    "type": "Other",
+    "localCity": "Road Town",
+    "localAddress": "Aboard vessel SEA BREEZE, Village Cay Marina, slip A12"
+  },
+
+  "defaults": {
+    "_comment": "Applied to every guest unless the guest record overrides it.",
+    "countryOfResidence": "United States",
+    "travelingAs": "PASSENGER"
+  }
+}
