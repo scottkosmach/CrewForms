@@ -1,13 +1,17 @@
 /**
  * Session Management API
- * 
+ *
  * Creates and manages upload sessions for QR code-based image transfer.
  * Sessions are short-lived (5 minutes) and stored in Supabase.
+ *
+ * SECURITY NOTE: a session id is a bearer secret. Anyone holding one can drain
+ * that session's passport images via /api/sessions/[id]/images, so ids must not
+ * be listed by any endpoint and must not be written to logs in full.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 // Force dynamic rendering - sessions must never be cached
 export const dynamic = 'force-dynamic';
@@ -27,6 +31,14 @@ export interface Session {
 // Session expiry time (5 minutes)
 const SESSION_EXPIRY_MS = 5 * 60 * 1000;
 
+/**
+ * Session ids are credentials, so logs get a short prefix only — enough to
+ * correlate lines from one upload, useless for replaying it.
+ */
+function tag(sessionId: string): string {
+  return `${sessionId.slice(0, 4)}…`;
+}
+
 // ============================================================================
 // API HANDLERS
 // ============================================================================
@@ -37,14 +49,14 @@ const SESSION_EXPIRY_MS = 5 * 60 * 1000;
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
+    const supabase = createAdminClient();
+
     // Generate unique session ID
     const sessionId = nanoid(12);
-    
+
     // Calculate expiry time
     const expiresAt = new Date(Date.now() + SESSION_EXPIRY_MS).toISOString();
-    
+
     // Create session in Supabase
     const { error } = await supabase
       .from('upload_sessions')
@@ -54,25 +66,25 @@ export async function POST(request: NextRequest) {
         images: [],
         connected: false
       });
-    
+
     if (error) {
       console.error('Failed to create session in Supabase:', error);
       throw new Error('Failed to create session');
     }
-    
+
     // Build upload URL
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ||
                     request.nextUrl.origin;
     const uploadUrl = `${baseUrl}/upload/${sessionId}`;
-    
-    console.log(`Created session ${sessionId}, upload URL: ${uploadUrl}`);
-    
+
+    console.log(`Created session ${tag(sessionId)}`);
+
     return NextResponse.json({
       sessionId,
       uploadUrl,
       expiresAt
     });
-    
+
   } catch (error) {
     console.error('Failed to create session:', error);
     return NextResponse.json(
@@ -82,43 +94,14 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * GET /api/sessions
- * List active sessions (for debugging)
- */
-export async function GET() {
-  try {
-    const supabase = await createClient();
-    
-    // Get all non-expired sessions
-    const { data: sessions, error } = await supabase
-      .from('upload_sessions')
-      .select('*')
-      .gt('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      throw error;
-    }
-    
-    const sessionList = (sessions || []).map(s => ({
-      id: s.id,
-      createdAt: s.created_at,
-      expiresAt: s.expires_at,
-      imageCount: (s.images as string[])?.length || 0,
-      connected: s.connected
-    }));
-    
-    return NextResponse.json({ sessions: sessionList });
-    
-  } catch (error) {
-    console.error('Failed to list sessions:', error);
-    return NextResponse.json(
-      { error: 'Failed to list sessions' },
-      { status: 500 }
-    );
-  }
-}
+// NOTE: there is deliberately no GET /api/sessions.
+//
+// It used to list every active session id, unauthenticated. Combined with the
+// unvalidated images endpoint that made passport images readable by anyone:
+// list the ids, then fetch the images — no credentials required. Worse, the
+// fetch clears the queue, so the theft also destroyed the captain's upload.
+// Nothing ever called it (the extension's only bare-path request is the POST
+// above), so it is gone rather than gated.
 
 // ============================================================================
 // EXPORTED UTILITIES (for use by other API routes)
@@ -128,19 +111,19 @@ export async function GET() {
  * Get a session by ID
  */
 export async function getSession(sessionId: string): Promise<Session | null> {
-  const supabase = await createClient();
-  
+  const supabase = createAdminClient();
+
   const { data, error } = await supabase
     .from('upload_sessions')
     .select('*')
     .eq('id', sessionId)
     .gt('expires_at', new Date().toISOString())
     .single();
-  
+
   if (error || !data) {
     return null;
   }
-  
+
   return {
     id: data.id,
     created_at: data.created_at,
@@ -151,13 +134,26 @@ export async function getSession(sessionId: string): Promise<Session | null> {
 }
 
 /**
+ * Check that a session exists and has not expired, without loading its images.
+ */
+export async function sessionExists(sessionId: string): Promise<boolean> {
+  const supabase = createAdminClient();
+
+  const { data, error } = await supabase
+    .from('upload_sessions')
+    .select('id')
+    .eq('id', sessionId)
+    .gt('expires_at', new Date().toISOString())
+    .maybeSingle();
+
+  return !error && !!data;
+}
+
+/**
  * Add image to session for relay (atomic — no read-modify-write race condition)
  */
 export async function addImageToSession(sessionId: string, imageData: string): Promise<boolean> {
-  const supabase = await createClient();
-
-  console.log(`[addImageToSession] Atomically appending image to session ${sessionId}`);
-  console.log(`[addImageToSession] Image data length: ${imageData.length}`);
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase.rpc('append_session_image', {
     p_session_id: sessionId,
@@ -165,16 +161,14 @@ export async function addImageToSession(sessionId: string, imageData: string): P
   });
 
   if (error) {
-    console.error(`[addImageToSession] RPC error:`, error);
+    console.error(`[addImageToSession] RPC error for ${tag(sessionId)}:`, error);
     return false;
   }
 
   const success = data === true;
 
   if (!success) {
-    console.log(`[addImageToSession] Session ${sessionId} not found or expired`);
-  } else {
-    console.log(`[addImageToSession] Successfully appended image to session ${sessionId}`);
+    console.log(`[addImageToSession] Session ${tag(sessionId)} not found or expired`);
   }
 
   return success;
@@ -184,22 +178,20 @@ export async function addImageToSession(sessionId: string, imageData: string): P
  * Get and clear pending images from session (atomic — row-level lock prevents race conditions)
  */
 export async function getPendingImages(sessionId: string): Promise<string[]> {
-  const supabase = await createClient();
-
-  console.log(`[getPendingImages] Atomically fetching and clearing images for session ${sessionId}`);
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase.rpc('fetch_and_clear_session_images', {
     p_session_id: sessionId
   });
 
   if (error) {
-    console.error(`[getPendingImages] RPC error:`, error);
+    console.error(`[getPendingImages] RPC error for ${tag(sessionId)}:`, error);
     return [];
   }
 
   // The RPC returns a JSONB array — parse it to string[]
   const images: string[] = Array.isArray(data) ? data : [];
-  console.log(`[getPendingImages] Retrieved ${images.length} image(s) from session ${sessionId}`);
+  console.log(`[getPendingImages] Relayed ${images.length} image(s) for ${tag(sessionId)}`);
 
   return images;
 }
@@ -208,8 +200,8 @@ export async function getPendingImages(sessionId: string): Promise<string[]> {
  * Mark session as connected
  */
 export async function setSessionConnected(sessionId: string, connected: boolean): Promise<void> {
-  const supabase = await createClient();
-  
+  const supabase = createAdminClient();
+
   await supabase
     .from('upload_sessions')
     .update({ connected })
@@ -220,8 +212,8 @@ export async function setSessionConnected(sessionId: string, connected: boolean)
  * Delete a session
  */
 export async function deleteSession(sessionId: string): Promise<void> {
-  const supabase = await createClient();
-  
+  const supabase = createAdminClient();
+
   await supabase
     .from('upload_sessions')
     .delete()

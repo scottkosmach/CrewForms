@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getPendingImages } from '../../route';
+import { getPendingImages, sessionExists } from '../../route';
 
 // ============================================================================
 // API HANDLERS
@@ -22,13 +22,20 @@ export async function GET(
 ) {
   const { sessionId } = await params;
 
-  console.log(`[Images API] GET request for session ${sessionId}`);
+  // Reject unknown or expired sessions explicitly. This endpoint used to return
+  // an empty array for any id, which made it a free oracle: probe ids, and any
+  // that were live could be drained on the next call. A 404 stops the probing,
+  // and the RPC still enforces expiry itself for the race between the two.
+  if (!(await sessionExists(sessionId))) {
+    return NextResponse.json(
+      { error: 'Session not found or expired' },
+      { status: 404 }
+    );
+  }
 
   // Atomically fetch and clear pending images
   // The RPC function handles session validation and row-level locking internally
   const images = await getPendingImages(sessionId);
-
-  console.log(`[Images API] Returning ${images.length} images from session ${sessionId}`);
 
   return NextResponse.json({
     images,

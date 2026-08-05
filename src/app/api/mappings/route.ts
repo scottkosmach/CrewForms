@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 // ============================================================================
 // TYPES
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
   const id = searchParams.get('id');
   
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     
     // Get specific mapping by ID
     if (id) {
@@ -222,7 +222,7 @@ export async function POST(request: NextRequest) {
     // Generate ID from URL pattern
     const id = body.id || generateMappingId(body.urlPattern);
     
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     
     // Check for duplicate
     const { data: existing } = await supabase
@@ -289,7 +289,7 @@ export async function PUT(request: NextRequest) {
       );
     }
     
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     
     // Check if mapping exists
     const { data: existing, error: fetchError } = await supabase
@@ -358,7 +358,7 @@ export async function DELETE(request: NextRequest) {
   }
   
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     
     // Check if mapping exists
     const { data: existing } = await supabase

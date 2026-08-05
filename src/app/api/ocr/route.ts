@@ -201,11 +201,21 @@ export async function POST(request: NextRequest) {
     try {
       passportData = JSON.parse(jsonContent);
     } catch (parseError) {
-      console.error('Failed to parse OCR response:', content);
+      // Deliberately not logging `content`: on a parse failure it still holds
+      // whatever the model read off the passport.
+      console.error(
+        `Failed to parse OCR response (${content?.length ?? 0} chars)`,
+      );
       throw new Error('Failed to parse OCR response');
     }
-    
-    console.log('OCR extraction complete:', passportData.firstName, passportData.lastName);
+
+    // Log shape and confidence only — never the extracted values.
+    const fieldsFound = Object.entries(passportData).filter(
+      ([key, value]) => key !== 'confidence' && value != null && value !== '',
+    ).length;
+    console.log(
+      `OCR extraction complete: ${fieldsFound} fields, confidence ${passportData.confidence ?? 'n/a'}`,
+    );
     
     // Return extracted data
     return NextResponse.json(passportData);
