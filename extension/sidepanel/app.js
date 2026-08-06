@@ -1491,7 +1491,15 @@ function agentDates(d) {
   const dd = String(d.day).padStart(2, '0');
   const mm = String(d.month).padStart(2, '0');
   const yyyy = String(d.year).padStart(4, '0');
-  return { bvi: `${dd}/${mm}/${yyyy}`, sailclear: `${mm}-${dd}-${yyyy}`, enoad: `${yyyy}-${mm}-${dd}` };
+  return {
+    bvi: `${dd}/${mm}/${yyyy}`,
+    // SailClear's WEB FORM is day-first, confirmed on the live site 2026-08-05.
+    // Only their bulk spreadsheet uses MM-DD-YYYY, and that is produced
+    // server-side by the Excel generator — this value is for typing into the
+    // form, so it must be DD/MM/YYYY.
+    sailclear: `${dd}/${mm}/${yyyy}`,
+    enoad: `${yyyy}-${mm}-${dd}`,
+  };
 }
 
 /**
@@ -1508,7 +1516,12 @@ function dateFor(site, d) {
 
 function dateLine(site, label, d) {
   const v = dateFor(site, d);
-  return `  ${label}: ${v ?? '(MISSING — read it off the passport image)'}`;
+  if (!v) return `  ${label}: (MISSING — read it off the passport image)`;
+  const spelled = spelledDate(d);
+  // The spelled form is the safety net: it cannot be transposed, so if the
+  // assistant is ever unsure which half is the day it has an unambiguous
+  // reference sitting next to the value it is about to type.
+  return `  ${label}: ${v}${spelled ? `   (${spelled})` : ''}`;
 }
 
 /** Each site validates against its own spelling of the same country. */
@@ -1530,11 +1543,100 @@ const SITE_PROFILE = {
   sailclear: {
     name: 'SailClear',
     url: 'sailclear.com',
-    dateFormat: 'MM-DD-YYYY (as used by their spreadsheet — confirm the web form matches)',
+    // Corrected 2026-08-05 after the first real run. The live web form is
+    // DAY FIRST; only their bulk spreadsheet uses MM-DD-YYYY. We were emitting
+    // the spreadsheet format, which would transpose any date whose day and
+    // month are both <= 12.
+    dateFormat: 'DD/MM/YYYY (DAY FIRST)',
     countryStyle: 'Title case: United States, United Kingdom, British Virgin Islands',
     upperNames: false,
   },
 };
+
+/**
+ * Long-form date, e.g. "13 December 1954".
+ *
+ * Emitted next to every date because a written month cannot be transposed.
+ * Three forms are in play across these sites — DD/MM/YYYY, MM-DD-YYYY and
+ * YYYY-MM-DD — and a date like 06-02 is silently valid in all of them while
+ * meaning something different in each.
+ */
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function spelledDate(d) {
+  if (!d || !d.day || !d.month || !d.year) return null;
+  const mi = Number(d.month) - 1;
+  if (!(mi >= 0 && mi < 12)) return null;
+  return `${Number(d.day)} ${MONTH_NAMES[mi]} ${d.year}`;
+}
+
+/**
+ * OCR reads what the passport prints, which is often the issuing *authority*.
+ * Every one of these forms wants a country, and "UNITED STATES DEPARTMENT OF
+ * STATE" matched nothing on any of the three.
+ */
+function toCountry(raw) {
+  let v = String(raw || '').trim();
+  if (!v) return '';
+  v = v
+    .replace(/\bDEPARTMENT OF STATE\b/gi, '')
+    .replace(/\bMINISTRY OF (FOREIGN AFFAIRS|INTERIOR|HOME AFFAIRS)\b/gi, '')
+    .replace(/\bPASSPORT (OFFICE|AGENCY|AUTHORITY)\b/gi, '')
+    .replace(/\bHM PASSPORT OFFICE\b/gi, 'UNITED KINGDOM')
+    .replace(/\bU\.?S\.?A\.?\b/gi, 'UNITED STATES')
+    .replace(/\s*,\s*$/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  // "UNITED STATES OF AMERICA" is how passports write it; no form offers it.
+  v = v.replace(/^UNITED STATES OF AMERICA$/i, 'UNITED STATES');
+  return v || String(raw).trim();
+}
+
+/**
+ * BVI's Nationality field is a DEMONYM list, not a country list — the only
+ * valid option for a US passport is "AMERICAN". Nothing in "UNITED STATES OF
+ * AMERICA" fuzzy-matches it, so this has to be an explicit table.
+ *
+ * Covers the nationalities that actually turn up on Caribbean charters.
+ * Anything absent falls through and the prompt tells the assistant to pick the
+ * demonym from the list rather than guess.
+ */
+const NATIONALITY_DEMONYM = {
+  'UNITED STATES': 'AMERICAN',
+  'UNITED KINGDOM': 'BRITISH',
+  CANADA: 'CANADIAN',
+  GERMANY: 'GERMAN',
+  FRANCE: 'FRENCH',
+  ITALY: 'ITALIAN',
+  SPAIN: 'SPANISH',
+  NETHERLANDS: 'DUTCH',
+  BELGIUM: 'BELGIAN',
+  SWITZERLAND: 'SWISS',
+  AUSTRIA: 'AUSTRIAN',
+  SWEDEN: 'SWEDISH',
+  NORWAY: 'NORWEGIAN',
+  DENMARK: 'DANISH',
+  FINLAND: 'FINNISH',
+  IRELAND: 'IRISH',
+  PORTUGAL: 'PORTUGUESE',
+  POLAND: 'POLISH',
+  AUSTRALIA: 'AUSTRALIAN',
+  'NEW ZEALAND': 'NEW ZEALANDER',
+  'SOUTH AFRICA': 'SOUTH AFRICAN',
+  BRAZIL: 'BRAZILIAN',
+  ARGENTINA: 'ARGENTINE',
+  MEXICO: 'MEXICAN',
+  'VIRGIN ISLANDS (BRITISH)': 'BRITISH VIRGIN ISLANDER',
+  'BRITISH VIRGIN ISLANDS': 'BRITISH VIRGIN ISLANDER',
+};
+
+function demonymFor(raw) {
+  const c = toCountry(raw).toUpperCase();
+  return NATIONALITY_DEMONYM[c] || null;
+}
 
 /**
  * Render a country the way the target site spells it.
@@ -1545,9 +1647,17 @@ const SITE_PROFILE = {
  * matched against the live dropdown, which the prompt tells it to do.
  */
 function countryFor(site, value) {
-  const v = String(value || '').trim();
+  const v = toCountry(value);
   if (!v) return '(missing)';
-  return site === 'sailclear' ? v : v.toUpperCase();
+  if (site !== 'sailclear') return v.toUpperCase();
+  // SailClear's dropdowns are Title Case. Passports print in caps, so the value
+  // arrives as UNITED STATES and has to be re-cased or it matches nothing.
+  return v
+    .toLowerCase()
+    .replace(/\b[a-z]/g, (c) => c.toUpperCase())
+    .replace(/\bOf\b/g, 'of')
+    .replace(/\bAnd\b/g, 'and')
+    .replace(/\bThe\b/g, 'the');
 }
 
 /** The site-specific half of the prompt — the part that is hard-won. */
@@ -1576,6 +1686,24 @@ function siteRules(site) {
       '    ONE AT A TIME with "Save & Add Traveler". Travel document type is fixed to PASSPORT.',
       '  • At the end it shows a Manifest ID — tell the captain to write it down. Editing',
       '    later needs that ID plus the vessel registration number.',
+      '',
+      'LEARNED FROM A PREVIOUS RUN — these cost real time last time:',
+      '  • Nationality is a DEMONYM list (AMERICAN, BRITISH), not a country list.',
+      '    Country of issue IS a country list. They are different vocabularies.',
+      '  • "Purpose of visit" has near-duplicates: VACATION and VISITING FAMILY AND',
+      '    FRIENDS VACATION. Match the FULL string exactly — a contains-match picks wrong.',
+      '  • The dropdowns filter differently from each other. Nationality filters on the',
+      '    first word. Country of issue needs a pause and sometimes scrolling. Purpose of',
+      '    visit barely filters at all and usually needs scrolling. Only ~10 options render',
+      '    at a time, so options late in the alphabet are not in the page until you scroll.',
+      '  • The Travelers tab will not open until the Transport step passes validation.',
+      '    Complete the steps in order; clicking ahead just raises red errors.',
+      '  • The "Travelers (N)" count INCLUDES the captain, so 7 guests shows as 8.',
+      '    Reconcile by name, not by count.',
+      '  • Passport numbers may start with a letter (A00733970). Treat as text and keep',
+      '    any leading letters or zeros.',
+      '  • The Back button wipes the wizard back to a blank step 1 and nothing is cached,',
+      '    but every "Save & Add Traveler" is saved server-side straight away.',
     ];
   }
   if (site === 'enoad') {
@@ -1590,8 +1718,12 @@ function siteRules(site) {
       '  • Dates are YYYY-MM-DD. Every date below is already in that form.',
       '  • The field is "Sex" (renamed from Gender) and accepts only Male or Female.',
       '  • Country names are UPPERCASE.',
-      '  • The US Virgin Islands is NOT a country here. Embark Country is UNITED STATES',
-      '    and Embark State is Virgin Islands.',
+      '  • EMBARK = where THIS voyage started, which depends on the leg:',
+      '      arriving into the USVI from the BVI → Embark Country is',
+      '      "VIRGIN ISLANDS, BRITISH" (note the comma) and the port is e.g. TORTOLA.',
+      '      departing the USVI → Embark Country is UNITED STATES, Embark State is',
+      '      Virgin Islands, and the USVI is a STATE here, never a country.',
+      '    Ask me which notice this is if it is not obvious.',
       '  • The passenger form lives inside an IFRAME (menu/EditNonCrew.aspx). It is',
       '    ASP.NET with Telerik controls that reload the page on change, so change one',
       '    field at a time and wait for it to settle before the next.',
@@ -1600,6 +1732,24 @@ function siteRules(site) {
       '  • Submit only becomes available once every section icon has turned green.',
       '  • These are required but appear on no passport, so ask the captain: Country of',
       '    Residence, and the Embark Port / Place / Date.',
+      '',
+      'LEARNED FROM A PREVIOUS RUN:',
+      '  • The iframe could not be reached by DOM tooling at all last time — reading,',
+      '    querying and injecting all failed, and it had to be driven visually. Expect',
+      '    that and work from what is on screen.',
+      '  • Every change posts back and reloads. Wait ~2 seconds for it to settle before',
+      '    touching the next field; do not fire a batch.',
+      '  • The 15-minute timeout DID fire and cost a whole passenger. Save each one as',
+      '    you finish it, never batch and save at the end.',
+      '  • Field order matters: choosing the Embark Port made Embark Place stop being',
+      '    required. Set Port first, then re-check what is still mandatory.',
+      '  • There is NO field for passport issue date or place of birth. If you cannot',
+      '    find a home for a value, skip it and tell me — do not force it somewhere.',
+      '  • Dates go in as YYYY-MM-DD but the form redisplays them as M/D/YYYY. That is',
+      '    the form reformatting, not an error — do not retype it.',
+      '  • The Sex dropdown often ignores the first click, and type-to-jump on Nationality',
+      '    silently failed twice. Confirm the value took after setting it, and fall back',
+      '    to scrolling and clicking the option.',
     ];
   }
   return [
@@ -1615,13 +1765,21 @@ function siteRules(site) {
     '  • Gender is Male or Female. Document type is Passport, ID Card or Seaman Passport.',
     '  • Rank is Master, Crew or Passenger, and the manifest needs EXACTLY ONE Master —',
     '    the captain. Everyone listed below is a Passenger.',
-    '  • Marital status is required; NA is a valid value if unknown.',
     '',
-    'IMPORTANT — read the form rather than trusting me here:',
-    '  SailClear was rebuilt in July 2026 and we have NOT verified the live form\'s',
-    '  field labels or its date format. Match fields by the labels you see on screen,',
-    '  and before typing a date, confirm the expected order from the placeholder or an',
-    '  existing value. Dates below are MM-DD-YYYY, which is what their spreadsheet uses.',
+    'LEARNED FROM A PREVIOUS RUN — the labels are not what you might expect:',
+    '  • Passport number goes in the field labelled "ID". There is no field called',
+    '    "Passport number".',
+    '  • The others are "Country Of Citizenship" (nationality), "Country Of Birth"',
+    '    and "Country Of Issue". All three are country dropdowns, so an issuing',
+    '    authority or a birth city will not match — use the country.',
+    '  • "Country Of Birth" has no city option, so a birth CITY cannot be recorded',
+    '    on this form at all. Enter the country and tell me the city was dropped.',
+    '  • Marital Status is NOT enforced by the live form, despite being marked',
+    '    required in their spreadsheet. Leaving it blank was accepted.',
+    '  • Sex offers a third option, "Other", as well as Male and Female.',
+    '  • Split given names into First and Middle where the passport clearly has both.',
+    '  • Dates on the live form are DAY FIRST (DD/MM/YYYY), even though their bulk',
+    '    spreadsheet uses MM-DD-YYYY. The dates below are already DD/MM/YYYY.',
   ];
 }
 
@@ -1659,13 +1817,23 @@ function buildAgentText(site) {
     lines.push(`  Surname: ${cased(t.lastName)}`);
     lines.push(`  Given names: ${cased([t.firstName, t.middleName].filter(Boolean).join(' '))}`);
     lines.push(`  Sex: ${t.gender === 'F' ? 'Female' : t.gender === 'M' ? 'Male' : t.gender || '(missing)'}`);
-    lines.push(`  Nationality: ${countryFor(site, t.nationality)}`);
+    if (site === 'bvi') {
+      const dem = demonymFor(t.nationality);
+      lines.push(
+        `  Nationality: ${dem ?? '(pick the demonym for ' + countryFor(site, t.nationality) + ' from the list)'}`
+          + '   ← this field is a DEMONYM list, not a country list',
+      );
+    } else {
+      lines.push(`  Nationality: ${countryFor(site, t.nationality)}`);
+    }
     lines.push(`  Passport number: ${up(t.passportNumber)}`);
     lines.push(`  Country of issue: ${countryFor(site, t.issuingAuthority)}`);
     lines.push(dateLine(site, 'Date of birth', t.dateOfBirth));
-    lines.push(dateLine(site, 'Passport issued', t.dateOfIssue));
+    // eNOAD's passenger form has no issue-date field at all (confirmed on the
+    // live form), so offering one just invites the assistant to hunt for it.
+    if (site !== 'enoad') lines.push(dateLine(site, 'Passport issued', t.dateOfIssue));
     lines.push(dateLine(site, 'Passport expires', t.dateOfExpiry));
-    if (site !== 'bvi' && t.placeOfBirth) {
+    if (site === 'sailclear' && t.placeOfBirth) {
       // BVI never asks for it; SailClear requires a COUNTRY and passports print a city.
       lines.push(`  Place of birth: ${t.placeOfBirth}`);
       if (site === 'sailclear') {
