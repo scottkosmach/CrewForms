@@ -422,8 +422,13 @@
         "bvi": { "label": "unverified", "control": "text", "confidence": "needs-recon", "observed": [] },
         "enoad": {
           "label": "Reporting Party / 24-Hour Point of Contact", "control": "text",
-          "idiosyncrasies": ["in the workbook: Reporting Party B5/E5/B7, Voyage Information B10/B12/D12"],
-          "confidence": "template", "observed": []
+          "idiosyncrasies": [
+            "in the workbook: Reporting Party B5/E5/B7, Voyage Information B10/B12/D12",
+            "live form confirmed 2026-08-06: Reporting Party = Name/Organization/Email/Phone/Fax; the same person's name/email/phone repeat as the voyage tab's 24-Hour POC",
+            "Reporting Party also hosts Vessel Location: either lat/long (masked deg-min-sec inputs) or a free-text Location Description — the 2026-08-06 filing satisfied it with the departure port name alone",
+            "captain record needs a fax field — 2026-08-06 filing carried 00802"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-06 (vessel-details/reporting-party captures)"]
         },
         "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
       }
@@ -440,7 +445,7 @@
           "idiosyncrasies": ["validation: must be alphanumeric"],
           "confidence": "template", "observed": ["2026-08-06 (i18n bundle)"]
         },
-        "enoad": { "label": "Vessel Name", "control": "text", "idiosyncrasies": ["workbook: Vessel Details B5"], "confidence": "template", "observed": [] },
+        "enoad": { "label": "Ship Name", "control": "text", "idiosyncrasies": ["workbook: Vessel Details B5", "live label is Ship Name, not Vessel Name"], "confidence": "single-observation", "observed": ["2026-08-06"] },
         "sailclear": { "label": "unverified", "control": "text", "confidence": "needs-recon", "observed": [] }
       }
     },
@@ -456,7 +461,7 @@
           "idiosyncrasies": ["editing a manifest later requires Manifest ID PLUS this registration number — it is the identity key"],
           "confidence": "single-observation", "observed": ["2026-08-05"]
         },
-        "enoad": { "label": "Official Number", "control": "text", "idiosyncrasies": ["workbook: Vessel Details E5"], "confidence": "template", "observed": [] },
+        "enoad": { "label": "ID Type + ID Number", "control": "telerik-radcombobox + text", "vocabulary": ["IMO Number", "Official Number"], "idiosyncrasies": ["workbook: Vessel Details F5 (type) + E5 (number)", "live form 2026-08-06: ID Type 'Official Number', ID Number 'VI7389TC' (8 chars accepted)"], "confidence": "single-observation", "observed": ["2026-08-06"] },
         "sailclear": { "label": "unverified", "control": "text", "confidence": "needs-recon", "observed": [] }
       }
     },
@@ -473,9 +478,13 @@
           "idiosyncrasies": ["typeahead confirmed by its own error string: Transport's country of registration not recognized. Click one of the options."],
           "confidence": "template", "observed": ["2026-08-06 (i18n bundle)"]
         },
-        "enoad": { "label": "Flag", "control": "unverified", "example": "UNITED STATES",
-          "vocabulary": "shared/reference/nvmc/travelCountry.json",
-          "idiosyncrasies": ["workbook: Vessel Details G5, normalized to NVMC country spelling"], "confidence": "template", "observed": [] },
+        "enoad": { "label": "Flag", "control": "telerik-radcombobox", "example": "UNITED STATES - US",
+          "vocabulary": "shared/reference/nvmc/flagList.json",
+          "idiosyncrasies": [
+            "workbook: Vessel Details G5 takes the PLAIN name (UNITED STATES); the LIVE dropdown is 'NAME - CODE' with names truncated ~25 chars (BONAIRE, SINT EUSTATIUS A - BQ) — two spellings of the same concept on one site",
+            "the voyage tab's NPOC Country dropdown is a THIRD variant: full plain uppercase names, no codes (shared/reference/nvmc/countries.json)"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-06 (full option list captured)"] },
         "sailclear": { "label": "unverified", "control": "unverified", "example": "United States", "confidence": "needs-recon", "observed": [] }
       }
     },
@@ -499,8 +508,46 @@
       "canonical": { "example": "WDL1234" },
       "bindings": {
         "bvi": { "label": null, "control": "absent", "confidence": "needs-recon", "observed": [] },
-        "enoad": { "label": "Call Sign", "control": "text", "idiosyncrasies": ["workbook: Vessel Details D5, required"], "confidence": "template", "observed": [] },
+        "enoad": { "label": "Call Sign", "control": "text", "example": "WDM4875", "idiosyncrasies": ["workbook: Vessel Details D5, required"], "confidence": "single-observation", "observed": ["2026-08-06"] },
         "sailclear": { "label": null, "control": "absent", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "vesselEnoadStatics",
+      "question": "One-time vessel facts for eNOAD (entered on the Boats form, never re-asked): call sign, MMSI, ID type, owner, operator, COFR operator, under 300 GT?, fuel types, class society, operational condition of equipment, vessel class/type/sub-type?",
+      "scope": "per-vessel",
+      "source": { "kind": "stored", "path": "boat.callSign / boat.mmsi / boat.idType / boat.owner / boat.operator / boat.cofrOperator / boat.lessThan300GT / boat.fuelTypes / boat.classSociety / boat.oce / boat.vesselClass" },
+      "canonical": { "example": "WDM4875 / 338200891 / Official Number / Virgin Wakes LLC / <300GT yes / U.S. Coast Guard / Operational" },
+      "bindings": {
+        "bvi": { "label": null, "control": "absent", "confidence": "template", "observed": [] },
+        "enoad": {
+          "label": "Vessel Details tab", "control": "mixed",
+          "vocabulary": "classSociety.json / vesselClass.json / fuel labels: Oil, Electric, Low Flash Point Fuel (Below 60C), Nuclear, LNG, Methanol, Ammonia, Hydrogen, Other / OCE: Operational, Not Operational, Not Required",
+          "idiosyncrasies": [
+            "workbook cells: D5 CallSign, F5 IDType, D7 MMSI, B7 <300GT (No/Yes), B9 Owner, E9 Operator, G9 ClassSociety, E11 COFR, B13/D13/F13 Class/Type/SubType, B16 OCE, B19..J19 fuel Yes cells",
+            "MMSI's live required marker exists but is visibility:hidden — conditionally required, likely toggled by <300GT",
+            "Vessel Type / Sub-Type dropdowns stay empty until Vessel Class is chosen (server-side cascade); the 2026-08-06 filing left all three [None Selected] and DOC/SMC certificates blank on a <300GT vessel",
+            "Vessel Tonnage was left blank and its required marker was shown — accepted anyway on save (<300GT checked)"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-06 (vessel-details capture)"]
+        },
+        "sailclear": { "label": null, "control": "absent", "confidence": "template", "observed": [] }
+      }
+    },
+    {
+      "id": "vesselCharterer",
+      "question": "Who is chartering the vessel this trip? (derived: the majority surname among the guests; tie -> captain picks from the candidates)",
+      "scope": "per-trip",
+      "source": { "kind": "derived", "path": "majority(travelers[].lastName), tie-break via captain selection", "note": "never guess on a tie — present the candidate surnames" },
+      "canonical": { "example": "Rosato" },
+      "bindings": {
+        "bvi": { "label": null, "control": "absent", "confidence": "template", "observed": [] },
+        "enoad": {
+          "label": "Vessel Charterer", "control": "text", "example": "Rosato",
+          "idiosyncrasies": ["required on the live Vessel Details tab; workbook Vessel Details B11"],
+          "confidence": "single-observation", "observed": ["2026-08-06"]
+        },
+        "sailclear": { "label": null, "control": "absent", "confidence": "template", "observed": [] }
       }
     },
     {
@@ -534,9 +581,10 @@
         "enoad": {
           "label": "Notice Type + Embark block", "control": "derived",
           "idiosyncrasies": [
-            "EMBARK = where THIS voyage started: arriving into the USVI -> Embark Country VIRGIN ISLANDS, BRITISH (note the comma) with port e.g. TORTOLA; departing the USVI -> Embark Country UNITED STATES, Embark State Virgin Islands (USVI is a STATE here, never a country)"
+            "EMBARK = where THIS voyage started: arriving into the USVI -> Embark Country VIRGIN ISLANDS, BRITISH (note the comma) with port e.g. TORTOLA; departing the USVI -> Embark Country UNITED STATES, Embark State Virgin Islands (USVI is a STATE here, never a country)",
+            "2026-08-06: Notice Type is chosen at notice creation and shows as a DISABLED combo on the voyage tab; a Departure notice offers only Voyage Type 'US to Foreign'; Closed Loop Voyage checkbox was pre-checked"
           ],
-          "confidence": "single-observation", "observed": ["2026-08-05"]
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (departure leg, arrival-departure-port capture)"]
         },
         "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
       }
@@ -566,14 +614,15 @@
           "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label + vocabulary via app bundle and dictionaries API)"]
         },
         "enoad": {
-          "label": "Embark Port", "control": "telerik-radcombobox", "example": "TORTOLA",
-          "vocabulary": "shared/reference/nvmc/port.json",
+          "label": "Embark Port / Departure Port (or nearest)", "control": "telerik-radcombobox", "example": "Cruz Bay",
+          "vocabulary": "shared/reference/nvmc/portsByPlace.json",
           "idiosyncrasies": [
             "selecting Embark Port made Embark Place stop being required — set Port FIRST, then re-check what is still mandatory",
             "port list cascades from the country/state pair; US ports carry a BLANK port code in the workbook",
-            "nvmc/port.json is currently EMPTY — capturing live port options is a recon target"
+            "2026-08-06 voyage tab: Departure Information = City (free text) + State (dropdown, incl. territories AND British Columbia / FSM / Marshall Islands / Palau / Saipan beyond the workbook's state list) + Departure Port (or nearest) scoped to the state — Virgin Islands offers exactly the 8 ports in portsByPlace.UNITEDSTATESVirginIslands",
+            "the older note that nvmc/port.json is empty was a misreading — it holds 12k port->code pairs; the live PORT DROPDOWN options are what portsByPlace.json now records"
           ],
-          "confidence": "single-observation", "observed": ["2026-08-05"]
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (departure block captured with full option lists)"]
         },
         "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
       }
@@ -613,10 +662,13 @@
           "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (vocabulary via dictionaries API)"]
         },
         "enoad": {
-          "label": "Arrival Port", "control": "unverified",
-          "vocabulary": "shared/reference/nvmc/port.json",
-          "idiosyncrasies": ["workbook ARRIVAL block is among the unfilled-required cells; live-form binding is a recon target"],
-          "confidence": "needs-recon", "observed": []
+          "label": "Arrival Port (arrival notice) / NPOC Port (departure notice)", "control": "telerik-radcombobox", "example": "TORTOLA",
+          "vocabulary": "shared/reference/nvmc/portsByPlace.json",
+          "idiosyncrasies": [
+            "on a DEPARTURE notice the destination lives in the Next Port of Call block: Country (plain uppercase names, countries.json) -> State (disabled for foreign) -> Port (VIRGIN ISLANDS, BRITISH offers exactly portsByPlace.VIRGINISLANDSBRITISH) -> free-text Place; 'Either NPOC Port or NPOC Place is required'",
+            "the arrival-notice Arrival Port block itself is still unobserved live — workbook ARRIVAL block remains the template"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-06 (NPOC block, departure notice)"]
         },
         "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
       }
@@ -633,8 +685,8 @@
           "idiosyncrasies": ["time is 24-hour with SEPARATE hour and minute pickers; minutes only 00/15/30/45 — round or reject other values"],
           "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label via i18n bundle)"]
         },
-        "enoad": { "label": "unverified (Voyage Information)", "control": "unverified", "example": "2026-08-06",
-          "idiosyncrasies": ["workbook DEPARTURE block is among the unfilled-required cells"], "confidence": "needs-recon", "observed": [] },
+        "enoad": { "label": "Departure Date/Time", "control": "telerik-raddatetimepicker", "example": "8/6/2026 09:30",
+          "idiosyncrasies": ["displays M/d/yyyy HH:mm (24-hour), posts yyyy-MM-dd-HH-mm-ss in client state; time popup offers whole hours but minutes are free-typed"], "confidence": "single-observation", "observed": ["2026-08-06"] },
         "sailclear": { "label": "unverified", "control": "unverified", "example": "06/08/2026", "confidence": "needs-recon", "observed": [] }
       }
     },
@@ -650,7 +702,8 @@
           "idiosyncrasies": ["same 24-hour split pickers, minutes 00/15/30/45"],
           "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label via i18n bundle)"]
         },
-        "enoad": { "label": "unverified (Voyage Information)", "control": "unverified", "confidence": "needs-recon", "observed": [] },
+        "enoad": { "label": "Arrival Date/Time (in the NPOC block on a departure notice)", "control": "telerik-raddatetimepicker", "example": "8/6/2026 10:15",
+          "idiosyncrasies": ["same M/d/yyyy HH:mm display and yyyy-MM-dd-HH-mm-ss client-state format as departure"], "confidence": "single-observation", "observed": ["2026-08-06"] },
         "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
       }
     },
