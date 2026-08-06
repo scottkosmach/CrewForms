@@ -27,6 +27,32 @@ const DEFAULT_WORKBOOK = resolve(
 );
 const OUT_DIR = resolve(REPO, 'shared/reference/nvmc');
 
+/**
+ * Single-column named ranges published as dropdown vocabularies. The Vessel
+ * Details and Voyage Information sheets validate against these by name, and
+ * the live eNOAD site's dropdowns carry the same values (verified against the
+ * 2026-08-06 captures in docs/recon/) — so they double as the wizard's option
+ * lists.
+ */
+const LISTS = {
+  // Voyage Information B5.
+  noticeTypes: 'Notice_Types',
+  // Vessel Details G9 (Lookups!B holds the same 78 rows under "Agency").
+  classSociety: 'Class_Society',
+  // Vessel Details B13; D13/F13 cascade from it via INDIRECT.
+  vesselClass: 'Vessel_Class',
+  // Voyage Information B32 NPOC country / G5 flag — plain uppercase names.
+  countries: 'Countries',
+  // Voyage Information B15/D27 state dropdowns — title-case names.
+  usStates: 'UNITEDSTATESStates',
+};
+
+/**
+ * Voyage Information D5 validates via INDIRECT(B5): the notice type IS the
+ * name of the range holding its voyage types.
+ */
+const VOYAGE_TYPE_RANGES = ['Arrival', 'Departure'];
+
 /** The ranges the Non-Crew/Crew sheet formulas actually reference. */
 const TABLES = {
   // VLOOKUP(H8, Lookups!$AJ$1:$AK$242, 2) — nationality, country of residence,
@@ -139,6 +165,41 @@ function readColumns(sheetXml, strings, columns) {
   return grid;
 }
 
+/** Map of defined name -> reference string (e.g. "Lookups!$K$1:$K$3"). */
+function parseDefinedNames(workbookXml) {
+  const out = new Map();
+  const block = /<definedNames>([\s\S]*?)<\/definedNames>/.exec(workbookXml);
+  if (!block) return out;
+  const re = /<definedName name="([^"]+)"[^>]*>([\s\S]*?)<\/definedName>/g;
+  let m;
+  while ((m = re.exec(block[1]))) out.set(m[1], unescapeXml(m[2]));
+  return out;
+}
+
+/**
+ * Parse "Lookups!$G$27" / "Lookups!$K$1:$K$3" into { col, start, end }.
+ * Returns null for anything else (formulas, other sheets, multi-column).
+ */
+function parseLookupsRange(ref) {
+  const m = /^Lookups!\$([A-Z]+)\$(\d+)(?::\$([A-Z]+)\$(\d+))?$/.exec(ref);
+  if (!m) return null;
+  const [, col, start, col2, end] = m;
+  if (col2 && col2 !== col) return null;
+  return { col, start: Number(start), end: Number(end ?? start) };
+}
+
+/** Values of a single-column Lookups range, empties skipped. */
+function rangeValues(grid, range) {
+  const colMap = grid[range.col];
+  if (!colMap) throw new Error(`column ${range.col} was not read from Lookups`);
+  const out = [];
+  for (let row = range.start; row <= range.end; row++) {
+    const v = colMap.get(row);
+    if (v !== undefined && v !== '') out.push(v);
+  }
+  return out;
+}
+
 function buildPairs(grid, spec) {
   const pairs = [];
   const seen = new Set();
@@ -180,8 +241,23 @@ console.log(`Lookups sheet -> ${lookupsPath}`);
 const strings = parseSharedStrings(entries.get('xl/sharedStrings.xml').toString('utf8'));
 console.log(`sharedStrings: ${strings.length}`);
 
+const definedNames = parseDefinedNames(workbookXml);
+
+// Every named range that resolves to a single Lookups column gets read; the
+// port place lists alone span most of column G.
+const namedRanges = new Map();
+for (const [name, ref] of definedNames) {
+  const range = parseLookupsRange(ref);
+  if (range) namedRanges.set(name, range);
+}
+
 const lookupsXml = entries.get(lookupsPath).toString('utf8');
-const allCols = [...new Set(Object.values(TABLES).flatMap((t) => [t.first, t.second]))];
+const allCols = [
+  ...new Set([
+    ...Object.values(TABLES).flatMap((t) => [t.first, t.second]),
+    ...[...namedRanges.values()].map((r) => r.col),
+  ]),
+];
 const grid = readColumns(lookupsXml, strings, allCols);
 
 mkdirSync(OUT_DIR, { recursive: true });
@@ -213,5 +289,42 @@ for (const [name, spec] of Object.entries(TABLES)) {
   console.log(`  ${''.padEnd(14)} e.g. ${sample}`);
 }
 
+manifest.lists = {};
+
+function writeList(fileBase, data, sourceNote) {
+  const file = `${fileBase}.json`;
+  writeFileSync(resolve(OUT_DIR, file), JSON.stringify(data, null, 2));
+  const entryCount = Array.isArray(data)
+    ? data.length
+    : Object.values(data).reduce((n, v) => n + (Array.isArray(v) ? v.length : 1), 0);
+  manifest.lists[fileBase] = { file, source: sourceNote, entries: entryCount };
+  console.log(`  ${fileBase.padEnd(14)} ${String(entryCount).padStart(6)} entries  (${sourceNote})`);
+}
+
+console.log('\nNamed-range lists:');
+for (const [fileBase, name] of Object.entries(LISTS)) {
+  const range = namedRanges.get(name);
+  if (!range) throw new Error(`defined name "${name}" missing from this workbook`);
+  writeList(fileBase, rangeValues(grid, range), name);
+}
+
+const voyageTypes = {};
+for (const noticeType of VOYAGE_TYPE_RANGES) {
+  const range = namedRanges.get(noticeType);
+  if (!range) throw new Error(`voyage-type range "${noticeType}" missing from this workbook`);
+  voyageTypes[noticeType] = rangeValues(grid, range);
+}
+writeList('voyageTypes', voyageTypes, 'INDIRECT ranges named after each notice type');
+
+// The Voyage sheet's port dropdowns cascade through INDIRECT(country+state,
+// spaces and punctuation stripped) — each such name is a column-G slice.
+const RESERVED_G = new Set(['All_Ports']);
+const portsByPlace = {};
+for (const [name, range] of namedRanges) {
+  if (range.col !== 'G' || RESERVED_G.has(name)) continue;
+  portsByPlace[name] = rangeValues(grid, range);
+}
+writeList('portsByPlace', portsByPlace, `${Object.keys(portsByPlace).length} INDIRECT place keys over Lookups!G`);
+
 writeFileSync(resolve(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
-console.log(`\nWrote ${Object.keys(TABLES).length + 1} files to shared/reference/nvmc/`);
+console.log(`\nWrote ${Object.keys(TABLES).length + Object.keys(manifest.lists).length + 1} files to shared/reference/nvmc/`);

@@ -19,6 +19,22 @@ We therefore resolve every code ourselves and write it as a literal value alongs
 | `usState.json` | `Lookups!$AB$1:$AC$73` | 58 | `US_ADDRESS_STATE_ABBR` |
 | `port.json` | `Lookups!$H$1:$I$12332` | 12,113 | `EMBARK_PORT_CODE`, `DEBARK_PORT_CODE` |
 
+## Dropdown vocabularies (named-range lists)
+
+The Vessel Details and Voyage Information sheets validate their dropdowns
+against named ranges, and the live eNOAD site's dropdowns carry the same
+values (verified against the 2026-08-06 tab captures in `docs/recon/`):
+
+| File | Named range | Entries | Feeds |
+|---|---|---|---|
+| `noticeTypes.json` | `Notice_Types` | 2 | Voyage Information B5 |
+| `voyageTypes.json` | `Arrival` / `Departure` (INDIRECT on B5) | 3 + 1 | Voyage Information D5 — a Departure notice allows **only** `US to Foreign` |
+| `classSociety.json` | `Class_Society` | 78 | Vessel Details G9 (exact string `U.S. Coast Guard`) |
+| `vesselClass.json` | `Vessel_Class` | 15 | Vessel Details B13 |
+| `countries.json` | `Countries` | 242 | Voyage NPOC/last-port country, Vessel flag — plain uppercase names (the **live site's flag dropdown** instead shows `NAME - CODE`; see `flagList.json` once captured) |
+| `usStates.json` | `UNITEDSTATESStates` | 58 | Voyage state dropdowns — title case |
+| `portsByPlace.json` | every `Lookups!G` place range (267 keys) | 16,130 | Voyage port dropdowns, which cascade through `INDIRECT(country+state)` with spaces/punctuation stripped — e.g. `UNITEDSTATESVirginIslands` (the 8 USVI ports), `VIRGINISLANDSBRITISH` (the 4 BVI ports) |
+
 `personCountry` and `travelCountry` are **currently identical**. They are kept as separate files because the workbook references them through different ranges and a future version could diverge — if they ever stop matching, the extractor's counts will show it.
 
 112 duplicate port keys were skipped (first occurrence wins).

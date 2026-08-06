@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "updated": "2026-08-06",
+  "note": "Seed values for lists that grow with use. The live copy is chrome.storage.local:learnedLists — the wizard offers these as one-tap choices plus 'Other', and appends whatever new answer the captain gives. Values here are CANONICAL (captain-facing); per-site renderings come from canonical-fields.json bindings + the reference vocabularies.",
+  "lists": {
+    "departurePorts": {
+      "question": "Which port/dock are you departing from?",
+      "values": ["CHARLOTTE AMALIE HARBOR, ST. THOMAS"],
+      "seededBecause": "confirmed BVI embark option 2026-08-05 (VICHA - CHARLOTTE AMALIE HARBOR, ST. THOMAS)"
+    },
+    "arrivalPorts": {
+      "question": "Which port are you arriving at?",
+      "values": [
+        "ROAD TOWN, TORTOLA",
+        "GREAT HARBOUR, JOST VAN DYKE",
+        "GUN CREEK, VIRGIN GORDA",
+        "SPANISH TOWN, VIRGIN GORDA"
+      ],
+      "seededBecause": "the four BVI port-of-entry options confirmed on the live form 2026-08-05"
+    },
+    "captainDocks": {
+      "question": "Which dock/marina did guests board at?",
+      "values": [],
+      "seededBecause": "starts empty — grows from the captain's own answers; feeds eNOAD Embark Place"
+    },
+    "tripPurposes": {
+      "question": "Purpose of the visit?",
+      "values": ["VACATION"],
+      "seededBecause": "confirmed exact BVI option 2026-08-05; beware near-duplicate VISITING FAMILY AND FRIENDS VACATION"
+    },
+    "transportTypes": {
+      "question": "What kind of charter is this?",
+      "values": ["CREWED CHARTER", "BAREBOAT RENTAL", "COMMERCIAL PLEASURE", "PLEASURE"],
+      "seededBecause": "the full fixed BVI Transport type vocabulary, confirmed 2026-08-05 — captain picks once, we remember"
+    },
+    "accommodations": {
+      "question": "Where is the party staying?",
+      "values": [],
+      "seededBecause": "starts empty — BVI accommodation vocabulary is a recon target (shared/reference/bvi/accommodationType.json)"
+    }
+  }
+}

@@ -1,6 +1,6 @@
 {
   "source": "nvmc-noad-workbook-8.2.xlsx",
-  "extractedAt": "2026-08-05",
+  "extractedAt": "2026-08-06",
   "tables": {
     "personCountry": {
       "file": "personCountry.json",
@@ -25,6 +25,43 @@
       "range": "H1:I12332",
       "entries": 12113,
       "duplicateKeysSkipped": 112
+    }
+  },
+  "lists": {
+    "noticeTypes": {
+      "file": "noticeTypes.json",
+      "source": "Notice_Types",
+      "entries": 2
+    },
+    "classSociety": {
+      "file": "classSociety.json",
+      "source": "Class_Society",
+      "entries": 78
+    },
+    "vesselClass": {
+      "file": "vesselClass.json",
+      "source": "Vessel_Class",
+      "entries": 15
+    },
+    "countries": {
+      "file": "countries.json",
+      "source": "Countries",
+      "entries": 242
+    },
+    "usStates": {
+      "file": "usStates.json",
+      "source": "UNITEDSTATESStates",
+      "entries": 58
+    },
+    "voyageTypes": {
+      "file": "voyageTypes.json",
+      "source": "INDIRECT ranges named after each notice type",
+      "entries": 4
+    },
+    "portsByPlace": {
+      "file": "portsByPlace.json",
+      "source": "267 INDIRECT place keys over Lookups!G",
+      "entries": 16130
     }
   }
 }

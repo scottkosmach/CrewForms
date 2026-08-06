@@ -1,0 +1,10 @@
+{
+  "Arrival": [
+    "US to US",
+    "Foreign to US",
+    "Foreign to Saint Lawrence Seaway"
+  ],
+  "Departure": [
+    "US to Foreign"
+  ]
+}

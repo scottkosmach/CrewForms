@@ -1,0 +1,727 @@
+{
+  "version": 1,
+  "updated": "2026-08-06",
+  "sites": ["bvi", "enoad", "sailclear"],
+  "seededFrom": [
+    "extension/sidepanel/app.js (SITE_PROFILE, siteRules, NATIONALITY_DEMONYM, toCountry)",
+    "docs/field-notes/2026-08-05-all-three-sites.md",
+    "shared/reference/nvmc/README.md + extracted lookup tables",
+    "shared/reference/sailclear/vocabularies.json",
+    "assets/templates/README.md (NOAD Workbook 8.2 anatomy)"
+  ],
+  "fields": [
+    {
+      "id": "surname",
+      "question": "Guest's surname, exactly as printed on the passport?",
+      "scope": "per-traveler",
+      "source": { "kind": "passportOCR", "path": "traveler.lastName" },
+      "canonical": { "example": "SMITH" },
+      "bindings": {
+        "bvi": {
+          "label": "Surname", "control": "text", "transform": "upper", "example": "SMITH",
+          "idiosyncrasies": ["lowercase fails validation outright rather than being corrected"],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label via i18n bundle)"]
+        },
+        "enoad": {
+          "label": "Last Name", "control": "text", "frame": "menu/EditNonCrew.aspx",
+          "transform": "identity", "example": "Smith",
+          "confidence": "template", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "unverified", "control": "text", "transform": "identity", "example": "Smith",
+          "confidence": "needs-recon", "observed": []
+        }
+      }
+    },
+    {
+      "id": "givenNames",
+      "question": "Guest's given names, exactly as printed on the passport?",
+      "scope": "per-traveler",
+      "source": { "kind": "passportOCR", "path": "traveler.firstName + traveler.middleName" },
+      "canonical": { "example": "RALPH VINCENT" },
+      "bindings": {
+        "bvi": {
+          "label": "Given names", "control": "text", "transform": "upper", "example": "RALPH VINCENT",
+          "idiosyncrasies": ["one field for all given names — no First/Middle split; instructions say exactly as in the passport, no nicknames"],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label via i18n bundle)"]
+        },
+        "enoad": {
+          "label": "First Name / Middle Name", "control": "text", "frame": "menu/EditNonCrew.aspx",
+          "transform": "identity", "example": "Ralph Vincent",
+          "idiosyncrasies": ["2026-08-05 run put all given names in First Name and left Middle blank rather than guess a split; auto-splitting is a deliberate, logged rule"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "First Name / Middle Name", "control": "text", "transform": "identity", "example": "Ralph / Vincent",
+          "idiosyncrasies": ["assistant split First + Middle where the passport clearly had both; accepted"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "sex",
+      "question": "Guest's sex as printed on the passport?",
+      "scope": "per-traveler",
+      "source": { "kind": "passportOCR", "path": "traveler.gender", "note": "stored as 'M'|'F'" },
+      "canonical": { "example": "Male" },
+      "bindings": {
+        "bvi": {
+          "label": "Gender", "control": "mat-autocomplete", "example": "MALE",
+          "vocabulary": ["UNSPECIFIED", "FEMALE", "MALE"],
+          "interaction": "must click a real option; typed text alone leaves the Angular control null",
+          "idiosyncrasies": [
+            "label is Gender but the backing dictionary is SEX, with UNSPECIFIED as a third value; casing UPPERCASE unlike the other sites",
+            "validation verbatim: Gender not recognized. Click one of the options."
+          ],
+          "confidence": "template", "observed": ["2026-08-06 (label + vocabulary via app bundle and dictionaries API)"]
+        },
+        "enoad": {
+          "label": "Sex", "control": "telerik-radcombobox", "frame": "menu/EditNonCrew.aspx", "example": "Male",
+          "vocabulary": ["Male", "Female"],
+          "idiosyncrasies": [
+            "renamed from Gender per EO 14168; Male|Female only",
+            "dropdown often ignored the first click — confirm it opened before selecting"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "Sex", "control": "select", "example": "Male",
+          "vocabulary": ["Male", "Female", "Other"],
+          "idiosyncrasies": ["offers a third option, Other, unlike the spreadsheet's Male|Female enum"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "dateOfBirth",
+      "question": "Guest's date of birth?",
+      "scope": "per-traveler",
+      "source": { "kind": "passportOCR", "path": "traveler.dateOfBirth", "note": "{day,month,year} strings" },
+      "canonical": { "example": "13 December 1954" },
+      "bindings": {
+        "bvi": {
+          "label": "Date of birth", "control": "date", "transform": "map:dateBvi", "example": "13/12/1954",
+          "idiosyncrasies": ["DAY FIRST; typed exactly; a transposed date is silently valid whenever both parts <= 12"],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label via i18n bundle)"]
+        },
+        "enoad": {
+          "label": "Date of Birth", "control": "date", "frame": "menu/EditNonCrew.aspx",
+          "transform": "map:dateEnoad", "example": "1954-12-13",
+          "idiosyncrasies": ["entered YYYY-MM-DD but the form redisplays M/D/YYYY — read-back must expect the reformat"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "unverified", "control": "date", "transform": "map:dateSailclearForm", "example": "13/12/1954",
+          "idiosyncrasies": ["live form is DD/MM/YYYY; ONLY the bulk spreadsheet is MM-DD-YYYY — do not mix them up"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "countryOfCitizenship",
+      "question": "What country is this guest a citizen of?",
+      "scope": "per-traveler",
+      "source": { "kind": "passportOCR", "path": "traveler.nationality", "normalize": "toCountry" },
+      "canonical": { "example": "UNITED STATES" },
+      "bindings": {
+        "bvi": {
+          "label": "Nationality", "control": "mat-autocomplete", "transform": "demonym", "example": "AMERICAN",
+          "vocabulary": "shared/reference/bvi/nationality.json",
+          "interaction": "filters on the first word; click a real option — typed text alone leaves the control null",
+          "idiosyncrasies": [
+            "DEMONYM list, not a country list — nothing in UNITED STATES OF AMERICA matches AMERICAN",
+            "plain UK citizen is BRITON, not BRITISH (BRITISH only appears inside longer UK-variant entries)",
+            "Argentina's literal option is ARGENTINIAN, ARGENTINE — comma and all"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (vocabulary via dictionaries API)"]
+        },
+        "enoad": {
+          "label": "Nationality", "control": "telerik-radcombobox", "frame": "menu/EditNonCrew.aspx",
+          "transform": "identity", "example": "UNITED STATES",
+          "vocabulary": "shared/reference/nvmc/personCountry.json",
+          "idiosyncrasies": [
+            "dropdown offers UNITED STATES only — no OF AMERICA variant",
+            "type-to-jump silently failed twice; verify the value took, fall back to scroll-and-click"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "Country Of Citizenship", "control": "select", "transform": "titleCase", "example": "United States",
+          "vocabulary": "shared/reference/sailclear/vocabularies.json#countries",
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "passportNumber",
+      "question": "Guest's passport number, exactly as printed (keep leading letters and zeros)?",
+      "scope": "per-traveler",
+      "source": { "kind": "passportOCR", "path": "traveler.passportNumber" },
+      "canonical": { "example": "A00733970" },
+      "bindings": {
+        "bvi": {
+          "label": "Travel document number", "control": "text", "transform": "upper", "example": "A00733970",
+          "idiosyncrasies": [
+            "labelled Travel document number — not Passport number",
+            "raw string, never numeric — letter prefixes (A00733970) and leading zeros are real",
+            "must be UPPERCASE; validation says must be alphanumeric"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label via i18n bundle)"]
+        },
+        "enoad": {
+          "label": "ID Number", "control": "text", "frame": "menu/EditNonCrew.aspx", "example": "A00733970",
+          "confidence": "template", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "ID", "control": "text", "example": "A00733970",
+          "idiosyncrasies": ["labelled ID — there is no field called Passport number"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "travelDocumentType",
+      "question": null,
+      "scope": "per-traveler",
+      "source": { "kind": "derived", "note": "always Passport for this workflow — never ask" },
+      "canonical": { "example": "Passport" },
+      "bindings": {
+        "bvi": {
+          "label": "Travel document type", "control": "readonly", "example": "PASSPORT",
+          "idiosyncrasies": ["fixed to PASSPORT, read-only — do not try to set it"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "enoad": {
+          "label": "ID Type", "control": "telerik-radcombobox", "frame": "menu/EditNonCrew.aspx", "example": "Passport",
+          "confidence": "template", "observed": []
+        },
+        "sailclear": {
+          "label": "unverified", "control": "select", "example": "Passport",
+          "vocabulary": ["Passport", "ID Card", "Seaman Passport"],
+          "confidence": "template", "observed": []
+        }
+      }
+    },
+    {
+      "id": "countryOfIssue",
+      "question": "What country issued this guest's passport?",
+      "scope": "per-traveler",
+      "source": { "kind": "passportOCR", "path": "traveler.issuingAuthority", "normalize": "toCountry" },
+      "canonical": { "example": "UNITED STATES", "note": "passports print the AUTHORITY (UNITED STATES DEPARTMENT OF STATE); every site wants a country" },
+      "bindings": {
+        "bvi": {
+          "label": "Country of issue", "control": "mat-autocomplete", "example": "UNITED STATES",
+          "vocabulary": "shared/reference/bvi/country.json",
+          "interaction": "needs a pause after typing and sometimes scrolling; different filtering than Nationality",
+          "idiosyncrasies": ["a COUNTRY list — a different vocabulary from the demonym Nationality field beside it"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "enoad": {
+          "label": "Issue Country", "control": "telerik-radcombobox", "frame": "menu/EditNonCrew.aspx", "example": "UNITED STATES",
+          "vocabulary": "shared/reference/nvmc/personCountry.json",
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "Country Of Issue", "control": "select", "transform": "titleCase", "example": "United States",
+          "vocabulary": "shared/reference/sailclear/vocabularies.json#countries",
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "passportIssueDate",
+      "question": "When was this guest's passport issued?",
+      "scope": "per-traveler",
+      "source": { "kind": "passportOCR", "path": "traveler.dateOfIssue" },
+      "canonical": { "example": "3 June 2019" },
+      "bindings": {
+        "bvi": {
+          "label": null, "control": "absent",
+          "idiosyncrasies": ["the app's entire i18n bundle has expiry-date strings but NO issue-date string — the form almost certainly has no issue-date field; confirm once on the next live run"],
+          "confidence": "template", "observed": ["2026-08-06 (i18n bundle)"]
+        },
+        "enoad": {
+          "label": null, "control": "absent",
+          "idiosyncrasies": ["there is NO field for passport issue date on the passenger form — do not send it, do not hunt for it"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "unverified", "control": "date", "transform": "map:dateSailclearForm", "example": "03/06/2019",
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "passportExpiryDate",
+      "question": "When does this guest's passport expire?",
+      "scope": "per-traveler",
+      "source": { "kind": "passportOCR", "path": "traveler.dateOfExpiry" },
+      "canonical": { "example": "3 June 2029" },
+      "bindings": {
+        "bvi": {
+          "label": "Travel document expiry date", "control": "date", "transform": "map:dateBvi", "example": "03/06/2029",
+          "idiosyncrasies": ["validation: must be after the current date"],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label via i18n bundle)"]
+        },
+        "enoad": {
+          "label": "ID Expiration", "control": "date", "frame": "menu/EditNonCrew.aspx",
+          "transform": "map:dateEnoad", "example": "2029-06-03",
+          "confidence": "template", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "unverified", "control": "date", "transform": "map:dateSailclearForm", "example": "03/06/2029",
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "countryOfBirth",
+      "question": "What COUNTRY was this guest born in? (Passports usually print a city — the forms want a country.)",
+      "scope": "per-traveler",
+      "source": { "kind": "passportOCR", "path": "traveler.placeOfBirth", "note": "usually a CITY; needs country resolution, possibly a wizard confirm" },
+      "canonical": { "example": "UNITED STATES" },
+      "bindings": {
+        "bvi": {
+          "label": null, "control": "absent",
+          "idiosyncrasies": ["BVI never asks for place or country of birth"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "enoad": {
+          "label": null, "control": "absent",
+          "idiosyncrasies": ["no place-of-birth field on the passenger form"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "Country Of Birth", "control": "select", "transform": "titleCase", "example": "United States",
+          "vocabulary": "shared/reference/sailclear/vocabularies.json#countries",
+          "idiosyncrasies": ["a country dropdown with NO city option — a birth city cannot be recorded on this form at all"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "countryOfResidence",
+      "question": "What country does this guest live in?",
+      "scope": "per-traveler",
+      "source": { "kind": "wizard", "note": "on no passport; wizard default = countryOfCitizenship with per-guest override" },
+      "canonical": { "example": "UNITED STATES" },
+      "bindings": {
+        "bvi": {
+          "label": "Country of residence", "control": "mat-autocomplete", "example": "UNITED STATES",
+          "vocabulary": "shared/reference/bvi/country.json",
+          "idiosyncrasies": ["typeahead confirmed by its own error string: Country of residence not recognized. Click one of the options."],
+          "confidence": "template", "observed": ["2026-08-06 (i18n bundle)"]
+        },
+        "enoad": {
+          "label": "Country of Residence", "control": "telerik-radcombobox", "frame": "menu/EditNonCrew.aspx", "example": "UNITED STATES",
+          "vocabulary": "shared/reference/nvmc/personCountry.json",
+          "idiosyncrasies": ["required — Save hard-blocks with red errors when missing"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": {
+          "label": "unverified", "control": "unverified",
+          "confidence": "needs-recon", "observed": []
+        }
+      }
+    },
+    {
+      "id": "maritalStatus",
+      "question": "Guest's marital status? (Optional — only SailClear has a slot for it.)",
+      "scope": "per-traveler",
+      "source": { "kind": "wizard", "note": "skippable; NA is a legal spreadsheet value" },
+      "canonical": { "example": "NA" },
+      "bindings": {
+        "bvi": { "label": null, "control": "absent", "confidence": "single-observation", "observed": ["2026-08-05"] },
+        "enoad": { "label": null, "control": "absent", "confidence": "template", "observed": [] },
+        "sailclear": {
+          "label": "Marital Status", "control": "select", "example": "NA",
+          "vocabulary": ["Single", "Married", "InRelation", "Divorced", "Engaged", "Separated", "Widowed", "NA"],
+          "idiosyncrasies": ["NOT enforced by the live form despite the spreadsheet marking it required — blank was accepted"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "travelerRole",
+      "question": null,
+      "scope": "per-traveler",
+      "source": { "kind": "derived", "note": "captain = Master (SailClear) / the Captain step (BVI) / Crew List (eNOAD); every guest = Passenger. Never ask." },
+      "canonical": { "example": "Passenger" },
+      "bindings": {
+        "bvi": {
+          "label": "Traveling as", "control": "select", "example": "PASSENGER",
+          "vocabulary": ["PASSENGER", "CREW"],
+          "idiosyncrasies": [
+            "defaults to PASSENGER — verify rather than assume",
+            "the Travelers (N) count INCLUDES the captain from the Captain step: 7 guests shows as 8; reconcile by name, never by count"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "enoad": {
+          "label": null, "control": "absent",
+          "idiosyncrasies": ["role is structural: passengers on Non-Crew List, captain on Crew List with Position"],
+          "confidence": "template", "observed": []
+        },
+        "sailclear": {
+          "label": "unverified", "control": "select", "example": "Passenger",
+          "vocabulary": ["Master", "Crew", "Passenger"],
+          "idiosyncrasies": ["EXACTLY ONE Master per manifest — the captain"],
+          "confidence": "template", "observed": ["2026-08-05"]
+        }
+      }
+    },
+    {
+      "id": "residentialAddress",
+      "question": "Guest's home address? (Optional on SailClear; BVI wants a permanent address.)",
+      "scope": "per-traveler",
+      "source": { "kind": "wizard", "note": "likely skippable for US guests on eNOAD (US Address block is optional in the workbook)" },
+      "canonical": { "example": "123 Main St, Austin, Texas, USA" },
+      "bindings": {
+        "bvi": {
+          "label": "Permanent Address (Street address / City of residence / State-Province / ZIP-Postal code)",
+          "control": "text",
+          "idiosyncrasies": ["a required multi-field block per the i18n bundle's error strings; note the bundle's own typo: State/Provance is required."],
+          "confidence": "template", "observed": ["2026-08-06 (i18n bundle)"]
+        },
+        "enoad": { "label": "US Address (Street/City/State/Zip)", "control": "text", "frame": "menu/EditNonCrew.aspx",
+          "confidence": "template", "observed": [] },
+        "sailclear": { "label": "unverified", "control": "text",
+          "idiosyncrasies": ["left blank 2026-08-05; accepted"], "confidence": "single-observation", "observed": ["2026-08-05"] }
+      }
+    },
+    {
+      "id": "captainIdentity",
+      "question": "Captain's own passport details (same set as a guest: names, sex, DOB, passport, citizenship)?",
+      "scope": "per-captain",
+      "source": { "kind": "passportOCR", "path": "captain.*", "note": "captain record is thinner than traveler (no gender/dateOfIssue/issuingAuthority/placeOfBirth) — run the captain's passport through OCR like any guest" },
+      "canonical": { "example": "KING, VALERIE" },
+      "bindings": {
+        "bvi": {
+          "label": "Captain (wizard step 2)", "control": "unverified",
+          "idiosyncrasies": ["captain entered in the separate Captain step, then ALSO occupies slot 1 of the Travelers list"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "enoad": {
+          "label": "Crew List entry", "control": "unverified",
+          "idiosyncrasies": ["captain goes on the Crew List, which additionally requires Position and Longshoreman Work Declaration"],
+          "confidence": "template", "observed": []
+        },
+        "sailclear": {
+          "label": "individual with rank Master", "control": "unverified",
+          "confidence": "template", "observed": []
+        }
+      }
+    },
+    {
+      "id": "captainContact",
+      "question": "Captain's email and phone (used as reporting party / 24-hour point of contact)?",
+      "scope": "per-captain",
+      "source": { "kind": "stored", "path": "captain.email + captain.phone" },
+      "canonical": { "example": "captain@example.com / +1 340 555 0100" },
+      "bindings": {
+        "bvi": { "label": "unverified", "control": "text", "confidence": "needs-recon", "observed": [] },
+        "enoad": {
+          "label": "Reporting Party / 24-Hour Point of Contact", "control": "text",
+          "idiosyncrasies": ["in the workbook: Reporting Party B5/E5/B7, Voyage Information B10/B12/D12"],
+          "confidence": "template", "observed": []
+        },
+        "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "vesselName",
+      "question": "Vessel name?",
+      "scope": "per-vessel",
+      "source": { "kind": "stored", "path": "boat.vesselName" },
+      "canonical": { "example": "ISLAND TIME" },
+      "bindings": {
+        "bvi": {
+          "label": "Name of the vessel", "control": "text", "transform": "upper",
+          "idiosyncrasies": ["validation: must be alphanumeric"],
+          "confidence": "template", "observed": ["2026-08-06 (i18n bundle)"]
+        },
+        "enoad": { "label": "Vessel Name", "control": "text", "idiosyncrasies": ["workbook: Vessel Details B5"], "confidence": "template", "observed": [] },
+        "sailclear": { "label": "unverified", "control": "text", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "vesselRegistration",
+      "question": "Vessel registration number?",
+      "scope": "per-vessel",
+      "source": { "kind": "stored", "path": "boat.registrationNumber" },
+      "canonical": { "example": "VG1234" },
+      "bindings": {
+        "bvi": {
+          "label": "unverified", "control": "text", "transform": "upper",
+          "idiosyncrasies": ["editing a manifest later requires Manifest ID PLUS this registration number — it is the identity key"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "enoad": { "label": "Official Number", "control": "text", "idiosyncrasies": ["workbook: Vessel Details E5"], "confidence": "template", "observed": [] },
+        "sailclear": { "label": "unverified", "control": "text", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "vesselFlagState",
+      "question": "What country is the vessel registered in (flag state)?",
+      "scope": "per-vessel",
+      "source": { "kind": "stored", "path": "boat.flagState", "normalize": "toCountry" },
+      "canonical": { "example": "UNITED STATES" },
+      "bindings": {
+        "bvi": {
+          "label": "Transport's country of registration", "control": "mat-autocomplete", "example": "UNITED STATES",
+          "vocabulary": "shared/reference/bvi/country.json",
+          "idiosyncrasies": ["typeahead confirmed by its own error string: Transport's country of registration not recognized. Click one of the options."],
+          "confidence": "template", "observed": ["2026-08-06 (i18n bundle)"]
+        },
+        "enoad": { "label": "Flag", "control": "unverified", "example": "UNITED STATES",
+          "vocabulary": "shared/reference/nvmc/travelCountry.json",
+          "idiosyncrasies": ["workbook: Vessel Details G5, normalized to NVMC country spelling"], "confidence": "template", "observed": [] },
+        "sailclear": { "label": "unverified", "control": "unverified", "example": "United States", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "vesselHomePort",
+      "question": "Vessel's home port?",
+      "scope": "per-vessel",
+      "source": { "kind": "stored", "path": "boat.homePort" },
+      "canonical": { "example": "CHARLOTTE AMALIE, ST THOMAS" },
+      "bindings": {
+        "bvi": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] },
+        "enoad": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] },
+        "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "vesselCallSign",
+      "question": "Vessel call sign (eNOAD requires it)?",
+      "scope": "per-vessel",
+      "source": { "kind": "wizard", "note": "not in the boat record yet — the workbook lists Call Sign D5 among unfilled required cells" },
+      "canonical": { "example": "WDL1234" },
+      "bindings": {
+        "bvi": { "label": null, "control": "absent", "confidence": "needs-recon", "observed": [] },
+        "enoad": { "label": "Call Sign", "control": "text", "idiosyncrasies": ["workbook: Vessel Details D5, required"], "confidence": "template", "observed": [] },
+        "sailclear": { "label": null, "control": "absent", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "transportType",
+      "question": "What kind of charter is this trip?",
+      "scope": "per-vessel",
+      "source": { "kind": "wizard", "type": "learned-single-select", "listId": "transportTypes", "note": "in practice constant per captain — ask once, remember" },
+      "canonical": { "example": "CREWED CHARTER" },
+      "bindings": {
+        "bvi": {
+          "label": "Transport type", "control": "mat-autocomplete", "example": "CREWED CHARTER",
+          "vocabulary": "shared/reference/bvi/purposeOfVisitTransport.json",
+          "idiosyncrasies": [
+            "naming trap: this field is backed by the PURPOSE VISIT TRANSPORT dictionary (16 values incl. CREWED CHARTER, regattas, poker runs) — the dictionary literally named TRANSPORT TYPE is just SEA VESSEL | AIRCRAFT",
+            "some values carry stray whitespace ( ONE VI POKER RUN, BVI MUSIC FEST ) — exact-match logic must compare trimmed"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (vocabulary via dictionaries API)"]
+        },
+        "enoad": { "label": "Voyage Type", "control": "unverified", "confidence": "needs-recon", "observed": [] },
+        "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "noticeLeg",
+      "question": "Which leg is this filing for — departing the USVI, or arriving back from the BVI?",
+      "scope": "per-trip",
+      "source": { "kind": "wizard", "note": "drives embark values on eNOAD; two separate eNOAD notices per round trip" },
+      "canonical": { "example": "arrival (BVI -> USVI)" },
+      "bindings": {
+        "bvi": { "label": null, "control": "absent", "idiosyncrasies": ["BVI manifest is inherently the arrival INTO the BVI; Create Return Trip clones it for the way back"], "confidence": "single-observation", "observed": ["2026-08-05"] },
+        "enoad": {
+          "label": "Notice Type + Embark block", "control": "derived",
+          "idiosyncrasies": [
+            "EMBARK = where THIS voyage started: arriving into the USVI -> Embark Country VIRGIN ISLANDS, BRITISH (note the comma) with port e.g. TORTOLA; departing the USVI -> Embark Country UNITED STATES, Embark State Virgin Islands (USVI is a STATE here, never a country)"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "departurePort",
+      "question": "Which port/dock are you departing from?",
+      "scope": "per-trip",
+      "source": {
+        "kind": "wizard", "type": "learned-single-select", "listId": "departurePorts",
+        "behavior": "offer-known-values-plus-other; append new answers",
+        "storage": "chrome.storage.local:learnedLists.departurePorts",
+        "seedFrom": "shared/registry/learned-lists.json"
+      },
+      "canonical": { "example": "CHARLOTTE AMALIE HARBOR, ST. THOMAS" },
+      "bindings": {
+        "bvi": {
+          "label": "Initial port of embarkation", "control": "mat-autocomplete",
+          "transform": "map:portToBviEmbark", "example": "VICHA - CHARLOTTE AMALIE HARBOR, ST. THOMAS",
+          "vocabulary": "shared/reference/bvi/ports.json",
+          "interaction": "options are CODE - NAME; type a distinctive word (CHARLOTTE); panel renders ~10 rows, virtualized — options late in the alphabet are not in the DOM until scrolled",
+          "idiosyncrasies": [
+            "backed by the 25,751-entry PORT dictionary — full list now in shared/reference/bvi/ports.json",
+            "validation verbatim: Initial port of embarkation not recognized. Click one of the options.",
+            "a separate Port where embarking field also exists in the bundle — likely the DEPARTURE-direction variant"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label + vocabulary via app bundle and dictionaries API)"]
+        },
+        "enoad": {
+          "label": "Embark Port", "control": "telerik-radcombobox", "example": "TORTOLA",
+          "vocabulary": "shared/reference/nvmc/port.json",
+          "idiosyncrasies": [
+            "selecting Embark Port made Embark Place stop being required — set Port FIRST, then re-check what is still mandatory",
+            "port list cascades from the country/state pair; US ports carry a BLANK port code in the workbook",
+            "nvmc/port.json is currently EMPTY — capturing live port options is a recon target"
+          ],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "embarkPlace",
+      "question": "Where exactly did guests board (marina/dock), if the form still asks after the port is set?",
+      "scope": "per-trip",
+      "source": { "kind": "wizard", "type": "learned-single-select", "listId": "captainDocks" },
+      "canonical": { "example": "YACHT HAVEN GRANDE" },
+      "bindings": {
+        "bvi": { "label": null, "control": "absent", "confidence": "needs-recon", "observed": [] },
+        "enoad": {
+          "label": "Embark Place", "control": "text",
+          "idiosyncrasies": ["conditionally required — choosing Embark Port made it stop being required (2026-08-05)"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "sailclear": { "label": null, "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "arrivalPort",
+      "question": "Which port are you arriving at (port of entry)?",
+      "scope": "per-trip",
+      "source": {
+        "kind": "wizard", "type": "learned-single-select", "listId": "arrivalPorts",
+        "behavior": "offer-known-values-plus-other; append new answers",
+        "storage": "chrome.storage.local:learnedLists.arrivalPorts",
+        "seedFrom": "shared/registry/learned-lists.json"
+      },
+      "canonical": { "example": "ROAD TOWN, TORTOLA" },
+      "bindings": {
+        "bvi": {
+          "label": "Port of entry", "control": "mat-autocomplete", "example": "ROAD TOWN, TORTOLA",
+          "vocabulary": "shared/reference/bvi/portsOfEntry.json",
+          "idiosyncrasies": ["backed by the LOCATION dictionary (15 values incl. airports and admin offices), NOT the 25k-entry PORT dictionary the embarkation field uses"],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (vocabulary via dictionaries API)"]
+        },
+        "enoad": {
+          "label": "Arrival Port", "control": "unverified",
+          "vocabulary": "shared/reference/nvmc/port.json",
+          "idiosyncrasies": ["workbook ARRIVAL block is among the unfilled-required cells; live-form binding is a recon target"],
+          "confidence": "needs-recon", "observed": []
+        },
+        "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "departureDateTime",
+      "question": "Departure date and time?",
+      "scope": "per-trip",
+      "source": { "kind": "wizard", "path": "trip.departureDate", "note": "time not yet in the trip record — wizard must add it" },
+      "canonical": { "example": "6 August 2026, 09:15" },
+      "bindings": {
+        "bvi": {
+          "label": "Intended date of departure", "control": "date+time-pickers", "example": "06/08/2026 09:15",
+          "idiosyncrasies": ["time is 24-hour with SEPARATE hour and minute pickers; minutes only 00/15/30/45 — round or reject other values"],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label via i18n bundle)"]
+        },
+        "enoad": { "label": "unverified (Voyage Information)", "control": "unverified", "example": "2026-08-06",
+          "idiosyncrasies": ["workbook DEPARTURE block is among the unfilled-required cells"], "confidence": "needs-recon", "observed": [] },
+        "sailclear": { "label": "unverified", "control": "unverified", "example": "06/08/2026", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "arrivalDateTime",
+      "question": "Arrival date and time?",
+      "scope": "per-trip",
+      "source": { "kind": "wizard", "note": "not in the trip record yet; BVI filing deadline is 1 hour before arrival, eNOAD 60 min before departure from the foreign port" },
+      "canonical": { "example": "6 August 2026, 14:30" },
+      "bindings": {
+        "bvi": {
+          "label": "Intended date of arrival", "control": "date+time-pickers", "example": "06/08/2026 14:30",
+          "idiosyncrasies": ["same 24-hour split pickers, minutes 00/15/30/45"],
+          "confidence": "single-observation", "observed": ["2026-08-05", "2026-08-06 (label via i18n bundle)"]
+        },
+        "enoad": { "label": "unverified (Voyage Information)", "control": "unverified", "confidence": "needs-recon", "observed": [] },
+        "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "purposeOfVisit",
+      "question": "Purpose of the visit?",
+      "scope": "per-trip",
+      "source": { "kind": "wizard", "type": "learned-single-select", "listId": "tripPurposes" },
+      "canonical": { "example": "VACATION" },
+      "bindings": {
+        "bvi": {
+          "label": "Purpose of visit", "control": "mat-autocomplete", "example": "VACATION",
+          "vocabulary": "shared/reference/bvi/purposeOfVisit.json",
+          "interaction": "barely filters on typing; usually needs scrolling the virtualized panel",
+          "idiosyncrasies": ["near-duplicate options VACATION and VISITING FAMILY AND FRIENDS VACATION — a contains-match picks wrong; require exact full-string match"],
+          "confidence": "single-observation", "observed": ["2026-08-05"]
+        },
+        "enoad": { "label": null, "control": "absent", "confidence": "needs-recon", "observed": [] },
+        "sailclear": { "label": "unverified (Reason for visit)", "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "durationOfStay",
+      "question": "How long will the party stay in the BVI?",
+      "scope": "per-trip",
+      "source": { "kind": "wizard", "note": "derivable from departure/return dates — confirm rather than ask fresh" },
+      "canonical": { "example": "3 days" },
+      "bindings": {
+        "bvi": {
+          "label": "Duration of stay", "control": "text",
+          "idiosyncrasies": ["numeric — validation: Duration of stay must be a number."],
+          "confidence": "template", "observed": ["2026-08-06 (i18n bundle)"]
+        },
+        "enoad": { "label": null, "control": "absent", "confidence": "template", "observed": [] },
+        "sailclear": { "label": null, "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "accommodation",
+      "question": "Where is the party staying in the BVI (accommodation type + address/slip)?",
+      "scope": "per-trip",
+      "source": { "kind": "wizard", "type": "learned-single-select", "listId": "accommodations", "note": "for charters this is usually the vessel itself — wording on the portal includes Slip Number" },
+      "canonical": { "example": "VESSEL — slip at Road Town" },
+      "bindings": {
+        "bvi": {
+          "label": "Type of accommodation + Accommodation in BVI (Hotel, Resort, Address, Slip Number, etc)",
+          "control": "mat-autocomplete + text",
+          "vocabulary": "shared/reference/bvi/accommodationType.json",
+          "example": "SEA VESSEL",
+          "idiosyncrasies": [
+            "SEA VESSEL is a legal accommodation type — the natural answer for a charter",
+            "choosing OTHER reveals a required Other accommodation type field; a Private address in BVI field also exists",
+            "typeahead confirmed: Type of accommodation not recognized. Click one of the options."
+          ],
+          "confidence": "template", "observed": ["2026-08-06 (label + vocabulary via app bundle and dictionaries API)"]
+        },
+        "enoad": { "label": null, "control": "absent", "confidence": "template", "observed": [] },
+        "sailclear": { "label": null, "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    },
+    {
+      "id": "healthDeclaration",
+      "question": "Any illness aboard to declare? (Usually no — confirm, don't interrogate.)",
+      "scope": "per-trip",
+      "source": { "kind": "wizard", "note": "SailClear wizard has a health declaration section the spreadsheet never covers" },
+      "canonical": { "example": "No" },
+      "bindings": {
+        "bvi": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] },
+        "enoad": { "label": null, "control": "unverified", "idiosyncrasies": ["CDC/security sections exist in the workbook; live-form shape unknown"], "confidence": "needs-recon", "observed": [] },
+        "sailclear": { "label": "unverified", "control": "unverified", "confidence": "needs-recon", "observed": [] }
+      }
+    }
+  ]
+}
