@@ -1,0 +1,88 @@
+{
+  "dictionary": "PURPOSE VISIT TRANSPORT",
+  "dictionaryId": 608,
+  "count": 16,
+  "values": [
+    {
+      "id": 10980004,
+      "value": "CARGO VESSEL",
+      "active": true
+    },
+    {
+      "id": 10980003,
+      "value": "CARGO FLIGHT",
+      "active": true
+    },
+    {
+      "id": 10980015,
+      "value": " ONE VI POKER RUN",
+      "active": true,
+      "whitespaceHazard": true
+    },
+    {
+      "id": 10980013,
+      "value": "BVI SPRING REGATTA",
+      "active": true
+    },
+    {
+      "id": 10980012,
+      "value": "CHARTER FLIGHT",
+      "active": true
+    },
+    {
+      "id": 10980009,
+      "value": "LOBSTERFEST ATTENDEE",
+      "active": true
+    },
+    {
+      "id": 10980008,
+      "value": "CHRISTMAS IN JULY",
+      "active": true
+    },
+    {
+      "id": 10980021,
+      "value": "BVI MUSIC FEST",
+      "active": true
+    },
+    {
+      "id": 6080008,
+      "value": "CREWED CHARTER",
+      "active": true
+    },
+    {
+      "id": 10980019,
+      "value": "LEVERICK BAY POKER RUN",
+      "active": false
+    },
+    {
+      "id": 6080009,
+      "value": "MERCHANT VESSEL",
+      "active": true
+    },
+    {
+      "id": 6080010,
+      "value": "OTHER",
+      "active": true
+    },
+    {
+      "id": 6080011,
+      "value": "SCHEDULED COMMERCIAL",
+      "active": true
+    },
+    {
+      "id": 6080005,
+      "value": "PLEASURE",
+      "active": true
+    },
+    {
+      "id": 6080006,
+      "value": "COMMERCIAL PLEASURE",
+      "active": true
+    },
+    {
+      "id": 6080007,
+      "value": "BAREBOAT RENTAL",
+      "active": true
+    }
+  ]
+}

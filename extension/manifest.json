@@ -39,7 +39,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content/content-script.js"],
+      "js": ["content/content-script.js", "content/recon.js"],
       "run_at": "document_idle",
       "all_frames": true,
       "match_about_blank": true

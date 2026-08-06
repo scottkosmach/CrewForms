@@ -1,0 +1,103 @@
+{
+  "dictionary": "PURPOSE VISIT PERSON",
+  "dictionaryId": 605,
+  "count": 19,
+  "values": [
+    {
+      "id": 6050013,
+      "value": "WEDDING",
+      "active": true
+    },
+    {
+      "id": 6050014,
+      "value": "HONEYMOON",
+      "active": true
+    },
+    {
+      "id": 6050008,
+      "value": "BUSINESS",
+      "active": true
+    },
+    {
+      "id": 6050011,
+      "value": "OTHER",
+      "active": true
+    },
+    {
+      "id": 6050004,
+      "value": "STUDY",
+      "active": true
+    },
+    {
+      "id": 6050005,
+      "value": "MEETING",
+      "active": true
+    },
+    {
+      "id": 10980014,
+      "value": "BVI SPRING REGATTA ATENDEE",
+      "active": false
+    },
+    {
+      "id": 6050006,
+      "value": "CONFERENCE/CONVENTION",
+      "active": true
+    },
+    {
+      "id": 6050007,
+      "value": "SPORTS EVENTS/TRAININING",
+      "active": true
+    },
+    {
+      "id": 6050032,
+      "value": "CITIZEN/RESIDENT",
+      "active": true
+    },
+    {
+      "id": 10980011,
+      "value": "ENTRY PERMIT HOLDER",
+      "active": true
+    },
+    {
+      "id": 6050001,
+      "value": "VACATION",
+      "active": true
+    },
+    {
+      "id": 10980010,
+      "value": "LOBSTER FEST ATTENDEE",
+      "active": false
+    },
+    {
+      "id": 6050002,
+      "value": "VISITING FAMILY AND FRIENDS VACATION",
+      "active": true
+    },
+    {
+      "id": 10980020,
+      "value": "BVI MUSIC FEST ",
+      "active": true,
+      "whitespaceHazard": true
+    },
+    {
+      "id": 10980018,
+      "value": "LEVRICK BAY POKER RUN ATTENDEE",
+      "active": true
+    },
+    {
+      "id": 10980016,
+      "value": "ONEVI POKERRUN/MUSICFEST ATTENDEE",
+      "active": false
+    },
+    {
+      "id": 10980026,
+      "value": "BOB CONCERT ATTENDEE",
+      "active": true
+    },
+    {
+      "id": 10980025,
+      "value": "CHRISTMAS IN JULY",
+      "active": true
+    }
+  ]
+}

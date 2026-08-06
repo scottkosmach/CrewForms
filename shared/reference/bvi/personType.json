@@ -1,0 +1,17 @@
+{
+  "dictionary": "PERSON TYPE",
+  "dictionaryId": 592,
+  "count": 2,
+  "values": [
+    {
+      "id": 5920002,
+      "value": "PASSENGER",
+      "active": true
+    },
+    {
+      "id": 5920001,
+      "value": "CREW",
+      "active": true
+    }
+  ]
+}

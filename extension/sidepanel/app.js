@@ -1469,6 +1469,7 @@ function setupExcelDownload() {
     wbBtn.addEventListener('click', handleWorkbookDownload);
   }
   initAgentSite();
+  initRecon();
 }
 
 // ============================================================================
@@ -1612,7 +1613,11 @@ function toCountry(raw) {
  */
 const NATIONALITY_DEMONYM = {
   'UNITED STATES': 'AMERICAN',
-  'UNITED KINGDOM': 'BRITISH',
+  // Verified against the portal's own NATIONALITY dictionary 2026-08-06
+  // (shared/reference/bvi/nationality.json): the plain-UK option is BRITON.
+  // "BRITISH" appears only inside longer entries like "UNITED KINGDOM
+  // BRITISH – OVERSEAS CITIZEN", none of which is the ordinary UK citizen.
+  'UNITED KINGDOM': 'BRITON',
   CANADA: 'CANADIAN',
   GERMANY: 'GERMAN',
   FRANCE: 'FRENCH',
@@ -1633,7 +1638,8 @@ const NATIONALITY_DEMONYM = {
   'NEW ZEALAND': 'NEW ZEALANDER',
   'SOUTH AFRICA': 'SOUTH AFRICAN',
   BRAZIL: 'BRAZILIAN',
-  ARGENTINA: 'ARGENTINE',
+  // The dictionary's literal option string includes both forms, comma and all.
+  ARGENTINA: 'ARGENTINIAN, ARGENTINE',
   MEXICO: 'MEXICAN',
   'VIRGIN ISLANDS (BRITISH)': 'BRITISH VIRGIN ISLANDER',
   'BRITISH VIRGIN ISLANDS': 'BRITISH VIRGIN ISLANDER',
@@ -1788,7 +1794,7 @@ function siteRules(site) {
   ];
 }
 
-function buildAgentText(site) {
+function buildAgentText(site, opts = {}) {
   const p = SITE_PROFILE[site] || SITE_PROFILE.bvi;
   const travelers = state.travelers || [];
   const up = (s) => String(s || '').toUpperCase();
@@ -1875,7 +1881,7 @@ function buildAgentText(site) {
   lines.push('Anything not listed above (contact details, purpose of visit, where we are');
   lines.push('staying) I will give you — just ask.');
   lines.push('');
-  debriefSection(site).forEach((l) => lines.push(l));
+  (opts.survey ? reconDebriefSection(site) : debriefSection(site)).forEach((l) => lines.push(l));
 
   return lines.join('\n');
 }
@@ -1915,6 +1921,46 @@ function debriefSection(site) {
     '  7. Anything you could not do without me.',
     '',
     'Short and specific is better than thorough. If something went cleanly, skip it.',
+  ];
+}
+
+/**
+ * Survey mode: the full-inventory variant of the debrief. Where the standard
+ * debrief deliberately asks only about friction, this asks for the complete
+ * map — every field, every option string, every behavior — because the output
+ * feeds shared/registry/canonical-fields.json, the field registry the wizard
+ * and fill layers are being built on. Used for designated recon filings, not
+ * every run: it makes the assistant's job noticeably bigger.
+ */
+function reconDebriefSection(site) {
+  const p = SITE_PROFILE[site] || SITE_PROFILE.bvi;
+  return [
+    '─'.repeat(60),
+    'SURVEY — WHEN YOU HAVE FINISHED FILLING (before I submit), write a full',
+    'survey of this form, not just a debrief. We are building an automation map',
+    `of ${p.url} and you are our only eyes on it. Report:`,
+    '',
+    '  1. EVERY form field in the order encountered, one line each: label',
+    '     exactly as shown | control type (text / dropdown / typeahead / date',
+    '     picker / radio / checkbox / read-only) | required or not | any format',
+    '     hint the page itself shows (placeholder, mask, example). Include the',
+    '     fields you left empty — that they exist is the finding.',
+    '  2. For each dropdown you opened: the option strings you actually SAW,',
+    '     verbatim, including code prefixes and odd spacing. If the list was too',
+    '     long, say how many were visible and quote the first and last.',
+    '  3. Which interaction made each dropdown take a value — typing, filtering,',
+    '     scrolling, clicking — and anything that failed on the first try.',
+    '  4. Fields that appeared, disappeared, or changed required-ness in',
+    '     response to another field, and which action triggered it.',
+    '  5. Every validation message you hit, quoted exactly, and what cleared it.',
+    '  6. Every value you had to translate: what I gave you → what the site',
+    '     actually accepted. These pairs are the most valuable output.',
+    '  7. Anything you could not do without me, plus anything on the page you',
+    '     suspect matters that I did not mention (buttons, tabs, IDs, counters).',
+    '',
+    'Structure beats narrative here: a tight list or table per section, exact',
+    'strings over paraphrase. This survey gets filed into a field registry, so',
+    'verbatim text is the whole point.',
   ];
 }
 
@@ -1965,6 +2011,16 @@ async function initAgentSite() {
   sel.addEventListener('change', handleAgentSiteChange);
   updateAgentHint();
   updateWorkbookButton();
+
+  // Survey mode is sticky: a recon filing is usually decided before the trip,
+  // and forgetting the checkbox halfway through a three-site run would leave
+  // the sites surveyed unevenly.
+  const survey = document.getElementById('surveyMode');
+  if (survey) {
+    const stored = await getStorage(['surveyMode']);
+    survey.checked = Boolean(stored && stored.surveyMode);
+    survey.addEventListener('change', () => setStorage({ surveyMode: survey.checked }));
+  }
 }
 
 async function handleCopyForAgent() {
@@ -1974,16 +2030,322 @@ async function handleCopyForAgent() {
     return;
   }
   const site = currentAgentSite();
+  const survey = Boolean(document.getElementById('surveyMode')?.checked);
   try {
-    await navigator.clipboard.writeText(buildAgentText(site));
+    await navigator.clipboard.writeText(buildAgentText(site, { survey }));
     showToast(
-      `Copied ${travelers.length} guest(s) for ${SITE_PROFILE[site].name} — paste into Claude`,
+      `Copied ${travelers.length} guest(s) for ${SITE_PROFILE[site].name}` +
+        `${survey ? ' with survey' : ''} — paste into Claude`,
       'success',
     );
   } catch (err) {
     console.error('[CrewForms] Copy for AI failed:', err);
     showToast('Could not copy to clipboard', 'error');
   }
+}
+
+// ============================================================================
+// RECON SESSION (Recon tab — drives the passive recorder in content/recon.js)
+// ============================================================================
+
+let reconPollTimer = null;
+
+function initRecon() {
+  const armBtn = document.getElementById('reconArmBtn');
+  const stopBtn = document.getElementById('reconStopBtn');
+  if (!armBtn || !stopBtn) return;
+  armBtn.addEventListener('click', handleReconArm);
+  stopBtn.addEventListener('click', handleReconStop);
+  // A session may already be armed from before a side-panel reload.
+  refreshReconStatus();
+}
+
+/**
+ * Every value the captain's data could put on a form, with the path it came
+ * from. The recorder matches typed text against these (normalized) and records
+ * the PATH, never the value — that is how passport numbers stay out of the
+ * committed session files while we still learn which field got which datum.
+ */
+function buildRedactionDictionary() {
+  const dict = [];
+  const add = (path, value) => {
+    const v = String(value ?? '').trim();
+    if (v.length >= 2) dict.push({ path, value: v });
+  };
+  (state.travelers || []).forEach((t, i) => {
+    const p = `traveler[${i}]`;
+    add(`${p}.firstName`, t.firstName);
+    add(`${p}.middleName`, t.middleName);
+    add(`${p}.lastName`, t.lastName);
+    add(`${p}.givenNames`, [t.firstName, t.middleName].filter(Boolean).join(' '));
+    add(`${p}.fullName`, [t.firstName, t.middleName, t.lastName].filter(Boolean).join(' '));
+    add(`${p}.passportNumber`, t.passportNumber);
+    add(`${p}.placeOfBirth`, t.placeOfBirth);
+  });
+  const c = state.captain || {};
+  add('captain.firstName', c.firstName);
+  add('captain.lastName', c.lastName);
+  add('captain.fullName', [c.firstName, c.middleName, c.lastName].filter(Boolean).join(' '));
+  add('captain.passportNumber', c.passportNumber);
+  add('captain.licenseNumber', c.licenseNumber);
+  add('captain.email', c.email);
+  add('captain.phone', c.phone);
+  (state.boats || []).forEach((b, i) => {
+    add(`boat[${i}].vesselName`, b.vesselName);
+    add(`boat[${i}].registrationNumber`, b.registrationNumber);
+    add(`boat[${i}].homePort`, b.homePort);
+  });
+  (state.companies || []).forEach((co, i) => {
+    add(`company[${i}].companyName`, co.companyName);
+    add(`company[${i}].address`, co.address);
+    add(`company[${i}].email`, co.email);
+    add(`company[${i}].phone`, co.phone);
+  });
+  (state.trips || []).forEach((t, i) => {
+    add(`trip[${i}].departurePort`, t.departurePort);
+    add(`trip[${i}].destinationPorts`, t.destinationPorts);
+  });
+  return dict;
+}
+
+async function handleReconArm() {
+  try {
+    const result = await sendMessage({ type: 'RECON_ARM', redact: buildRedactionDictionary() });
+    if (!result.success) throw new Error(result.error || 'Could not arm recon');
+    showToast('Recon armed — fill the form as normal', 'success');
+    refreshReconStatus();
+    if (!reconPollTimer) reconPollTimer = setInterval(refreshReconStatus, 2000);
+  } catch (err) {
+    console.error('[CrewForms] Recon arm failed:', err);
+    showToast(err.message || 'Could not arm recon', 'error');
+  }
+}
+
+async function handleReconStop() {
+  try {
+    const result = await sendMessage({ type: 'RECON_STOP' });
+    if (!result.success) throw new Error(result.error || 'No recon session armed');
+    if (reconPollTimer) {
+      clearInterval(reconPollTimer);
+      reconPollTimer = null;
+    }
+    const stamp = new Date(result.session.startedAt).toISOString().slice(0, 10);
+    const site = reconSiteSlug(result.events);
+    downloadTextFile(
+      `recon-${stamp}-${site}.json`,
+      JSON.stringify({ session: result.session, events: result.events }, null, 2),
+      'application/json',
+    );
+    downloadTextFile(`recon-${stamp}-${site}.md`, buildReconMarkdown(result.session, result.events), 'text/markdown');
+    showToast(`Recon saved — ${result.events.length} events. Check the redaction audit before committing.`, 'success');
+    refreshReconStatus();
+  } catch (err) {
+    console.error('[CrewForms] Recon stop failed:', err);
+    showToast(err.message || 'Could not stop recon', 'error');
+  }
+}
+
+async function refreshReconStatus() {
+  const el = document.getElementById('reconStatus');
+  const armBtn = document.getElementById('reconArmBtn');
+  const stopBtn = document.getElementById('reconStopBtn');
+  if (!el) return;
+  try {
+    const s = await sendMessage({ type: 'RECON_STATUS' });
+    if (s.armed) {
+      const frames = Object.entries(s.frames || {});
+      el.classList.add('recording');
+      el.textContent =
+        `Recording — ${s.eventCount} events across ${frames.length} frame(s)\n` +
+        frames.map(([f, n]) => `  ${n} · ${f.replace(/^https?:\/\//, '').slice(0, 60)}`).join('\n');
+      if (armBtn) armBtn.disabled = true;
+      if (stopBtn) stopBtn.disabled = false;
+      if (!reconPollTimer) reconPollTimer = setInterval(refreshReconStatus, 2000);
+    } else {
+      el.classList.remove('recording');
+      el.textContent = 'Not recording.';
+      if (armBtn) armBtn.disabled = false;
+      if (stopBtn) stopBtn.disabled = true;
+      if (reconPollTimer) {
+        clearInterval(reconPollTimer);
+        reconPollTimer = null;
+      }
+    }
+  } catch {
+    el.textContent = 'Status unavailable.';
+  }
+}
+
+function reconSiteSlug(events) {
+  const top = events.find((e) => e.top && e.frame);
+  const url = top ? top.frame : '';
+  if (url.includes('bviportals.com')) return 'bvi';
+  if (url.includes('nvmc.uscg.gov')) return 'enoad';
+  if (url.includes('sailclear.com')) return 'sailclear';
+  try {
+    return new URL(url).hostname.replace(/\W+/g, '-') || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function downloadTextFile(filename, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Human-readable session report. The JSON is the machine artifact; this is
+ * what gets skimmed before committing — hence the redaction audit at the end,
+ * which lists every verbatim string the report contains.
+ */
+function buildReconMarkdown(session, events) {
+  const md = [];
+  const esc = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  const fieldName = (f) => (f ? f.label || f.fcn || f.name || f.id || '(unlabelled)' : '(unknown)');
+  const afterText = (a) => (a ? ` — after ${a.kind}${a.field ? ` on ${a.field}` : ''}` : '');
+  const verbatim = new Set();
+
+  const frames = [...new Set(events.map((e) => e.frame))];
+  md.push(`# Recon session ${session.id}`);
+  md.push('');
+  md.push(`- Started: ${new Date(session.startedAt).toISOString()}`);
+  md.push(`- Stopped: ${new Date(session.stoppedAt).toISOString()}`);
+  md.push(`- Events: ${events.length} across ${frames.length} frame(s)`);
+  md.push('');
+
+  for (const frame of frames) {
+    const fe = events.filter((e) => e.frame === frame);
+    md.push(`## Frame: ${frame}`);
+    md.push('');
+
+    const snapshots = fe.filter((e) => e.kind === 'snapshot');
+    const snap = snapshots[snapshots.length - 1];
+    if (snap) {
+      md.push(`### Fields (${snap.fieldCount}, snapshot: ${snap.reason})`);
+      md.push('');
+      md.push('| Label | Control | Req | Identity | Notes |');
+      md.push('|---|---|---|---|---|');
+      for (const f of snap.fields) {
+        const notes = [];
+        if (f.placeholder) notes.push(`placeholder: ${f.placeholder}`);
+        if (f.maxlength) notes.push(`maxlength ${f.maxlength}`);
+        if (f.pattern) notes.push(`pattern ${f.pattern}`);
+        if (f.readOnly) notes.push('read-only');
+        if (f.options) notes.push(`${f.options.length} options`);
+        md.push(
+          `| ${esc(f.label)} | ${esc(f.control)} | ${f.required ? '✱' : ''} | ` +
+            `${esc(f.fcn || f.name || f.id || '')} | ${esc(notes.join('; '))} |`,
+        );
+        (f.options || []).forEach((o) => verbatim.add(o));
+      }
+      md.push('');
+      for (const f of snap.fields) {
+        if (f.options && f.options.length) {
+          md.push(`Options of **${fieldName(f)}**: ${f.options.map((o) => `\`${o}\``).join(', ')}`);
+          md.push('');
+        }
+      }
+    }
+
+    const overlays = fe.filter((e) => e.kind === 'overlay-open');
+    if (overlays.length) {
+      md.push('### Dropdown panels observed');
+      md.push('');
+      for (const o of overlays) {
+        o.options.forEach((x) => verbatim.add(x));
+        md.push(`- for **${esc(o.forField || '?')}** (${o.count} rendered): ${o.options.map((x) => `\`${x}\``).join(', ')}`);
+      }
+      md.push('');
+    }
+
+    const picks = fe.filter((e) => e.kind === 'option-selected');
+    if (picks.length) {
+      md.push('### Options clicked');
+      md.push('');
+      for (const p of picks) {
+        verbatim.add(p.value);
+        md.push(`- \`${p.value}\` for **${esc(p.forField || '?')}**${p.isTrusted === false ? ' _(synthetic click)_' : ''}`);
+      }
+      md.push('');
+    }
+
+    const vals = new Map();
+    for (const e of fe) {
+      if ((e.kind === 'input' || e.kind === 'change') && e.value && !e.value.empty) {
+        vals.set(fieldName(e.field), e.value);
+      }
+    }
+    if (vals.size) {
+      md.push('### Values entered (final per field, redacted)');
+      md.push('');
+      for (const [name, v] of vals) {
+        let shown;
+        if (v.token) shown = v.token;
+        else if (v.option) {
+          shown = `\`${v.option}\``;
+          verbatim.add(v.option);
+        } else if (v.dateFormat) shown = `date as \`${v.dateFormat}\``;
+        else shown = `shape \`${v.pattern}\` (len ${v.len})${v.redacted ? ' [PII-label]' : ''}`;
+        md.push(`- **${esc(name)}**: ${shown}`);
+      }
+      md.push('');
+    }
+
+    const msgs = [...new Set(fe.filter((e) => e.kind === 'validation-message').map((e) => e.text))];
+    if (msgs.length) {
+      md.push('### Validation messages (verbatim)');
+      md.push('');
+      msgs.forEach((t) => {
+        verbatim.add(t);
+        md.push(`- "${t}"`);
+      });
+      md.push('');
+    }
+
+    const conditional = fe.filter((e) =>
+      ['field-appeared', 'field-removed', 'field-shown', 'field-hidden', 'attr-change', 'silent-change'].includes(e.kind),
+    );
+    if (conditional.length) {
+      md.push('### Conditional / unexpected behavior');
+      md.push('');
+      for (const e of conditional) {
+        if (e.kind === 'attr-change') {
+          md.push(`- \`${e.attr}\` → \`${e.now}\` on **${esc(fieldName(e.field))}**${afterText(e.after)}`);
+        } else if (e.kind === 'silent-change') {
+          md.push(`- silent value change on **${esc(fieldName(e.field))}** (no user event)`);
+        } else {
+          md.push(`- ${e.kind.replace('field-', '')}: **${esc(fieldName(e.field))}**${afterText(e.after)}`);
+        }
+      }
+      md.push('');
+    }
+
+    const reloads = fe.filter((e) => e.kind === 'frame-reloaded').length;
+    if (reloads) {
+      md.push(`_Frame reloaded ${reloads} time(s) during the session (postbacks)._`);
+      md.push('');
+    }
+  }
+
+  md.push('---');
+  md.push('## Redaction audit');
+  md.push('');
+  md.push('Typed values are recorded as data-path tokens or shapes only. The verbatim');
+  md.push('strings below are everything this report quotes from the page — option');
+  md.push('lists and validation text. Confirm none is personal data before this file');
+  md.push('is committed:');
+  md.push('');
+  md.push([...verbatim].map((v) => `\`${esc(v)}\``).join(' · ') || '(none)');
+  md.push('');
+  return md.join('\n');
 }
 
 // ============================================================================

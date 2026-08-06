@@ -1,0 +1,22 @@
+{
+  "dictionary": "SEX",
+  "dictionaryId": 50,
+  "count": 3,
+  "values": [
+    {
+      "id": 500003,
+      "value": "UNSPECIFIED",
+      "active": true
+    },
+    {
+      "id": 500002,
+      "value": "FEMALE",
+      "active": true
+    },
+    {
+      "id": 500001,
+      "value": "MALE",
+      "active": true
+    }
+  ]
+}

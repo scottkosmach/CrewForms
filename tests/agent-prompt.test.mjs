@@ -18,7 +18,7 @@ const slice = src.slice(
   src.indexOf('function currentAgentSite'),
 );
 
-function build(site, travelers, { boats = [], trips = [] } = {}) {
+function build(site, travelers, { boats = [], trips = [], survey = false } = {}) {
   const sandbox = {
     state: { travelers, boats, trips },
     getCurrentBoatId: () => (boats[0] ? boats[0].id : null),
@@ -29,9 +29,10 @@ function build(site, travelers, { boats = [], trips = [] } = {}) {
     'getCurrentBoatId',
     'getCurrentTripId',
     'site',
-    `${slice}; return buildAgentText(site);`,
+    'opts',
+    `${slice}; return buildAgentText(site, opts);`,
   );
-  return fn(sandbox.state, sandbox.getCurrentBoatId, sandbox.getCurrentTripId, site);
+  return fn(sandbox.state, sandbox.getCurrentBoatId, sandbox.getCurrentTripId, site, { survey });
 }
 
 /** 6 February 1990 — both parts <= 12, so a transposition is invisible. */
@@ -109,5 +110,27 @@ test('passport numbers keep letter prefixes and are uppercased', () => {
 test('every prompt forbids submitting', () => {
   for (const site of ['bvi', 'enoad', 'sailclear']) {
     assert.match(build(site, [AMBIGUOUS]), /DO NOT SUBMIT/);
+  }
+});
+
+test('survey mode swaps the friction debrief for the full inventory', () => {
+  for (const site of ['bvi', 'enoad', 'sailclear']) {
+    const t = build(site, [AMBIGUOUS], { survey: true });
+    assert.match(t, /SURVEY — WHEN YOU HAVE FINISHED FILLING/, `${site} survey header`);
+    assert.match(t, /EVERY form field in the order encountered/, `${site} field inventory ask`);
+    assert.match(t, /what I gave you → what the site/, `${site} translation-pairs ask`);
+    // The standard debrief must be replaced, not appended — two overlapping
+    // asks would get the assistant to answer neither properly.
+    assert.ok(!t.includes('Keep it to what actually gave trouble'), `${site} standard debrief gone`);
+    // Fill-side guardrails survive the swap.
+    assert.match(t, /DO NOT SUBMIT/, `${site} still forbids submitting`);
+  }
+});
+
+test('survey mode is off by default', () => {
+  for (const site of ['bvi', 'enoad', 'sailclear']) {
+    const t = build(site, [AMBIGUOUS]);
+    assert.ok(!t.includes('SURVEY —'), `${site} default is the short debrief`);
+    assert.match(t, /Keep it to what actually gave trouble/);
   }
 });

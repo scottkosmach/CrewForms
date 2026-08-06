@@ -1,0 +1,72 @@
+{
+  "dictionary": "EDIFACT TRAVEL DOCUMENT TYPE",
+  "dictionaryId": 628,
+  "count": 13,
+  "values": [
+    {
+      "id": 6280013,
+      "value": "O",
+      "active": true
+    },
+    {
+      "id": 6280012,
+      "value": "G",
+      "active": true
+    },
+    {
+      "id": 6280011,
+      "value": "D",
+      "active": true
+    },
+    {
+      "id": 6280010,
+      "value": "F",
+      "active": true
+    },
+    {
+      "id": 6280009,
+      "value": "L",
+      "active": true
+    },
+    {
+      "id": 6280008,
+      "value": "M",
+      "active": true
+    },
+    {
+      "id": 6280007,
+      "value": "N",
+      "active": true
+    },
+    {
+      "id": 6280006,
+      "value": "T",
+      "active": true
+    },
+    {
+      "id": 6280005,
+      "value": "V",
+      "active": true
+    },
+    {
+      "id": 6280004,
+      "value": "I",
+      "active": true
+    },
+    {
+      "id": 6280003,
+      "value": "C",
+      "active": true
+    },
+    {
+      "id": 6280002,
+      "value": "A",
+      "active": true
+    },
+    {
+      "id": 6280001,
+      "value": "P",
+      "active": true
+    }
+  ]
+}

@@ -1,0 +1,1357 @@
+{
+  "dictionary": "COUNTRY",
+  "dictionaryId": 54,
+  "count": 270,
+  "values": [
+    {
+      "id": 540168,
+      "value": "PAPUA NEW GUINEA",
+      "active": true
+    },
+    {
+      "id": 540169,
+      "value": "PARAGUAY",
+      "active": true
+    },
+    {
+      "id": 540170,
+      "value": "PERU",
+      "active": true
+    },
+    {
+      "id": 540171,
+      "value": "PHILIPPINES",
+      "active": true
+    },
+    {
+      "id": 540173,
+      "value": "POLAND",
+      "active": true
+    },
+    {
+      "id": 540174,
+      "value": "PORTUGAL",
+      "active": true
+    },
+    {
+      "id": 540175,
+      "value": "PUERTO RICO",
+      "active": true
+    },
+    {
+      "id": 540160,
+      "value": "NORFOLK ISLAND",
+      "active": true
+    },
+    {
+      "id": 540161,
+      "value": "NORTHERN MARIANA ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540162,
+      "value": "NORWAY",
+      "active": true
+    },
+    {
+      "id": 540163,
+      "value": "OMAN",
+      "active": true
+    },
+    {
+      "id": 540164,
+      "value": "PAKISTAN",
+      "active": true
+    },
+    {
+      "id": 540165,
+      "value": "PALAU",
+      "active": true
+    },
+    {
+      "id": 540167,
+      "value": "PANAMA",
+      "active": true
+    },
+    {
+      "id": 540184,
+      "value": "SAINT PIERRE AND MIQUELON",
+      "active": true
+    },
+    {
+      "id": 540185,
+      "value": "SAINT VINCENT AND THE GRENADINES",
+      "active": true
+    },
+    {
+      "id": 540186,
+      "value": "SAMOA",
+      "active": true
+    },
+    {
+      "id": 540187,
+      "value": "SAN MARINO",
+      "active": true
+    },
+    {
+      "id": 540188,
+      "value": "SAO TOME AND PRINCIPE",
+      "active": true
+    },
+    {
+      "id": 540189,
+      "value": "SAUDI ARABIA",
+      "active": true
+    },
+    {
+      "id": 540190,
+      "value": "SENEGAL",
+      "active": true
+    },
+    {
+      "id": 540176,
+      "value": "QATAR",
+      "active": true
+    },
+    {
+      "id": 540177,
+      "value": "RÉUNION",
+      "active": true
+    },
+    {
+      "id": 540178,
+      "value": "ROMANIA",
+      "active": true
+    },
+    {
+      "id": 540179,
+      "value": "RUSSIAN FEDERATION",
+      "active": true
+    },
+    {
+      "id": 540180,
+      "value": "RWANDA",
+      "active": true
+    },
+    {
+      "id": 540182,
+      "value": "SAINT KITTS AND NEVIS",
+      "active": true
+    },
+    {
+      "id": 540183,
+      "value": "SAINT LUCIA",
+      "active": true
+    },
+    {
+      "id": 540200,
+      "value": "SOUTH GEORGIA AND THE SOUTH SANDWICH ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540201,
+      "value": "SPAIN",
+      "active": true
+    },
+    {
+      "id": 540202,
+      "value": "SRI LANKA",
+      "active": true
+    },
+    {
+      "id": 540203,
+      "value": "SUDAN",
+      "active": true
+    },
+    {
+      "id": 540204,
+      "value": "SURINAME",
+      "active": true
+    },
+    {
+      "id": 540206,
+      "value": "SWAZILAND",
+      "active": true
+    },
+    {
+      "id": 540207,
+      "value": "SWEDEN",
+      "active": true
+    },
+    {
+      "id": 540192,
+      "value": "SEYCHELLES",
+      "active": true
+    },
+    {
+      "id": 540193,
+      "value": "SIERRA LEONE",
+      "active": true
+    },
+    {
+      "id": 540194,
+      "value": "SINGAPORE",
+      "active": true
+    },
+    {
+      "id": 540195,
+      "value": "SLOVAKIA",
+      "active": true
+    },
+    {
+      "id": 540196,
+      "value": "SLOVENIA",
+      "active": true
+    },
+    {
+      "id": 540197,
+      "value": "SOLOMON ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540198,
+      "value": "SOMALIA",
+      "active": true
+    },
+    {
+      "id": 540199,
+      "value": "SOUTH AFRICA",
+      "active": true
+    },
+    {
+      "id": 540216,
+      "value": "TOKELAU",
+      "active": true
+    },
+    {
+      "id": 540217,
+      "value": "TONGA",
+      "active": true
+    },
+    {
+      "id": 540218,
+      "value": "TRINIDAD AND TOBAGO",
+      "active": true
+    },
+    {
+      "id": 540219,
+      "value": "TUNISIA",
+      "active": true
+    },
+    {
+      "id": 540220,
+      "value": "TÜRKIYE",
+      "active": true
+    },
+    {
+      "id": 540221,
+      "value": "TURKMENISTAN",
+      "active": true
+    },
+    {
+      "id": 540222,
+      "value": "TURKS AND CAICOS ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540223,
+      "value": "TUVALU",
+      "active": true
+    },
+    {
+      "id": 540208,
+      "value": "SWITZERLAND",
+      "active": true
+    },
+    {
+      "id": 540209,
+      "value": "SYRIAN ARAB REPUBLIC",
+      "active": true
+    },
+    {
+      "id": 540211,
+      "value": "TAJIKISTAN",
+      "active": true
+    },
+    {
+      "id": 540212,
+      "value": "TANZANIA, UNITED REPUBLIC OF",
+      "active": true
+    },
+    {
+      "id": 540213,
+      "value": "THAILAND",
+      "active": true
+    },
+    {
+      "id": 540214,
+      "value": "TIMOR-LESTE",
+      "active": true
+    },
+    {
+      "id": 540215,
+      "value": "TOGO",
+      "active": true
+    },
+    {
+      "id": 540233,
+      "value": "VIETNAM",
+      "active": true
+    },
+    {
+      "id": 540234,
+      "value": "VIRGIN ISLANDS (BRITISH)",
+      "active": true
+    },
+    {
+      "id": 540235,
+      "value": "VIRGIN ISLANDS (U.S.)",
+      "active": true
+    },
+    {
+      "id": 540237,
+      "value": "WESTERN SAHARA",
+      "active": true
+    },
+    {
+      "id": 540238,
+      "value": "YEMEN",
+      "active": true
+    },
+    {
+      "id": 540239,
+      "value": "ZAMBIA",
+      "active": true
+    },
+    {
+      "id": 540224,
+      "value": "UGANDA",
+      "active": true
+    },
+    {
+      "id": 540225,
+      "value": "UKRAINE",
+      "active": true
+    },
+    {
+      "id": 540226,
+      "value": "UNITED ARAB EMIRATES",
+      "active": true
+    },
+    {
+      "id": 540227,
+      "value": "UNITED KINGDOM",
+      "active": true
+    },
+    {
+      "id": 540228,
+      "value": "UNITED STATES",
+      "active": true
+    },
+    {
+      "id": 540229,
+      "value": "URUGUAY",
+      "active": true
+    },
+    {
+      "id": 540230,
+      "value": "UZBEKISTAN",
+      "active": true
+    },
+    {
+      "id": 540231,
+      "value": "VANUATU",
+      "active": true
+    },
+    {
+      "id": 540248,
+      "value": "MONTENEGRO",
+      "active": true
+    },
+    {
+      "id": 540249,
+      "value": "NEUTRAL ZONE",
+      "active": true
+    },
+    {
+      "id": 540250,
+      "value": "SAINT BARTHELEMY",
+      "active": true
+    },
+    {
+      "id": 540251,
+      "value": "SAINT MARTIN (FRENCH PART)",
+      "active": true
+    },
+    {
+      "id": 540252,
+      "value": "SERBIA",
+      "active": true
+    },
+    {
+      "id": 540253,
+      "value": "SINT MAARTEN (DUTCH PART)",
+      "active": true
+    },
+    {
+      "id": 540254,
+      "value": "SOUTH SUDAN",
+      "active": true
+    },
+    {
+      "id": 540255,
+      "value": "UNITED STATES MINOR   OUTLYING ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540240,
+      "value": "ZIMBABWE",
+      "active": true
+    },
+    {
+      "id": 540241,
+      "value": "ALAND ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540242,
+      "value": "BONAIRE, SINT EUSTATIUS AND SABA",
+      "active": true
+    },
+    {
+      "id": 540243,
+      "value": "CABO VERDE",
+      "active": true
+    },
+    {
+      "id": 540244,
+      "value": "CONGO",
+      "active": true
+    },
+    {
+      "id": 540245,
+      "value": "CURAÇAO",
+      "active": true
+    },
+    {
+      "id": 540246,
+      "value": "GUERNSEY",
+      "active": true
+    },
+    {
+      "id": 540247,
+      "value": "JERSEY",
+      "active": true
+    },
+    {
+      "id": 540264,
+      "value": "UNITED KINGDOM BRITISH – NATIONAL (OVERSEAS)",
+      "active": true
+    },
+    {
+      "id": 540265,
+      "value": "UNITED KINGDOM BRITISH – OVERSEAS CITIZEN",
+      "active": true
+    },
+    {
+      "id": 540266,
+      "value": "UNITED KINGDOM BRITISH – PROTECTED PERSON",
+      "active": true
+    },
+    {
+      "id": 540267,
+      "value": "UNITED KINGDOM BRITISH – SUBJECT",
+      "active": true
+    },
+    {
+      "id": 540269,
+      "value": "AFRICAN EXPORT-IMPORT BANK (AFREXIM BANK)",
+      "active": true
+    },
+    {
+      "id": 540270,
+      "value": "CARIBBEAN COMMUNITY OR ONE OF ITS EMISSARIES (CARICOM)",
+      "active": true
+    },
+    {
+      "id": 540271,
+      "value": "COMMON MARKET FOR EASTERN AND SOUTHERN AFRICA (COMESA)",
+      "active": true
+    },
+    {
+      "id": 540256,
+      "value": "PALESTINE, STATE OF",
+      "active": true
+    },
+    {
+      "id": 540257,
+      "value": "PITCAIRN",
+      "active": true
+    },
+    {
+      "id": 540258,
+      "value": "SAINT HELENA, ASCENSION AND TRISTAN DA CUNHA",
+      "active": true
+    },
+    {
+      "id": 540259,
+      "value": "SVALBARD AND JAN MAYEN",
+      "active": true
+    },
+    {
+      "id": 540260,
+      "value": "TAIWAN (PROVINCE OF CHINA",
+      "active": true
+    },
+    {
+      "id": 540261,
+      "value": "VENEZUELA, BOLIVARIAN REPUBLIC OF",
+      "active": true
+    },
+    {
+      "id": 540262,
+      "value": "WALLIS AND FUTUNA",
+      "active": true
+    },
+    {
+      "id": 540263,
+      "value": "UNITED KINGDOM BRITISH – BRITISH OVERSEAS TERRITORIES CITIZEN",
+      "active": true
+    },
+    {
+      "id": 540280,
+      "value": "KOSOVO",
+      "active": true
+    },
+    {
+      "id": 540272,
+      "value": "SOVEREIGN MILITARY ORDER OF MALTA",
+      "active": true
+    },
+    {
+      "id": 540273,
+      "value": "INTERPOL TRAVEL DOCUMENTS",
+      "active": true
+    },
+    {
+      "id": 540274,
+      "value": "STATELESS PERSON",
+      "active": true
+    },
+    {
+      "id": 540275,
+      "value": "REFUGEE, AS DEFINED IN ARTICLE 1 OF THE 1951 CONVENTION",
+      "active": true
+    },
+    {
+      "id": 540276,
+      "value": "REFUGEE",
+      "active": true
+    },
+    {
+      "id": 540277,
+      "value": "UNSPECIFIED NATIONALITY",
+      "active": true
+    },
+    {
+      "id": 540278,
+      "value": "UNITED NATIONS ORGANIZATION",
+      "active": true
+    },
+    {
+      "id": 540279,
+      "value": "UNITED NATIONS - SPECIALIZED AGENCY",
+      "active": true
+    },
+    {
+      "id": 540301,
+      "value": "EUROPEAN UNION",
+      "active": true
+    },
+    {
+      "id": 540302,
+      "value": "UNITED NATIONS",
+      "active": true
+    },
+    {
+      "id": 540008,
+      "value": "ANGUILLA",
+      "active": true
+    },
+    {
+      "id": 540009,
+      "value": "ANTARCTICA",
+      "active": false
+    },
+    {
+      "id": 540010,
+      "value": "ANTIGUA AND BARBUDA",
+      "active": true
+    },
+    {
+      "id": 540011,
+      "value": "ARGENTINA",
+      "active": true
+    },
+    {
+      "id": 540012,
+      "value": "ARMENIA",
+      "active": true
+    },
+    {
+      "id": 540013,
+      "value": "ARUBA",
+      "active": true
+    },
+    {
+      "id": 540014,
+      "value": "AUSTRALIA",
+      "active": true
+    },
+    {
+      "id": 540015,
+      "value": "AUSTRIA",
+      "active": true
+    },
+    {
+      "id": 540001,
+      "value": "AFGHANISTAN",
+      "active": true
+    },
+    {
+      "id": 540003,
+      "value": "ALBANIA",
+      "active": true
+    },
+    {
+      "id": 540004,
+      "value": "ALGERIA",
+      "active": true
+    },
+    {
+      "id": 540005,
+      "value": "AMERICAN SAMOA",
+      "active": true
+    },
+    {
+      "id": 540006,
+      "value": "ANDORRA",
+      "active": true
+    },
+    {
+      "id": 540007,
+      "value": "ANGOLA",
+      "active": true
+    },
+    {
+      "id": 540024,
+      "value": "BENIN",
+      "active": true
+    },
+    {
+      "id": 540025,
+      "value": "BERMUDA",
+      "active": true
+    },
+    {
+      "id": 540026,
+      "value": "BHUTAN",
+      "active": true
+    },
+    {
+      "id": 540027,
+      "value": "BOLIVIA",
+      "active": true
+    },
+    {
+      "id": 540028,
+      "value": "BOSNIA AND HERZEGOVINA",
+      "active": true
+    },
+    {
+      "id": 540029,
+      "value": "BOTSWANA",
+      "active": true
+    },
+    {
+      "id": 540030,
+      "value": "BOUVET ISLAND",
+      "active": true
+    },
+    {
+      "id": 540031,
+      "value": "BRAZIL",
+      "active": true
+    },
+    {
+      "id": 540016,
+      "value": "AZERBAIJAN",
+      "active": true
+    },
+    {
+      "id": 540017,
+      "value": "BAHAMAS",
+      "active": true
+    },
+    {
+      "id": 540018,
+      "value": "BAHRAIN",
+      "active": true
+    },
+    {
+      "id": 540019,
+      "value": "BANGLADESH",
+      "active": true
+    },
+    {
+      "id": 540020,
+      "value": "BARBADOS",
+      "active": true
+    },
+    {
+      "id": 540021,
+      "value": "BELARUS",
+      "active": true
+    },
+    {
+      "id": 540022,
+      "value": "BELGIUM",
+      "active": true
+    },
+    {
+      "id": 540023,
+      "value": "BELIZE",
+      "active": true
+    },
+    {
+      "id": 540041,
+      "value": "CAYMAN ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540042,
+      "value": "CENTRAL AFRICAN REPUBLIC",
+      "active": true
+    },
+    {
+      "id": 540043,
+      "value": "CHAD",
+      "active": true
+    },
+    {
+      "id": 540044,
+      "value": "CHILE",
+      "active": true
+    },
+    {
+      "id": 540045,
+      "value": "CHINA",
+      "active": true
+    },
+    {
+      "id": 540046,
+      "value": "CHRISTMAS ISLAND",
+      "active": true
+    },
+    {
+      "id": 540047,
+      "value": "COCOS (KEELING) ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540032,
+      "value": "BRITISH INDIAN OCEAN TERRITORY",
+      "active": true
+    },
+    {
+      "id": 540033,
+      "value": "BRUNEI DARUSSALAM",
+      "active": true
+    },
+    {
+      "id": 540034,
+      "value": "BULGARIA",
+      "active": true
+    },
+    {
+      "id": 540035,
+      "value": "BURKINA FASO",
+      "active": true
+    },
+    {
+      "id": 540036,
+      "value": "BURUNDI",
+      "active": true
+    },
+    {
+      "id": 540037,
+      "value": "CAMBODIA",
+      "active": true
+    },
+    {
+      "id": 540038,
+      "value": "CAMEROON",
+      "active": true
+    },
+    {
+      "id": 540039,
+      "value": "CANADA",
+      "active": true
+    },
+    {
+      "id": 540056,
+      "value": "CUBA",
+      "active": true
+    },
+    {
+      "id": 540057,
+      "value": "CYPRUS",
+      "active": true
+    },
+    {
+      "id": 540058,
+      "value": "CZECHIA",
+      "active": true
+    },
+    {
+      "id": 540059,
+      "value": "DENMARK",
+      "active": true
+    },
+    {
+      "id": 540060,
+      "value": "DJIBOUTI",
+      "active": true
+    },
+    {
+      "id": 540061,
+      "value": "DOMINICA",
+      "active": true
+    },
+    {
+      "id": 540062,
+      "value": "DOMINICAN REPUBLIC",
+      "active": true
+    },
+    {
+      "id": 540063,
+      "value": "ECUADOR",
+      "active": true
+    },
+    {
+      "id": 540048,
+      "value": "COLOMBIA",
+      "active": true
+    },
+    {
+      "id": 540049,
+      "value": "COMOROS",
+      "active": true
+    },
+    {
+      "id": 540050,
+      "value": "CONGO, DEMOCRATIC REPUBLIC OF",
+      "active": true
+    },
+    {
+      "id": 540052,
+      "value": "COOK ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540053,
+      "value": "COSTA RICA",
+      "active": true
+    },
+    {
+      "id": 540054,
+      "value": "CÔTE D'IVOIRE",
+      "active": true
+    },
+    {
+      "id": 540055,
+      "value": "CROATIA",
+      "active": true
+    },
+    {
+      "id": 540072,
+      "value": "FIJI",
+      "active": true
+    },
+    {
+      "id": 540073,
+      "value": "FINLAND",
+      "active": true
+    },
+    {
+      "id": 540074,
+      "value": "FRANCE",
+      "active": true
+    },
+    {
+      "id": 540075,
+      "value": "FRENCH GUIANA",
+      "active": true
+    },
+    {
+      "id": 540076,
+      "value": "FRENCH POLYNESIA",
+      "active": true
+    },
+    {
+      "id": 540077,
+      "value": "FRENCH SOUTHERN TERRITORIES",
+      "active": true
+    },
+    {
+      "id": 540078,
+      "value": "GABON",
+      "active": true
+    },
+    {
+      "id": 540079,
+      "value": "GAMBIA",
+      "active": true
+    },
+    {
+      "id": 540064,
+      "value": "EGYPT",
+      "active": true
+    },
+    {
+      "id": 540065,
+      "value": "EL SALVADOR",
+      "active": true
+    },
+    {
+      "id": 540066,
+      "value": "EQUATORIAL GUINEA",
+      "active": true
+    },
+    {
+      "id": 540067,
+      "value": "ERITREA",
+      "active": true
+    },
+    {
+      "id": 540068,
+      "value": "ESTONIA",
+      "active": true
+    },
+    {
+      "id": 540069,
+      "value": "ETHIOPIA",
+      "active": true
+    },
+    {
+      "id": 540070,
+      "value": "FALKLAND ISLANDS (MALVINAS)",
+      "active": true
+    },
+    {
+      "id": 540071,
+      "value": "FAROE ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540088,
+      "value": "GUAM",
+      "active": true
+    },
+    {
+      "id": 540089,
+      "value": "GUATEMALA",
+      "active": true
+    },
+    {
+      "id": 540090,
+      "value": "GUINEA",
+      "active": true
+    },
+    {
+      "id": 540091,
+      "value": "GUINEA-BISSAU",
+      "active": true
+    },
+    {
+      "id": 540092,
+      "value": "GUYANA",
+      "active": true
+    },
+    {
+      "id": 540093,
+      "value": "HAITI",
+      "active": true
+    },
+    {
+      "id": 540094,
+      "value": "HEARD AND MCDONALD ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540095,
+      "value": "HOLY SEE (VATICAN CITY STATE)",
+      "active": true
+    },
+    {
+      "id": 540080,
+      "value": "GEORGIA",
+      "active": true
+    },
+    {
+      "id": 540081,
+      "value": "GERMANY",
+      "active": true
+    },
+    {
+      "id": 540082,
+      "value": "GHANA",
+      "active": true
+    },
+    {
+      "id": 540083,
+      "value": "GIBRALTAR",
+      "active": true
+    },
+    {
+      "id": 540084,
+      "value": "GREECE",
+      "active": true
+    },
+    {
+      "id": 540085,
+      "value": "GREENLAND",
+      "active": true
+    },
+    {
+      "id": 540086,
+      "value": "GRENADA",
+      "active": true
+    },
+    {
+      "id": 540087,
+      "value": "GUADELOUPE",
+      "active": true
+    },
+    {
+      "id": 540104,
+      "value": "IRELAND",
+      "active": true
+    },
+    {
+      "id": 540105,
+      "value": "ISLE OF MAN",
+      "active": true
+    },
+    {
+      "id": 540106,
+      "value": "ISRAEL",
+      "active": true
+    },
+    {
+      "id": 540107,
+      "value": "ITALY",
+      "active": true
+    },
+    {
+      "id": 540108,
+      "value": "JAMAICA",
+      "active": true
+    },
+    {
+      "id": 540109,
+      "value": "JAPAN",
+      "active": true
+    },
+    {
+      "id": 540110,
+      "value": "JORDAN",
+      "active": true
+    },
+    {
+      "id": 540111,
+      "value": "KAZAKHSTAN",
+      "active": true
+    },
+    {
+      "id": 540096,
+      "value": "HONDURAS",
+      "active": true
+    },
+    {
+      "id": 540097,
+      "value": "HONG KONG",
+      "active": true
+    },
+    {
+      "id": 540098,
+      "value": "HUNGARY",
+      "active": true
+    },
+    {
+      "id": 540099,
+      "value": "ICELAND",
+      "active": true
+    },
+    {
+      "id": 540100,
+      "value": "INDIA",
+      "active": true
+    },
+    {
+      "id": 540101,
+      "value": "INDONESIA",
+      "active": true
+    },
+    {
+      "id": 540102,
+      "value": "IRAN, ISLAMIC REPUBLIC OF",
+      "active": true
+    },
+    {
+      "id": 540103,
+      "value": "IRAQ",
+      "active": true
+    },
+    {
+      "id": 540120,
+      "value": "LEBANON",
+      "active": true
+    },
+    {
+      "id": 540121,
+      "value": "LESOTHO",
+      "active": true
+    },
+    {
+      "id": 540122,
+      "value": "LIBERIA",
+      "active": true
+    },
+    {
+      "id": 540123,
+      "value": "LIECHTENSTEIN",
+      "active": true
+    },
+    {
+      "id": 540124,
+      "value": "LITHUANIA",
+      "active": true
+    },
+    {
+      "id": 540125,
+      "value": "LUXEMBOURG",
+      "active": true
+    },
+    {
+      "id": 540126,
+      "value": "LIBYA",
+      "active": true
+    },
+    {
+      "id": 540127,
+      "value": "MACAO",
+      "active": true
+    },
+    {
+      "id": 540112,
+      "value": "KENYA",
+      "active": true
+    },
+    {
+      "id": 540113,
+      "value": "KIRIBATI",
+      "active": true
+    },
+    {
+      "id": 540114,
+      "value": "KOREA, DEMOCRATIC PEOPLE'S REPUBLIC OF",
+      "active": true
+    },
+    {
+      "id": 540115,
+      "value": "KOREA, REPUBLIC OF",
+      "active": true
+    },
+    {
+      "id": 540116,
+      "value": "KUWAIT",
+      "active": true
+    },
+    {
+      "id": 540117,
+      "value": "KYRGYZSTAN",
+      "active": true
+    },
+    {
+      "id": 540118,
+      "value": "LAO PEOPLE'S DEMOCRATIC REPUBLIC",
+      "active": true
+    },
+    {
+      "id": 540119,
+      "value": "LATVIA",
+      "active": true
+    },
+    {
+      "id": 540136,
+      "value": "MARTINIQUE",
+      "active": true
+    },
+    {
+      "id": 540137,
+      "value": "MAURITANIA",
+      "active": true
+    },
+    {
+      "id": 540138,
+      "value": "MAURITIUS",
+      "active": true
+    },
+    {
+      "id": 540139,
+      "value": "MAYOTTE",
+      "active": true
+    },
+    {
+      "id": 540140,
+      "value": "MEXICO",
+      "active": true
+    },
+    {
+      "id": 540141,
+      "value": "MICRONESIA, FEDERATED STATES OF",
+      "active": true
+    },
+    {
+      "id": 540142,
+      "value": "MOLDOVA, REPUBLIC OF",
+      "active": true
+    },
+    {
+      "id": 540143,
+      "value": "MONACO",
+      "active": true
+    },
+    {
+      "id": 540128,
+      "value": "MACEDONIA, THE FORMER YUGOSLAV REPUBLIC OF",
+      "active": true
+    },
+    {
+      "id": 540129,
+      "value": "MADAGASCAR",
+      "active": true
+    },
+    {
+      "id": 540130,
+      "value": "MALAWI",
+      "active": true
+    },
+    {
+      "id": 540131,
+      "value": "MALAYSIA",
+      "active": true
+    },
+    {
+      "id": 540132,
+      "value": "MALDIVES",
+      "active": true
+    },
+    {
+      "id": 540133,
+      "value": "MALI",
+      "active": true
+    },
+    {
+      "id": 540134,
+      "value": "MALTA",
+      "active": true
+    },
+    {
+      "id": 540135,
+      "value": "MARSHALL ISLANDS",
+      "active": true
+    },
+    {
+      "id": 540152,
+      "value": "NETHERLANDS",
+      "active": true
+    },
+    {
+      "id": 540153,
+      "value": "NETHERLANDS ANTILLES",
+      "active": true
+    },
+    {
+      "id": 540154,
+      "value": "NEW CALEDONIA",
+      "active": true
+    },
+    {
+      "id": 540155,
+      "value": "NEW ZEALAND",
+      "active": true
+    },
+    {
+      "id": 540156,
+      "value": "NICARAGUA",
+      "active": true
+    },
+    {
+      "id": 540157,
+      "value": "NIGER",
+      "active": true
+    },
+    {
+      "id": 540158,
+      "value": "NIGERIA",
+      "active": true
+    },
+    {
+      "id": 540159,
+      "value": "NIUE",
+      "active": true
+    },
+    {
+      "id": 540144,
+      "value": "MONGOLIA",
+      "active": true
+    },
+    {
+      "id": 540145,
+      "value": "MONTSERRAT",
+      "active": true
+    },
+    {
+      "id": 540146,
+      "value": "MOROCCO",
+      "active": true
+    },
+    {
+      "id": 540147,
+      "value": "MOZAMBIQUE",
+      "active": true
+    },
+    {
+      "id": 540148,
+      "value": "MYANMAR",
+      "active": true
+    },
+    {
+      "id": 540149,
+      "value": "NAMIBIA",
+      "active": true
+    },
+    {
+      "id": 540150,
+      "value": "NAURU",
+      "active": true
+    },
+    {
+      "id": 540151,
+      "value": "NEPAL",
+      "active": true
+    }
+  ]
+}

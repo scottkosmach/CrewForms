@@ -256,6 +256,19 @@ async function handleMessage(message, sender) {
     case 'SET_AUTOPASTE':
       return await setAutoPasteOnTab(message.value);
 
+    // Recon session (passive DOM recorder in content/recon.js)
+    case 'RECON_ARM':
+      return await reconArm(message.redact);
+
+    case 'RECON_EVENTS':
+      return await reconAppend(message.sessionId, message.events);
+
+    case 'RECON_STOP':
+      return await reconStop();
+
+    case 'RECON_STATUS':
+      return await reconStatus();
+
     default:
       console.log('Unknown message type:', message.type);
       return { success: false, error: `Unknown message type: ${message.type}` };
@@ -963,6 +976,116 @@ function notifySidePanel(message) {
     // Non-critical messages: fire and forget
     chrome.runtime.sendMessage(message).catch(() => {});
   }
+}
+
+// ============================================================================
+// RECON SESSION (passive DOM recorder — see extension/content/recon.js)
+// ============================================================================
+
+/**
+ * One recon session at a time, browser-wide. Armed state lives in
+ * chrome.storage.local so frames that load AFTER arming (eNOAD postbacks
+ * reload the passenger iframe constantly) resume recording on their own.
+ * Events buffer in storage too, because this worker can be killed mid-session.
+ */
+
+// Frames flush concurrently; storage read-modify-write would drop batches.
+// Serialize every append through one promise chain.
+let reconWriteChain = Promise.resolve();
+
+function reconBufferKey(sessionId) {
+  return `reconBuffer_${sessionId}`;
+}
+
+async function reconArm(redact) {
+  const existing = await chrome.storage.local.get(['reconSession']);
+  if (existing.reconSession) {
+    return { success: false, error: 'A recon session is already armed — stop it first.' };
+  }
+  const session = {
+    id: `recon_${Date.now().toString(36)}`,
+    startedAt: Date.now(),
+    // Redaction dictionary: [{path, norm}], the roster's values normalized
+    // for matching in page context. This lives in chrome.storage.local for
+    // the session's lifetime — the same store that already holds the roster
+    // itself — and is removed on stop; it never reaches the exported files.
+    redact: (redact || []).map((r) => ({ path: r.path, norm: String(r.value).trim().toUpperCase() })),
+  };
+  await chrome.storage.local.set({ reconSession: session, [reconBufferKey(session.id)]: [] });
+
+  // Arm every frame of the active tab now; late frames self-arm from storage.
+  const { tab } = await getActiveTab();
+  if (tab?.id) {
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'RECON_ARM', session });
+    } catch {
+      // No content script yet (e.g. chrome:// page) — frames will self-arm
+      // from storage when a real page loads.
+    }
+  }
+  return { success: true, session, tabUrl: tab?.url || null };
+}
+
+async function reconAppend(sessionId, events) {
+  reconWriteChain = reconWriteChain.then(async () => {
+    const current = await chrome.storage.local.get(['reconSession']);
+    if (!current.reconSession || current.reconSession.id !== sessionId) return; // stale frame
+    const key = reconBufferKey(sessionId);
+    const data = await chrome.storage.local.get([key]);
+    const buffer = data[key] || [];
+    buffer.push(...events);
+    await chrome.storage.local.set({ [key]: buffer });
+  });
+  await reconWriteChain;
+  return { success: true };
+}
+
+async function reconStop() {
+  const data = await chrome.storage.local.get(['reconSession']);
+  const session = data.reconSession;
+  if (!session) return { success: false, error: 'No recon session armed.' };
+
+  // Disarm live frames first so nothing writes after the final read.
+  const { tab } = await getActiveTab();
+  if (tab?.id) {
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'RECON_DISARM' });
+    } catch {
+      // Frames may be gone; storage removal below stops any stragglers.
+    }
+  }
+  await chrome.storage.local.remove(['reconSession']);
+
+  // Let in-flight batches land before the final read.
+  await reconWriteChain;
+  await new Promise((r) => setTimeout(r, 300));
+
+  const key = reconBufferKey(session.id);
+  const buffered = await chrome.storage.local.get([key]);
+  const events = buffered[key] || [];
+  await chrome.storage.local.remove([key]);
+
+  // The dictionary's normalized values were only ever needed in-page.
+  const { redact, ...sessionMeta } = session;
+  return { success: true, session: { ...sessionMeta, stoppedAt: Date.now() }, events };
+}
+
+async function reconStatus() {
+  const data = await chrome.storage.local.get(['reconSession']);
+  const session = data.reconSession;
+  if (!session) return { success: true, armed: false };
+  const buffered = await chrome.storage.local.get([reconBufferKey(session.id)]);
+  const events = buffered[reconBufferKey(session.id)] || [];
+  const frames = {};
+  for (const e of events) frames[e.frame] = (frames[e.frame] || 0) + 1;
+  return {
+    success: true,
+    armed: true,
+    sessionId: session.id,
+    startedAt: session.startedAt,
+    eventCount: events.length,
+    frames,
+  };
 }
 
 // ============================================================================

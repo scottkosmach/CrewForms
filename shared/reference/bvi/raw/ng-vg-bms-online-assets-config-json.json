@@ -1,0 +1,9 @@
+{
+  "env": {
+    "name": "test"
+  },
+  "services": {
+    "dictionariesApiUrl": "https://eta.bviportals.com/cbn-dictionaries/api/v1/dictionaries",
+    "transportManifestApiUrl": "https://eta.bviportals.com/bms-transport-manifest"
+  }
+}

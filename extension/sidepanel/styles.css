@@ -1673,6 +1673,48 @@ body {
   background: var(--surface, #fff);
 }
 .ai-copy-bar .btn { white-space: nowrap; }
+.recon-toolbar {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.recon-toolbar .btn { flex: 1; }
+.recon-status {
+  margin: 0 2px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.75;
+  white-space: pre-line;
+}
+.recon-status.recording {
+  opacity: 1;
+  color: var(--danger, #c0392b);
+  font-weight: 600;
+}
+.legacy-disclosure > summary {
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.6;
+  padding: 6px 2px;
+  user-select: none;
+}
+.legacy-disclosure[open] > summary { margin-bottom: 8px; }
+
+.ai-survey-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.85;
+  cursor: pointer;
+  user-select: none;
+}
+.ai-survey-toggle input {
+  margin: 0;
+  cursor: pointer;
+}
 .ai-copy-hint {
   margin: 0 2px 12px;
   font-size: 11px;

@@ -1,0 +1,52 @@
+{
+  "dictionary": "ACCOMMODATION TYPE",
+  "dictionaryId": 604,
+  "count": 9,
+  "values": [
+    {
+      "id": 6040008,
+      "value": "OTHER",
+      "active": true
+    },
+    {
+      "id": 6040009,
+      "value": "SEA VESSEL",
+      "active": true
+    },
+    {
+      "id": 6040004,
+      "value": "APARTMENT/VILLA",
+      "active": true
+    },
+    {
+      "id": 6040005,
+      "value": "DIVE/ECO LODGE",
+      "active": true
+    },
+    {
+      "id": 6040006,
+      "value": "BED AND BREAKFAST",
+      "active": true
+    },
+    {
+      "id": 6040007,
+      "value": "CONDOMINIUM",
+      "active": true
+    },
+    {
+      "id": 6040001,
+      "value": "HOTEL",
+      "active": true
+    },
+    {
+      "id": 6040002,
+      "value": "GUEST HOUSE",
+      "active": true
+    },
+    {
+      "id": 6040003,
+      "value": "PRIVATE HOME",
+      "active": true
+    }
+  ]
+}

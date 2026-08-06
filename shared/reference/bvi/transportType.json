@@ -1,0 +1,17 @@
+{
+  "dictionary": "TRANSPORT TYPE",
+  "dictionaryId": 626,
+  "count": 2,
+  "values": [
+    {
+      "id": 6260002,
+      "value": "SEA VESSEL",
+      "active": true
+    },
+    {
+      "id": 6260001,
+      "value": "AIRCRAFT",
+      "active": true
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "dictionary": "LOCATION",
+  "dictionaryId": 7,
+  "count": 15,
+  "values": [
+    {
+      "id": 76673,
+      "value": "SPANISH TOWN, VIRGIN GORDA",
+      "active": true
+    },
+    {
+      "id": 76672,
+      "value": "ROAD TOWN, TORTOLA",
+      "active": true
+    },
+    {
+      "id": 76675,
+      "value": "VIRGIN GORDA ADMINISTRATION OFFICE",
+      "active": true
+    },
+    {
+      "id": 76674,
+      "value": "WEST END, TORTOLA",
+      "active": true
+    },
+    {
+      "id": 77861,
+      "value": "IAM JET CENTER",
+      "active": true
+    },
+    {
+      "id": 76711,
+      "value": "TORTOLA PORT PURCELL",
+      "active": true
+    },
+    {
+      "id": 76718,
+      "value": "AUGUSTE GEORGE AIRPORT",
+      "active": true
+    },
+    {
+      "id": 77936,
+      "value": "MARINE BASE",
+      "active": true
+    },
+    {
+      "id": 76693,
+      "value": "Mobile Workstation 2",
+      "active": true
+    },
+    {
+      "id": 76692,
+      "value": "Mobile Workstation 1",
+      "active": true
+    },
+    {
+      "id": 70135,
+      "value": "IMMIGRATION HQ (Tortola)",
+      "active": true
+    },
+    {
+      "id": 76669,
+      "value": "VIRGIN GORDA AIRPORT",
+      "active": true
+    },
+    {
+      "id": 76668,
+      "value": "TERRANCE B. LETTSOME INTERNATIONAL AIRPORT",
+      "active": true
+    },
+    {
+      "id": 76671,
+      "value": "GUN CREEK, VIRGIN GORDA",
+      "active": true
+    },
+    {
+      "id": 76670,
+      "value": "GREAT HARBOUR, JOST VAN DYKE",
+      "active": true
+    }
+  ]
+}

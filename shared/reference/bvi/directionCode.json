@@ -1,0 +1,17 @@
+{
+  "dictionary": "DIRECTION CODE",
+  "dictionaryId": 596,
+  "count": 2,
+  "values": [
+    {
+      "id": 5960002,
+      "value": "DEPARTURE",
+      "active": true
+    },
+    {
+      "id": 5960001,
+      "value": "ARRIVAL",
+      "active": true
+    }
+  ]
+}

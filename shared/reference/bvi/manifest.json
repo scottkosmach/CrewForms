@@ -1,0 +1,26 @@
+{
+  "extracted": "2026-08-06T22:44:54.718Z",
+  "source": "https://eta.bviportals.com/ng-vg-bms-online/transport-manifest",
+  "dictionariesApiUrl": null,
+  "note": "Captured from the live app's own API traffic. Files named for a registry concept are referenced by shared/registry/canonical-fields.json; raw/ needs human triage. Re-run with --linger and open every dropdown to catch lazily-loaded dictionaries.",
+  "captures": [
+    {
+      "file": "raw/ng-vg-bms-online-assets-config-json.json",
+      "url": "https://eta.bviportals.com/ng-vg-bms-online/assets/config.json",
+      "status": 200,
+      "items": 2
+    },
+    {
+      "file": "raw/ng-vg-bms-online-assets-i18n-en-json.json",
+      "url": "https://eta.bviportals.com/ng-vg-bms-online/assets/i18n/en.json",
+      "status": 200,
+      "items": 284
+    },
+    {
+      "file": "raw/cbn-dictionaries-api-v1-dictionaries-cache-getlists.json",
+      "url": "https://eta.bviportals.com/cbn-dictionaries/api/v1/dictionaries/cache/getLists",
+      "status": 200,
+      "items": 1
+    }
+  ]
+}
