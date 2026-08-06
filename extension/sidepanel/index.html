@@ -130,6 +130,14 @@
             </svg>
             Workbook
           </button>
+          <button class="btn" id="openSiteBtn" title="Open the selected site in a new tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            Open
+          </button>
         </div>
         <label class="ai-survey-toggle" title="Ask Claude to inventory every field, option list and validation message as it fills — for designated recon runs that feed the field registry">
           <input type="checkbox" id="surveyMode">
@@ -492,8 +500,29 @@
       <section class="tab-content" id="trip-tab">
         <div class="section-header">
           <h2>Current Trip</h2>
+          <button class="btn btn-primary" id="startTripWizardBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            Start Trip Wizard
+          </button>
         </div>
-        
+
+        <p class="text-muted wizard-hint">The wizard asks the few questions that change per trip — boat, leg, ports, times — and derives the rest. The form below stays for edits.</p>
+
+        <!-- Trip Wizard (hidden by default) -->
+        <div class="qr-modal hidden" id="tripWizardModal">
+          <div class="qr-content wizard-content">
+            <h3 id="wizardStepTitle">New Trip</h3>
+            <div id="wizardStepBody"></div>
+            <div class="form-actions wizard-actions">
+              <button type="button" class="btn btn-secondary" id="wizardBackBtn">Back</button>
+              <button type="button" class="btn btn-secondary" id="wizardCancelBtn">Cancel</button>
+              <button type="button" class="btn btn-primary" id="wizardNextBtn">Next</button>
+            </div>
+          </div>
+        </div>
+
         <form class="form" id="tripForm">
           <div class="form-group">
             <label for="tripBoat">Select Boat</label>

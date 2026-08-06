@@ -31,12 +31,28 @@ for (const [from, to] of COPIES) {
 // The boat form's datalists want just two of the NVMC vocabularies — bundle
 // them together instead of shipping every reference file.
 const ref = (f) => JSON.parse(readFileSync(resolve(REPO, 'shared', 'reference', 'nvmc', f), 'utf8'));
+
+// The wizard's "Other departure port" flow wants the eNOAD port options per
+// US state. portsByPlace keys are INDIRECT names — country+state with
+// non-letters stripped — so UNITEDSTATES + the state name recovers them.
+// Only the US slice ships; foreign "Other" ports stay free text (their eNOAD
+// rendering is unobserved and must never be guessed).
+const portsByPlace = ref('portsByPlace.json');
+const usStates = ref('usStates.json');
+const usPortsByState = {};
+for (const stateName of usStates) {
+  const key = `UNITEDSTATES${stateName.replace(/[^A-Za-z]/g, '')}`;
+  if (portsByPlace[key]) usPortsByState[stateName] = portsByPlace[key];
+}
+
 const nvmcLists = {
   classSociety: ref('classSociety.json'),
   vesselClass: ref('vesselClass.json'),
-  usStates: ref('usStates.json'),
+  usStates,
+  usPortsByState,
 };
 writeFileSync(resolve(SEEDS, 'nvmc-lists.json'), JSON.stringify(nvmcLists, null, 2));
 console.log(
-  `nvmc-lists.json (classSociety ${nvmcLists.classSociety.length}, vesselClass ${nvmcLists.vesselClass.length}, usStates ${nvmcLists.usStates.length})`,
+  `nvmc-lists.json (classSociety ${nvmcLists.classSociety.length}, vesselClass ${nvmcLists.vesselClass.length}, ` +
+    `usStates ${usStates.length}, usPortsByState ${Object.keys(usPortsByState).length} states)`,
 );

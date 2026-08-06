@@ -648,6 +648,86 @@ body {
 }
 
 /* ============================================================================
+   TRIP WIZARD
+   ============================================================================ */
+
+.wizard-hint {
+  margin-bottom: var(--spacing-md);
+  font-size: 0.85rem;
+}
+
+.wizard-content {
+  width: min(360px, 92vw);
+  max-height: 85vh;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.wizard-step-label {
+  font-size: 0.8rem;
+  color: var(--color-gray-500);
+  margin-bottom: var(--spacing-sm);
+}
+
+.wizard-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-md) 0;
+}
+
+.wizard-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin: var(--spacing-xs) 0 var(--spacing-md);
+}
+
+.wizard-chip {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-gray-300);
+  border-radius: 999px;
+  background: var(--color-white);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.wizard-chip.selected {
+  background: var(--color-primary, #2563eb);
+  border-color: var(--color-primary, #2563eb);
+  color: #fff;
+}
+
+.wizard-summary {
+  margin: var(--spacing-md) 0;
+  font-size: 0.9rem;
+}
+
+.wizard-summary dt {
+  color: var(--color-gray-500);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  margin-top: var(--spacing-sm);
+}
+
+.wizard-summary dd {
+  margin: 0;
+}
+
+.wizard-note {
+  font-size: 0.8rem;
+  color: var(--color-gray-600);
+  background: var(--color-gray-100);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.wizard-actions {
+  justify-content: space-between;
+}
+
+/* ============================================================================
    ACTION BAR
    ============================================================================ */
 

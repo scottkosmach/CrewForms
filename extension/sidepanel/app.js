@@ -21,10 +21,12 @@ function generateId() {
 }
 
 /**
- * Get expiry timestamp (12 hours from now)
+ * Get expiry timestamp (48 hours from now — long enough to prep a filing a
+ * day or two ahead; trip answers are per-voyage and must not linger beyond
+ * that)
  */
 function getExpiryTime() {
-  return Date.now() + (12 * 60 * 60 * 1000);
+  return Date.now() + (48 * 60 * 60 * 1000);
 }
 
 /**
@@ -127,6 +129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   populateBoatDatalists();
   setupCompanyForm();
   setupTripForm();
+  setupTripWizard();
   setupTravelerImport();
   setupPasteAction();
   setupExcelDownload();
@@ -840,6 +843,464 @@ function startExpiryTimer() {
   setInterval(() => {
     updateTripExpiryDisplay();
   }, 60000);
+}
+
+// ============================================================================
+// TRIP WIZARD
+//
+// The few questions that genuinely change per trip — boat, leg, ports,
+// times — asked once, in one place. Everything else (vessel statics, captain
+// contact, notice/voyage types, per-site spellings) is derived. Port answers
+// come from learned lists that grow with use; a port picked from a list
+// carries its observed eNOAD rendering, a typed-in port carries none and
+// downstream layers must leave the unknown cells blank rather than guess.
+// ============================================================================
+
+/** Learned-list entries are plain strings or { label, enoad: {...} }. */
+function learnedLabel(entry) {
+  return typeof entry === 'string' ? entry : (entry && entry.label) || '';
+}
+
+async function getLearnedLists() {
+  const stored = await getStorage(['learnedLists']);
+  return stored.learnedLists || {};
+}
+
+async function appendLearnedValue(listId, entry) {
+  const lists = await getLearnedLists();
+  const values = lists[listId] || [];
+  const label = learnedLabel(entry).trim().toUpperCase();
+  if (!label) return;
+  if (!values.some(v => learnedLabel(v).trim().toUpperCase() === label)) {
+    values.push(entry);
+    lists[listId] = values;
+    await setStorage({ learnedLists: lists });
+  }
+}
+
+const wizard = {
+  step: 0,
+  steps: ['boat', 'leg', 'ports', 'times', 'confirm'],
+  answers: {},
+  lists: {},
+  nvmc: null
+};
+
+function setupTripWizard() {
+  document.getElementById('startTripWizardBtn').addEventListener('click', startTripWizard);
+  document.getElementById('wizardCancelBtn').addEventListener('click', () => {
+    document.getElementById('tripWizardModal').classList.add('hidden');
+  });
+  document.getElementById('wizardBackBtn').addEventListener('click', () => {
+    if (wizard.step > 0) {
+      wizard.step -= 1;
+      renderWizardStep();
+    }
+  });
+  document.getElementById('wizardNextBtn').addEventListener('click', handleWizardNext);
+}
+
+async function startTripWizard() {
+  if (!state.boats.length) {
+    showToast('Add a boat first (Boats tab)', 'error');
+    return;
+  }
+  wizard.step = 0;
+  wizard.answers = { closedLoop: true };
+  wizard.lists = await getLearnedLists();
+  if (!wizard.nvmc) {
+    try {
+      wizard.nvmc = await fetch(chrome.runtime.getURL('sidepanel/seeds/nvmc-lists.json')).then(r => r.json());
+    } catch {
+      wizard.nvmc = { usStates: [], usPortsByState: {} };
+    }
+  }
+  renderWizardStep();
+  document.getElementById('tripWizardModal').classList.remove('hidden');
+}
+
+function renderWizardStep() {
+  const stepName = wizard.steps[wizard.step];
+  const title = document.getElementById('wizardStepTitle');
+  const body = document.getElementById('wizardStepBody');
+  const backBtn = document.getElementById('wizardBackBtn');
+  const nextBtn = document.getElementById('wizardNextBtn');
+
+  backBtn.style.visibility = wizard.step === 0 ? 'hidden' : 'visible';
+  nextBtn.textContent = stepName === 'confirm' ? 'Save Trip' : 'Next';
+
+  const stepLabel = `Step ${wizard.step + 1} of ${wizard.steps.length}`;
+
+  if (stepName === 'boat') {
+    title.textContent = 'Which boat?';
+    body.innerHTML = `
+      <p class="wizard-step-label">${stepLabel}</p>
+      <div class="wizard-choices">
+        ${state.boats.map(b => `
+          <button type="button" class="btn ${wizard.answers.boatId === b.id ? 'btn-primary' : 'btn-secondary'} wizard-boat" data-id="${b.id}">
+            ${b.vesselName}${b.registrationNumber ? ` — ${b.registrationNumber}` : ''}
+          </button>`).join('')}
+      </div>`;
+    body.querySelectorAll('.wizard-boat').forEach(btn => {
+      btn.addEventListener('click', () => {
+        wizard.answers.boatId = btn.dataset.id;
+        wizard.step += 1;
+        renderWizardStep();
+      });
+    });
+    return;
+  }
+
+  if (stepName === 'leg') {
+    title.textContent = 'Which leg?';
+    const leg = wizard.answers.leg;
+    body.innerHTML = `
+      <p class="wizard-step-label">${stepLabel}</p>
+      <div class="wizard-choices">
+        <button type="button" class="btn ${leg === 'departure' ? 'btn-primary' : 'btn-secondary'} wizard-leg" data-leg="departure">
+          Departing the US (eNOAD Departure notice)
+        </button>
+        <button type="button" class="btn ${leg === 'arrival' ? 'btn-primary' : 'btn-secondary'} wizard-leg" data-leg="arrival">
+          Arriving back into the US (eNOAD Arrival notice)
+        </button>
+      </div>`;
+    body.querySelectorAll('.wizard-leg').forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Changing leg invalidates any port picks from a previous pass —
+        // the from/to lists swap sides.
+        if (wizard.answers.leg !== btn.dataset.leg) {
+          delete wizard.answers.from;
+          delete wizard.answers.to;
+        }
+        wizard.answers.leg = btn.dataset.leg;
+        wizard.step += 1;
+        renderWizardStep();
+      });
+    });
+    return;
+  }
+
+  if (stepName === 'ports') {
+    renderWizardPortsStep(title, body, stepLabel);
+    return;
+  }
+
+  if (stepName === 'times') {
+    title.textContent = 'When?';
+    const a = wizard.answers;
+    body.innerHTML = `
+      <p class="wizard-step-label">${stepLabel}</p>
+      <div class="form-group">
+        <label for="wizDepDate">Departure date &amp; time (local)</label>
+        <input type="date" id="wizDepDate" value="${a.depDate || ''}">
+        <input type="time" id="wizDepTime" value="${a.depTime || ''}">
+      </div>
+      <div class="form-group">
+        <label for="wizArrDate">Arrival date &amp; time (local)</label>
+        <input type="date" id="wizArrDate" value="${a.arrDate || ''}">
+        <input type="time" id="wizArrTime" value="${a.arrTime || ''}">
+      </div>`;
+    return;
+  }
+
+  // confirm
+  title.textContent = 'Everything derived — confirm';
+  renderWizardConfirmStep(body, stepLabel);
+}
+
+/** The US side of the voyage is "from" on a departure leg, "to" on arrival. */
+function wizardSides() {
+  const leg = wizard.answers.leg;
+  return {
+    from: {
+      key: 'from',
+      heading: 'Departing from',
+      isUS: leg === 'departure',
+      listId: leg === 'departure' ? 'departurePorts' : 'arrivalPorts'
+    },
+    to: {
+      key: 'to',
+      heading: 'Heading to',
+      isUS: leg !== 'departure',
+      listId: leg === 'departure' ? 'arrivalPorts' : 'departurePorts'
+    }
+  };
+}
+
+function renderWizardPortsStep(title, body, stepLabel) {
+  title.textContent = 'Which ports?';
+  const sides = wizardSides();
+  const chipGroup = (side) => {
+    const entries = wizard.lists[side.listId] || [];
+    const selected = wizard.answers[side.key];
+    const chips = entries.map((entry, i) => {
+      const label = learnedLabel(entry);
+      const isSel = selected && !selected.other && learnedLabel(selected.entry) === label;
+      return `<button type="button" class="wizard-chip ${isSel ? 'selected' : ''}" data-side="${side.key}" data-index="${i}">${label}</button>`;
+    }).join('');
+    const otherSel = selected && selected.other;
+    return `
+      <label>${side.heading}</label>
+      <div class="wizard-chips" data-side="${side.key}">
+        ${chips}
+        <button type="button" class="wizard-chip ${otherSel ? 'selected' : ''}" data-side="${side.key}" data-other="1">Other…</button>
+      </div>
+      <div class="wizard-other hidden" id="wizOther-${side.key}"></div>`;
+  };
+  body.innerHTML = `
+    <p class="wizard-step-label">${stepLabel}</p>
+    ${chipGroup(sides.from)}
+    ${chipGroup(sides.to)}`;
+
+  body.querySelectorAll('.wizard-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const sideKey = chip.dataset.side;
+      const side = sides[sideKey];
+      if (chip.dataset.other) {
+        wizard.answers[sideKey] = { other: true };
+        renderWizardOtherInputs(side);
+      } else {
+        const entry = (wizard.lists[side.listId] || [])[Number(chip.dataset.index)];
+        wizard.answers[sideKey] = { entry };
+        document.getElementById(`wizOther-${sideKey}`).classList.add('hidden');
+      }
+      // Re-highlight without a full re-render so typed Other values survive.
+      body.querySelectorAll(`.wizard-chip[data-side="${sideKey}"]`).forEach(c => {
+        c.classList.toggle('selected', c === chip);
+      });
+    });
+  });
+}
+
+/**
+ * "Other" inputs. US side: state + port dropdowns from the workbook's own
+ * cascade (so the answer arrives with a valid eNOAD rendering) + a city
+ * field. Foreign side: free text only — its eNOAD NPOC/last-port rendering
+ * is unknown and stays blank downstream rather than guessed.
+ */
+function renderWizardOtherInputs(side) {
+  const host = document.getElementById(`wizOther-${side.key}`);
+  host.classList.remove('hidden');
+  if (!side.isUS) {
+    host.innerHTML = `
+      <div class="form-group">
+        <label for="wizOtherLabel-${side.key}">Port name</label>
+        <input type="text" id="wizOtherLabel-${side.key}" placeholder="e.g., GREAT HARBOUR, JOST VAN DYKE">
+        <p class="wizard-note">New foreign ports have no known eNOAD dropdown match — the NPOC "Place" field will carry this name instead.</p>
+      </div>`;
+    return;
+  }
+  const states = wizard.nvmc.usStates || [];
+  host.innerHTML = `
+    <div class="form-group">
+      <label for="wizOtherState-${side.key}">State / territory</label>
+      <select id="wizOtherState-${side.key}">
+        <option value="">-- Select --</option>
+        ${states.map(s => `<option value="${s}">${s}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="wizOtherPort-${side.key}">Port (or nearest)</label>
+      <select id="wizOtherPort-${side.key}" disabled>
+        <option value="">-- Pick a state first --</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="wizOtherCity-${side.key}">City (defaults to the port name)</label>
+      <input type="text" id="wizOtherCity-${side.key}">
+    </div>`;
+  document.getElementById(`wizOtherState-${side.key}`).addEventListener('change', (e) => {
+    const ports = (wizard.nvmc.usPortsByState || {})[e.target.value] || [];
+    const portSel = document.getElementById(`wizOtherPort-${side.key}`);
+    portSel.disabled = !ports.length;
+    portSel.innerHTML = '<option value="">-- Select --</option>' +
+      ports.map(p => `<option value="${p}">${p}</option>`).join('');
+  });
+}
+
+/** Collect a ports-step side into a normalized port object, or null. */
+function collectWizardSide(side) {
+  const answer = wizard.answers[side.key];
+  if (!answer) return null;
+  if (!answer.other) {
+    const entry = answer.entry;
+    const label = learnedLabel(entry);
+    if (!label) return null;
+    return {
+      label,
+      enoad: typeof entry === 'object' && entry.enoad ? { ...entry.enoad } : null,
+      learned: false
+    };
+  }
+  if (!side.isUS) {
+    const label = (document.getElementById(`wizOtherLabel-${side.key}`)?.value || '').trim();
+    return label ? { label, enoad: null, learned: true } : null;
+  }
+  const stateName = document.getElementById(`wizOtherState-${side.key}`)?.value || '';
+  const port = document.getElementById(`wizOtherPort-${side.key}`)?.value || '';
+  if (!stateName || !port) return null;
+  const city = (document.getElementById(`wizOtherCity-${side.key}`)?.value || '').trim() || port;
+  return { label: port, enoad: { city, state: stateName, port }, learned: true };
+}
+
+function renderWizardConfirmStep(body, stepLabel) {
+  const a = wizard.answers;
+  const boat = state.boats.find(b => b.id === a.boatId) || {};
+  const isDeparture = a.leg === 'departure';
+  const noticeType = isDeparture ? 'Departure' : 'Arrival';
+  const voyageType = isDeparture ? 'US to Foreign' : 'Foreign to US';
+  const charterer = computeCharterer(state.travelers);
+  const chartererLine = state.travelers.length === 0
+    ? '(no guests scanned yet — asked when you export)'
+    : charterer.value || '(surnames tied — you pick on Save)';
+
+  body.innerHTML = `
+    <p class="wizard-step-label">${stepLabel}</p>
+    <dl class="wizard-summary">
+      <dt>Boat</dt><dd>${boat.vesselName || '?'} — ${boat.callSign || 'no call sign'}, ${boat.registrationNumber || 'no ID'}</dd>
+      <dt>Notice</dt><dd>${noticeType} / Voyage Type: ${voyageType}</dd>
+      <dt>From</dt><dd>${a.fromPort?.label || '?'}</dd>
+      <dt>To</dt><dd>${a.toPort?.label || '?'}</dd>
+      <dt>Departure</dt><dd>${a.depDate || '?'} ${a.depTime || ''}</dd>
+      <dt>Arrival</dt><dd>${a.arrDate || '?'} ${a.arrTime || ''}</dd>
+      <dt>Charterer (majority guest surname)</dt><dd>${chartererLine}</dd>
+    </dl>
+    <div class="form-group">
+      <label><input type="checkbox" id="wizClosedLoop" ${a.closedLoop ? 'checked' : ''}> Closed loop voyage (same guests both legs)</label>
+    </div>
+    ${isDeparture ? '' : `
+      <p class="wizard-note">Voyage Type "Foreign to US" comes from the NOAD workbook's own list but has not been seen on the live form yet — confirm it on your first real arrival filing.</p>`}
+  `;
+  document.getElementById('wizClosedLoop').addEventListener('change', (e) => {
+    wizard.answers.closedLoop = e.target.checked;
+  });
+}
+
+async function handleWizardNext() {
+  const stepName = wizard.steps[wizard.step];
+
+  if (stepName === 'boat') {
+    if (!wizard.answers.boatId) {
+      showToast('Pick a boat', 'error');
+      return;
+    }
+  }
+
+  if (stepName === 'leg') {
+    if (!wizard.answers.leg) {
+      showToast('Pick a leg', 'error');
+      return;
+    }
+  }
+
+  if (stepName === 'ports') {
+    const sides = wizardSides();
+    const fromPort = collectWizardSide(sides.from);
+    const toPort = collectWizardSide(sides.to);
+    if (!fromPort || !toPort) {
+      showToast('Pick both ports (or finish the Other fields)', 'error');
+      return;
+    }
+    wizard.answers.fromPort = fromPort;
+    wizard.answers.toPort = toPort;
+  }
+
+  if (stepName === 'times') {
+    const get = (id) => document.getElementById(id).value;
+    wizard.answers.depDate = get('wizDepDate');
+    wizard.answers.depTime = get('wizDepTime');
+    wizard.answers.arrDate = get('wizArrDate');
+    wizard.answers.arrTime = get('wizArrTime');
+    const { depDate, depTime, arrDate, arrTime } = wizard.answers;
+    if (!depDate || !depTime || !arrDate || !arrTime) {
+      showToast('All four date/time fields are needed', 'error');
+      return;
+    }
+    if (new Date(`${arrDate}T${arrTime}`) <= new Date(`${depDate}T${depTime}`)) {
+      showToast('Arrival must be after departure', 'error');
+      return;
+    }
+  }
+
+  if (stepName === 'confirm') {
+    await saveWizardTrip();
+    return;
+  }
+
+  wizard.step += 1;
+  renderWizardStep();
+}
+
+/** "2026-08-06" -> { day: "6", month: "8", year: "2026" } (triplet shape used everywhere). */
+function isoToTriplet(iso) {
+  const [year, month, day] = (iso || '').split('-');
+  if (!year) return { day: '', month: '', year: '' };
+  return { day: String(Number(day)), month: String(Number(month)), year };
+}
+
+async function saveWizardTrip() {
+  const a = wizard.answers;
+  const sides = wizardSides();
+  const usPort = sides.from.isUS ? a.fromPort : a.toPort;
+  const foreignPort = sides.from.isUS ? a.toPort : a.fromPort;
+
+  // A charterer tie is settled here, while the captain is already engaged —
+  // export paths re-use the stored answer instead of re-asking.
+  let charterer = null;
+  let chartererSource = null;
+  if (state.travelers.length) {
+    const computed = computeCharterer(state.travelers);
+    charterer = computed.value;
+    chartererSource = charterer ? 'majority' : null;
+    if (!charterer && computed.candidates.length) {
+      charterer = await pickChartererFromCandidates(computed.candidates);
+      chartererSource = charterer ? 'captain-choice' : null;
+    }
+  }
+
+  const trip = {
+    id: generateId(),
+    boatId: a.boatId,
+    companyId: state.trips[0]?.companyId || '',
+    noticeLeg: a.leg,
+    departureDate: isoToTriplet(a.depDate),
+    departureTime: a.depTime,
+    arrivalDate: isoToTriplet(a.arrDate),
+    arrivalTime: a.arrTime,
+    returnDate: state.trips[0]?.returnDate || { day: '', month: '', year: '' },
+    // usPort/foreignPort carry observed eNOAD renderings (or enoad: null for
+    // a typed-in port — downstream leaves those cells blank, never guesses).
+    usPort,
+    foreignPort,
+    departurePort: a.fromPort.label,
+    destinationPorts: a.toPort.label,
+    purpose: state.trips[0]?.purpose || '',
+    guestCount: state.travelers.length,
+    closedLoop: Boolean(a.closedLoop),
+    charterer,
+    chartererSource,
+    expiresAt: getExpiryTime(),
+    createdAt: Date.now()
+  };
+
+  state.trips = [trip];
+  await setStorage({ trips: state.trips });
+
+  // Freshly typed ports join their learned list (with the eNOAD rendering
+  // when the workbook cascade supplied one).
+  const learn = async (side, port) => {
+    if (!port.learned) return;
+    const entry = port.enoad ? { label: port.label, enoad: port.enoad } : port.label;
+    await appendLearnedValue(side.listId, entry);
+  };
+  await learn(sides.from, a.fromPort);
+  await learn(sides.to, a.toPort);
+  wizard.lists = await getLearnedLists();
+
+  document.getElementById('tripWizardModal').classList.add('hidden');
+  populateTripForm();
+  updateTripExpiryDisplay();
+  showToast(`Trip saved — ${trip.departurePort} to ${trip.destinationPorts}`, 'success');
 }
 
 // ============================================================================
@@ -1597,6 +2058,10 @@ function setupExcelDownload() {
   if (wbBtn) {
     wbBtn.addEventListener('click', handleWorkbookDownload);
   }
+  const openBtn = document.getElementById('openSiteBtn');
+  if (openBtn) {
+    openBtn.addEventListener('click', handleOpenSite);
+  }
   initAgentSite();
   initRecon();
 }
@@ -1708,6 +2173,7 @@ const SITE_PROFILE = {
   bvi: {
     name: 'BVI Preclearance Portal',
     url: 'eta.bviportals.com',
+    href: 'https://eta.bviportals.com/ng-vg-bms-online/transport-manifest',
     dateFormat: 'DD/MM/YYYY (DAY FIRST)',
     countryStyle: 'UPPERCASE, with brackets: VIRGIN ISLANDS (BRITISH), VIRGIN ISLANDS (U.S.), UNITED STATES, UNITED KINGDOM',
     upperNames: true,
@@ -1715,6 +2181,7 @@ const SITE_PROFILE = {
   enoad: {
     name: 'USCG eNOAD',
     url: 'enoad.nvmc.uscg.gov',
+    href: 'https://enoad.nvmc.uscg.gov/Default.aspx',
     dateFormat: 'YYYY-MM-DD',
     countryStyle: 'UPPERCASE: UNITED STATES, UNITED KINGDOM, "VIRGIN ISLANDS, BRITISH"',
     upperNames: false,
@@ -1722,6 +2189,7 @@ const SITE_PROFILE = {
   sailclear: {
     name: 'SailClear',
     url: 'sailclear.com',
+    href: 'https://sailclear.com/',
     // Corrected 2026-08-05 after the first real run. The live web form is
     // DAY FIRST; only their bulk spreadsheet uses MM-DD-YYYY. We were emitting
     // the spreadsheet format, which would transpose any date whose day and
@@ -2141,6 +2609,11 @@ function reconDebriefSection(site) {
 function currentAgentSite() {
   const sel = document.getElementById('agentSite');
   return (sel && sel.value) || 'bvi';
+}
+
+function handleOpenSite() {
+  const p = SITE_PROFILE[currentAgentSite()];
+  if (p && p.href) chrome.tabs.create({ url: p.href });
 }
 
 function updateAgentHint() {
