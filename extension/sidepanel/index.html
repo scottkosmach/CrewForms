@@ -137,6 +137,16 @@
         </label>
         <p class="ai-copy-hint" id="agentSiteHint"></p>
 
+        <!-- Charterer tie-breaker (hidden until surnames tie) -->
+        <div class="qr-modal hidden" id="chartererModal">
+          <div class="qr-content">
+            <h3>Who is chartering this trip?</h3>
+            <p class="text-muted">The guest surnames are tied, so this can't be derived — pick the name for eNOAD's Vessel Charterer field.</p>
+            <div class="charterer-choices" id="chartererChoices"></div>
+            <button class="btn btn-secondary" id="chartererCancelBtn">Skip (leave blank)</button>
+          </div>
+        </div>
+
         <!-- QR Code Modal (hidden by default) -->
         <div class="qr-modal hidden" id="qrModal">
           <div class="qr-content">

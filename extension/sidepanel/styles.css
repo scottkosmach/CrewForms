@@ -640,6 +640,13 @@ body {
   font-size: 0.85rem;
 }
 
+.charterer-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-md) 0;
+}
+
 /* ============================================================================
    ACTION BAR
    ============================================================================ */

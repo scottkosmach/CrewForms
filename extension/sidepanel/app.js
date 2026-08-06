@@ -1680,6 +1680,29 @@ function mergeSeedBoat(stored, seed) {
   return Object.keys(patch).length ? patch : null;
 }
 
+/**
+ * Vessel Charterer (eNOAD Vessel Details, required) = the majority surname
+ * among the scanned guests. A unique winner resolves silently; a tie returns
+ * the tied surnames for the captain to pick from — never guessed. Casing
+ * follows the first appearance of the winning surname.
+ */
+function computeCharterer(travelers) {
+  const tally = new Map();
+  for (const t of travelers || []) {
+    const name = (t.lastName || '').trim();
+    if (!name) continue;
+    const key = name.toUpperCase();
+    const entry = tally.get(key) || { display: name, count: 0 };
+    entry.count += 1;
+    tally.set(key, entry);
+  }
+  const entries = [...tally.values()].sort((a, b) => b.count - a.count);
+  if (!entries.length) return { value: null, candidates: [] };
+  const leaders = entries.filter((e) => e.count === entries[0].count);
+  if (leaders.length === 1) return { value: leaders[0].display, candidates: [] };
+  return { value: null, candidates: leaders.map((e) => e.display) };
+}
+
 /** Each site validates against its own spelling of the same country. */
 const SITE_PROFILE = {
   bvi: {
@@ -2174,6 +2197,52 @@ async function initAgentSite() {
   }
 }
 
+/**
+ * Resolve the current trip's charterer, asking the captain only on a surname
+ * tie and only once per trip (the choice is stored on the trip record).
+ * Returns the surname, or null when there are no guests / the captain skips.
+ */
+async function resolveCharterer() {
+  const trip = state.trips[0];
+  if (trip?.charterer) return trip.charterer;
+
+  const { value, candidates } = computeCharterer(state.travelers);
+  let resolved = value;
+  let source = 'majority';
+  if (!resolved && candidates.length) {
+    resolved = await pickChartererFromCandidates(candidates);
+    source = 'captain-choice';
+  }
+  if (resolved && trip) {
+    trip.charterer = resolved;
+    trip.chartererSource = source;
+    await setStorage({ trips: state.trips });
+  }
+  return resolved;
+}
+
+function pickChartererFromCandidates(candidates) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('chartererModal');
+    const choices = document.getElementById('chartererChoices');
+    choices.innerHTML = '';
+    const finish = (value) => {
+      modal.classList.add('hidden');
+      resolve(value);
+    };
+    for (const name of candidates) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-primary';
+      btn.textContent = name;
+      btn.addEventListener('click', () => finish(name));
+      choices.appendChild(btn);
+    }
+    document.getElementById('chartererCancelBtn').onclick = () => finish(null);
+    modal.classList.remove('hidden');
+  });
+}
+
 async function handleCopyForAgent() {
   const travelers = state.travelers || [];
   if (!travelers.length) {
@@ -2181,6 +2250,9 @@ async function handleCopyForAgent() {
     return;
   }
   const site = currentAgentSite();
+  // eNOAD's Vessel Details requires a charterer; settle it (tie -> the
+  // captain picks) before the prompt is built so the text can carry it.
+  if (site === 'enoad') await resolveCharterer();
   const survey = Boolean(document.getElementById('surveyMode')?.checked);
   try {
     await navigator.clipboard.writeText(buildAgentText(site, { survey }));
@@ -2617,6 +2689,10 @@ async function handleExcelDownload(templateOverride, buttonId) {
     showToast('No workbook available for this site', 'error');
     return;
   }
+
+  // The NOAD workbook's Vessel Details B11 wants the charterer; settle it
+  // (tie -> the captain picks) before assembling the payload.
+  if (template.templateId === 'uscg-noad-8-2') await resolveCharterer();
 
   const btn = document.getElementById(buttonId || 'downloadExcelBtn');
   const originalHtml = btn ? btn.innerHTML : null;
