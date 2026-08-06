@@ -1582,10 +1582,12 @@ function toCountry(raw) {
   let v = String(raw || '').trim();
   if (!v) return '';
   v = v
+    // Named authorities first: the generic strip below removes the very words
+    // these are recognised by, so ordering is load-bearing.
+    .replace(/\bHM PASSPORT OFFICE\b/gi, 'UNITED KINGDOM')
     .replace(/\bDEPARTMENT OF STATE\b/gi, '')
     .replace(/\bMINISTRY OF (FOREIGN AFFAIRS|INTERIOR|HOME AFFAIRS)\b/gi, '')
     .replace(/\bPASSPORT (OFFICE|AGENCY|AUTHORITY)\b/gi, '')
-    .replace(/\bHM PASSPORT OFFICE\b/gi, 'UNITED KINGDOM')
     .replace(/\bU\.?S\.?A\.?\b/gi, 'UNITED STATES')
     .replace(/\s*,\s*$/, '')
     .replace(/\s{2,}/g, ' ')

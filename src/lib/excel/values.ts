@@ -129,6 +129,40 @@ export function formatDate(dateStr: string | undefined, format?: string): string
 }
 
 /**
+ * Reduce what a passport prints to what a government form offers.
+ *
+ * OCR reports the document verbatim, so nationality arrives as "UNITED STATES
+ * OF AMERICA" and the issuing country as "UNITED STATES DEPARTMENT OF STATE".
+ * Neither string exists in NVMC's or SailClear's vocabulary, and because a
+ * valueMap passes unknown values straight through, they were being written into
+ * the workbook unchanged — including into the *_CODE columns, where a country
+ * name is not even the right kind of value.
+ *
+ * Observed on all three forms during the 2026-08-05 run.
+ */
+export function normalizeCountry(raw: string | undefined): string {
+  let v = String(raw ?? '').trim();
+  if (!v) return '';
+
+  v = v
+    // Named authorities first: the generic strip below removes the very words
+    // these are recognised by, so ordering is load-bearing.
+    .replace(/\bHM PASSPORT OFFICE\b/gi, 'UNITED KINGDOM')
+    .replace(/\bDEPARTMENT OF STATE\b/gi, '')
+    .replace(/\bMINISTRY OF (FOREIGN AFFAIRS|INTERIOR|HOME AFFAIRS)\b/gi, '')
+    .replace(/\bPASSPORT (OFFICE|AGENCY|AUTHORITY)\b/gi, '')
+    .replace(/\bU\.?S\.?A\.?\b/gi, 'UNITED STATES')
+    .replace(/\s*,\s*$/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  // The long form no form offers.
+  if (/^UNITED STATES OF AMERICA$/i.test(v)) v = 'UNITED STATES';
+
+  return v || String(raw ?? '').trim();
+}
+
+/**
  * Apply a value translation, e.g. { "M": "Male" }.
  *
  * Also used to resolve the workbook's *_CODE columns: those are VLOOKUP

@@ -12,6 +12,7 @@ import {
   getValue,
   resolveSource,
   formatDate,
+  normalizeCountry,
   applyValueMap,
   colLetterToNumber,
 } from '@/lib/excel/values';
@@ -30,6 +31,7 @@ interface ColumnMapping {
   source?: string;       // Data source path (e.g., 'traveler.lastName')
   constant?: string;     // Literal value, written verbatim (ignores source)
   required?: boolean;    // Whether the field is required
+  normalize?: 'country'; // Reduce a passport's wording to a country name first
   format?: string;       // Date format (e.g., 'YYYY-MM-DD')
   valueMap?: Record<string, string>;  // Value transformations
 }
@@ -155,7 +157,14 @@ function fillCell(
   if (mapping.format && value) {
     finalValue = formatDate(value, mapping.format);
   }
-  
+
+  // Reduce "UNITED STATES DEPARTMENT OF STATE" to a country BEFORE the lookup,
+  // otherwise the valueMap misses and passes the raw string through — which put
+  // a country name in a country-code column.
+  if (mapping.normalize === 'country' && finalValue) {
+    finalValue = normalizeCountry(finalValue);
+  }
+
   // Apply value mapping
   finalValue = applyValueMap(finalValue, mapping.valueMap);
   

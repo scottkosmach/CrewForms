@@ -73,17 +73,17 @@ const nvmcNonCrew = {
     { col: 'E', source: 'traveler.middleName' },
     { col: 'F', source: 'traveler.dateOfBirth', format: 'YYYY-MM-DD', required: true },
     { col: 'G', source: 'traveler.gender', valueMap: SEX, required: true },
-    { col: 'H', source: 'traveler.nationality', valueMap: COUNTRY_NVMC, required: true },
+    { col: 'H', source: 'traveler.nationality', normalize: 'country', valueMap: COUNTRY_NVMC, required: true },
     // I is NATIONALITY_CODE: a VLOOKUP whose cached value is empty in the blank
     // template, so it is resolved here and written as a literal.
-    { col: 'I', source: 'traveler.nationality', valueMap: COUNTRY_CODE },
+    { col: 'I', source: 'traveler.nationality', normalize: 'country', valueMap: COUNTRY_CODE },
     // J/K Country of Residence are required by NVMC but appear on no passport.
     // Deliberately left unmapped so the field is visibly missing rather than
     // confidently wrong. See the report printed at the end of this script.
     { col: 'L', constant: 'Passport' },
     { col: 'M', source: 'traveler.passportNumber', required: true },
-    { col: 'N', source: 'traveler.issuingAuthority', valueMap: COUNTRY_NVMC, required: true },
-    { col: 'O', source: 'traveler.issuingAuthority', valueMap: COUNTRY_CODE },
+    { col: 'N', source: 'traveler.issuingAuthority', normalize: 'country', valueMap: COUNTRY_NVMC, required: true },
+    { col: 'O', source: 'traveler.issuingAuthority', normalize: 'country', valueMap: COUNTRY_CODE },
     { col: 'P', source: 'traveler.dateOfExpiry', format: 'YYYY-MM-DD' },
     // W..AC is the Embark block, also required and also not on a passport.
   ],
@@ -100,8 +100,8 @@ const nvmcCrew = {
     { col: 'G', source: 'crew.middleName' },
     { col: 'H', source: 'crew.dateOfBirth', format: 'YYYY-MM-DD', required: true },
     { col: 'I', source: 'crew.gender', valueMap: SEX },
-    { col: 'J', source: 'crew.nationality', valueMap: COUNTRY_NVMC, required: true },
-    { col: 'K', source: 'crew.nationality', valueMap: COUNTRY_CODE },
+    { col: 'J', source: 'crew.nationality', normalize: 'country', valueMap: COUNTRY_NVMC, required: true },
+    { col: 'K', source: 'crew.nationality', normalize: 'country', valueMap: COUNTRY_CODE },
     { col: 'N', constant: 'Passport' },
     { col: 'O', source: 'crew.passportNumber', required: true },
   ],
@@ -120,15 +120,15 @@ const sailclearIndividuals = {
     { col: 'B', source: 'traveler.lastName', required: true },
     { col: 'C', source: 'traveler.middleName' },
     { col: 'D', source: 'traveler.gender', valueMap: SEX, required: true },
-    { col: 'E', source: 'traveler.nationality', valueMap: COUNTRY_SAILCLEAR, required: true },
+    { col: 'E', source: 'traveler.nationality', normalize: 'country', valueMap: COUNTRY_SAILCLEAR, required: true },
     { col: 'F', source: 'traveler.dateOfBirth', format: 'MM-DD-YYYY', required: true },
     // Passports usually print a city here. Routed through the country map so a
     // country resolves and a city falls through and is rejected on upload,
     // rather than being silently accepted as a country.
-    { col: 'G', source: 'traveler.placeOfBirth', valueMap: COUNTRY_SAILCLEAR, required: true },
+    { col: 'G', source: 'traveler.placeOfBirth', normalize: 'country', valueMap: COUNTRY_SAILCLEAR, required: true },
     { col: 'H', source: 'traveler.passportType', valueMap: DOC_TYPE_SAILCLEAR, required: true },
     { col: 'I', source: 'traveler.passportNumber', required: true },
-    { col: 'J', source: 'traveler.issuingAuthority', valueMap: COUNTRY_SAILCLEAR, required: true },
+    { col: 'J', source: 'traveler.issuingAuthority', normalize: 'country', valueMap: COUNTRY_SAILCLEAR, required: true },
     { col: 'K', source: 'traveler.dateOfIssue', format: 'MM-DD-YYYY', required: true },
     { col: 'L', source: 'traveler.dateOfExpiry', format: 'MM-DD-YYYY', required: true },
     // Guests are Passenger; SailClear separately requires exactly one Master,
@@ -156,7 +156,7 @@ const nvmcVesselDetails = {
   columns: [
     { col: 'B', row: 5, source: 'boat.vesselName' },        // *Name
     { col: 'E', row: 5, source: 'boat.registrationNumber' }, // *ID Number
-    { col: 'G', row: 5, source: 'boat.flagState', valueMap: COUNTRY_NVMC }, // *Flag
+    { col: 'G', row: 5, source: 'boat.flagState', normalize: 'country', valueMap: COUNTRY_NVMC }, // *Flag
   ],
 };
 

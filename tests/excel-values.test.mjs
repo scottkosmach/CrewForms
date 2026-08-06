@@ -73,3 +73,38 @@ test('column letters map to indices past Z', () => {
   // The Non-Crew List runs out to AR.
   assert.equal(colLetterToNumber('AR'), 44);
 });
+
+// ---------------------------------------------------------------------------
+// From the 2026-08-05 run: OCR reports the document verbatim, and neither
+// string below exists in any target's vocabulary. Because a valueMap passes
+// unknown values through, they were reaching the workbook unchanged — including
+// the *_CODE columns, where a country name is not even the right kind of value.
+// ---------------------------------------------------------------------------
+import { normalizeCountry } from '../src/lib/excel/values.ts';
+
+test('the long form no government form offers is reduced', () => {
+  assert.equal(normalizeCountry('UNITED STATES OF AMERICA'), 'UNITED STATES');
+});
+
+test('an issuing authority is reduced to its country', () => {
+  assert.equal(normalizeCountry('UNITED STATES DEPARTMENT OF STATE'), 'UNITED STATES');
+  assert.equal(normalizeCountry('HM PASSPORT OFFICE'), 'UNITED KINGDOM');
+});
+
+test('a plain country is left alone', () => {
+  assert.equal(normalizeCountry('UNITED STATES'), 'UNITED STATES');
+  assert.equal(normalizeCountry('VIRGIN ISLANDS, BRITISH'), 'VIRGIN ISLANDS, BRITISH');
+  assert.equal(normalizeCountry('Germany'), 'Germany');
+});
+
+test('normalising then mapping yields the code, not the raw string', () => {
+  // This is the actual defect: the code column held "UNITED STATES DEPARTMENT
+  // OF STATE" because the lookup missed and fell through.
+  const codes = { 'UNITED STATES': 'US' };
+  assert.equal(applyValueMap(normalizeCountry('UNITED STATES DEPARTMENT OF STATE'), codes), 'US');
+  assert.equal(applyValueMap(normalizeCountry('UNITED STATES OF AMERICA'), codes), 'US');
+});
+
+test('an unrecognised value still passes through visibly rather than vanishing', () => {
+  assert.equal(normalizeCountry('REPUBLIC OF NOWHERE'), 'REPUBLIC OF NOWHERE');
+});
