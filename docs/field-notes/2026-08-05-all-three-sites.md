@@ -1,8 +1,18 @@
 # Field notes — 2026-08-05, all three sites, 7 passengers
 
 First real run. Filled with Claude in Chrome on the captain's PC; passenger
-records only, nothing submitted. Verbatim debrief below — corrections drawn
-from it are summarised in `docs/field-notes/CORRECTIONS.md`.
+records only, nothing submitted.
+
+**Read the eNOAD section carefully.** The assistant writes that it "declined" a
+suggested Excel-import path. No workbook was ever offered to it — the operator
+deliberately supplied only the prompt and the data payload. What it declined was
+a *suggestion inside our own prompt*, about a file that was not in play. So this
+is not evidence that an assistant will refuse a generated workbook; the import
+path is simply **still untested**. The prompt has since been reworded to state
+that importing is the captain's job, so there is no decision for the assistant
+to make and no reason for it to editorialise.
+
+Verbatim debrief follows.
 
 ```text
 Sailclear

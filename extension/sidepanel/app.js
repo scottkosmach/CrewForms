@@ -1708,11 +1708,11 @@ function siteRules(site) {
   }
   if (site === 'enoad') {
     return [
-      'BEFORE YOU START:',
-      '  There is a faster path. The CrewForms extension can generate a filled NOAD',
-      '  workbook, and eNOAD accepts it via "Add Notice → Import Notice". Ask the',
-      '  captain whether they have that file before typing anything. Use the steps',
-      '  below only if they want it entered by hand.',
+      'SCOPE — read this first:',
+      '  Your job is to type the passenger data below into the form. Nothing else.',
+      '  There is a separate file-import route into eNOAD, but that is the captain\'s',
+      '  to run, not yours, and it is not part of this task. Do not go looking for it',
+      '  and do not weigh it up — just fill the fields.',
       '',
       'HOW THIS FORM BEHAVES:',
       '  • Dates are YYYY-MM-DD. Every date below is already in that form.',
@@ -1753,12 +1753,11 @@ function siteRules(site) {
     ];
   }
   return [
-    'BEFORE YOU START:',
-    '  There is a faster path for the people. SailClear accepts a bulk spreadsheet',
-    '  upload at /dashboard/individuals that covers every passport field, and the',
-    '  CrewForms extension can generate it. Ask the captain whether they have that',
-    '  file. What the spreadsheet does NOT cover — and what you are most useful for —',
-    '  is the vessel record, the voyage/notification, and the health declaration.',
+    'SCOPE — read this first:',
+    '  Your job is to enter the people below as individual records. SailClear also',
+    '  has a bulk spreadsheet upload, but that is the captain\'s to run, not yours,',
+    '  and it is not part of this task. Do not go looking for it and do not weigh it',
+    '  up — just fill the fields.',
     '',
     'HOW THIS FORM BEHAVES:',
     '  • Country names are Title Case here: United States, British Virgin Islands.',
