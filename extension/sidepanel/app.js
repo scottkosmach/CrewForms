@@ -1464,6 +1464,10 @@ function setupExcelDownload() {
   if (copyBtn) {
     copyBtn.addEventListener('click', handleCopyForAgent);
   }
+  const wbBtn = document.getElementById('downloadWorkbookBtn');
+  if (wbBtn) {
+    wbBtn.addEventListener('click', handleWorkbookDownload);
+  }
   initAgentSite();
 }
 
@@ -1924,12 +1928,16 @@ function updateAgentHint() {
   if (!hint) return;
   const p = SITE_PROFILE[currentAgentSite()];
   const n = (state.travelers || []).length;
-  hint.textContent = `${n} guest${n === 1 ? '' : 's'} · dates as ${p.dateFormat} · paste into Claude on ${p.url}`;
+  const t = SITE_TEMPLATE[currentAgentSite()];
+  hint.textContent =
+    `${n} guest${n === 1 ? '' : 's'} · dates as ${p.dateFormat} · ` +
+    (t ? `Workbook = ${t.label}, or Copy and paste into Claude` : 'no workbook for this site — use Copy');
 }
 
 async function handleAgentSiteChange() {
   await setStorage({ agentSite: currentAgentSite() });
   updateAgentHint();
+  updateWorkbookButton();
 }
 
 /** Preselect the site the captain is already looking at; fall back to last used. */
@@ -1956,6 +1964,7 @@ async function initAgentSite() {
   sel.value = chosen || 'bvi';
   sel.addEventListener('change', handleAgentSiteChange);
   updateAgentHint();
+  updateWorkbookButton();
 }
 
 async function handleCopyForAgent() {
@@ -2085,13 +2094,19 @@ function updateExcelButton(hasTemplate, templateId, templateName) {
  * Handle Excel download
  * Gathers current data and generates a filled Excel file
  */
-async function handleExcelDownload() {
-  if (!currentExcelTemplate || !currentExcelTemplate.templateId) {
-    showToast('No Excel template available', 'error');
+async function handleExcelDownload(templateOverride, buttonId) {
+  // Called two ways: from the action bar, where the open tab decided the
+  // template, and from the Travelers tab, where the site toggle did. The second
+  // is the one people actually find, because it does not require already being
+  // on the government site.
+  const template = templateOverride || currentExcelTemplate;
+  if (!template || !template.templateId) {
+    showToast('No workbook available for this site', 'error');
     return;
   }
-  
-  const btn = document.getElementById('downloadExcelBtn');
+
+  const btn = document.getElementById(buttonId || 'downloadExcelBtn');
+  const originalHtml = btn ? btn.innerHTML : null;
   if (btn) {
     btn.disabled = true;
     btn.textContent = '...';
@@ -2154,7 +2169,7 @@ async function handleExcelDownload() {
     // Send generate request to background
     const result = await sendMessage({
       type: 'GENERATE_EXCEL',
-      templateId: currentExcelTemplate.templateId,
+      templateId: template.templateId,
       data
     });
     
@@ -2188,7 +2203,11 @@ async function handleExcelDownload() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = `
+      // Put back exactly what the button had, so this works for either caller
+      // rather than resetting both to the action bar's "Excel" label.
+      btn.innerHTML =
+        originalHtml ??
+        `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
           <polyline points="14 2 14 8 20 8"/>
@@ -2199,6 +2218,46 @@ async function handleExcelDownload() {
       `;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Workbook download driven by the site toggle
+// ---------------------------------------------------------------------------
+
+/**
+ * Which workbook belongs to which site.
+ *
+ * BVI has none: that portal offers no file channel at all, so its only route is
+ * the Copy button and an assistant filling the wizard by hand.
+ */
+const SITE_TEMPLATE = {
+  enoad: { templateId: 'uscg-noad-8-2', label: 'NOAD Workbook 8.2' },
+  sailclear: { templateId: 'sailclear-individuals', label: 'Individual Format' },
+  bvi: null,
+};
+
+function updateWorkbookButton() {
+  const btn = document.getElementById('downloadWorkbookBtn');
+  if (!btn) return;
+  const t = SITE_TEMPLATE[currentAgentSite()];
+  btn.disabled = !t;
+  btn.title = t
+    ? `Download the ${t.label} filled with your guests`
+    : 'The BVI portal has no file upload — use Copy and let Claude fill the form';
+}
+
+async function handleWorkbookDownload() {
+  const site = currentAgentSite();
+  const t = SITE_TEMPLATE[site];
+  if (!t) {
+    showToast('BVI has no workbook — use Copy instead', 'error');
+    return;
+  }
+  if (!(state.travelers || []).length) {
+    showToast('No guests scanned yet — import passports first', 'error');
+    return;
+  }
+  await handleExcelDownload(t, 'downloadWorkbookBtn');
 }
 
 /**
