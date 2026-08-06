@@ -233,6 +233,11 @@
             <label for="captainPhone">Phone</label>
             <input type="tel" id="captainPhone" name="phone">
           </div>
+
+          <div class="form-group">
+            <label for="captainFax">Fax (eNOAD reporting party, optional)</label>
+            <input type="text" id="captainFax" name="fax">
+          </div>
           
           <div class="form-actions">
             <button type="submit" class="btn btn-primary">Save Captain Info</button>
@@ -301,7 +306,106 @@
               <label for="boatCapacity">Capacity (guests)</label>
               <input type="number" id="boatCapacity" name="capacity" min="1">
             </div>
-            
+
+            <details class="boat-enoad-details" id="boatEnoadDetails">
+              <summary>eNOAD vessel details (one-time)</summary>
+
+              <div class="form-group">
+                <label for="boatCallSign">Call Sign</label>
+                <input type="text" id="boatCallSign" name="callSign" placeholder="e.g., WDM4875">
+              </div>
+
+              <div class="form-group">
+                <label for="boatMmsi">MMSI Number</label>
+                <input type="text" id="boatMmsi" name="mmsi" placeholder="9 digits">
+              </div>
+
+              <div class="form-group">
+                <label for="boatIdType">ID Type (for the registration number above)</label>
+                <select id="boatIdType" name="idType">
+                  <option value="">-- Not set --</option>
+                  <option value="IMO Number">IMO Number</option>
+                  <option value="Official Number">Official Number</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="boatOwner">Owner</label>
+                <input type="text" id="boatOwner" name="owner">
+              </div>
+
+              <div class="form-group">
+                <label for="boatOperator">Operator</label>
+                <input type="text" id="boatOperator" name="operator">
+              </div>
+
+              <div class="form-group">
+                <label for="boatCofrOperator">COFR Operator (optional)</label>
+                <input type="text" id="boatCofrOperator" name="cofrOperator">
+              </div>
+
+              <div class="form-group">
+                <label for="boatLessThan300">Less than 300 gross tons?</label>
+                <select id="boatLessThan300" name="lessThan300GT">
+                  <option value="">-- Not answered --</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>Fuel Type(s)</label>
+                <div class="fuel-type-grid" id="boatFuelTypes">
+                  <label><input type="checkbox" name="fuelTypes" value="Oil"> Oil</label>
+                  <label><input type="checkbox" name="fuelTypes" value="Electric"> Electric</label>
+                  <label><input type="checkbox" name="fuelTypes" value="Low Flash Point Fuel (Below 60C)"> Low Flash Point Fuel (Below 60C)</label>
+                  <label><input type="checkbox" name="fuelTypes" value="Nuclear"> Nuclear</label>
+                  <label><input type="checkbox" name="fuelTypes" value="LNG"> LNG</label>
+                  <label><input type="checkbox" name="fuelTypes" value="Methanol"> Methanol</label>
+                  <label><input type="checkbox" name="fuelTypes" value="Ammonia"> Ammonia</label>
+                  <label><input type="checkbox" name="fuelTypes" value="Hydrogen"> Hydrogen</label>
+                  <label><input type="checkbox" name="fuelTypes" value="Other"> Other</label>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="boatClassSociety">Class Society</label>
+                <input type="text" id="boatClassSociety" name="classSociety" list="classSocietyList" placeholder="e.g., U.S. Coast Guard">
+                <datalist id="classSocietyList"></datalist>
+              </div>
+
+              <div class="form-group">
+                <label for="boatOce">Operational Condition of Equipment</label>
+                <select id="boatOce" name="oce">
+                  <option value="">-- Not answered --</option>
+                  <option value="Operational">Operational</option>
+                  <option value="Not Operational">Not Operational</option>
+                  <option value="Not Required">Not Required</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="boatOceDescription">OCE Discrepancies (only if not operational)</label>
+                <input type="text" id="boatOceDescription" name="oceDescription">
+              </div>
+
+              <div class="form-group">
+                <label for="boatVesselClass">Vessel Class (optional)</label>
+                <input type="text" id="boatVesselClass" name="vesselClass" list="vesselClassList">
+                <datalist id="vesselClassList"></datalist>
+              </div>
+
+              <div class="form-group">
+                <label for="boatVesselClassType">Vessel Type (eNOAD, optional)</label>
+                <input type="text" id="boatVesselClassType" name="vesselClassType">
+              </div>
+
+              <div class="form-group">
+                <label for="boatVesselSubType">Vessel Sub-Type (eNOAD, optional)</label>
+                <input type="text" id="boatVesselSubType" name="vesselSubType">
+              </div>
+            </details>
+
             <div class="form-actions">
               <button type="button" class="btn btn-secondary" id="cancelBoatBtn">Cancel</button>
               <button type="submit" class="btn btn-primary">Save Boat</button>

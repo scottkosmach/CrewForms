@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "updated": "2026-08-06",
+  "note": "Vessel registry seeds. The live copy is chrome.storage.local:boats — the extension merges these on load, matching by vesselName (case-insensitive) and filling ONLY fields the captain has never answered (mergeSeedBoat). A captain's edit always beats a seed. Anne Bonny's values are verbatim from the 2026-08-06 eNOAD Vessel Details capture (docs/recon/2026-08-06-enoad-tabs/). The fleet's other two boats get entered once on the Boats form.",
+  "vessels": [
+    {
+      "vesselName": "Anne Bonny",
+      "registrationNumber": "VI7389TC",
+      "flagState": "UNITED STATES",
+      "homePort": "",
+      "vesselType": "",
+      "capacity": null,
+      "callSign": "WDM4875",
+      "mmsi": "338200891",
+      "idType": "Official Number",
+      "owner": "Virgin Wakes LLC",
+      "operator": "Virgin Wakes LLC",
+      "cofrOperator": "",
+      "lessThan300GT": true,
+      "fuelTypes": [],
+      "classSociety": "U.S. Coast Guard",
+      "oce": "Operational",
+      "oceDescription": "",
+      "vesselClass": "",
+      "vesselClassType": "",
+      "vesselSubType": ""
+    }
+  ],
+  "captain": {
+    "fax": "00802"
+  }
+}

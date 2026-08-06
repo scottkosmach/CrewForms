@@ -608,6 +608,38 @@ body {
   color: var(--color-gray-900);
 }
 
+.boat-enoad-details {
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+}
+
+.boat-enoad-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--color-gray-700);
+  padding: var(--spacing-xs) 0;
+}
+
+.boat-enoad-details[open] summary {
+  margin-bottom: var(--spacing-sm);
+}
+
+.fuel-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+
+.fuel-type-grid label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-weight: normal;
+  font-size: 0.85rem;
+}
+
 /* ============================================================================
    ACTION BAR
    ============================================================================ */

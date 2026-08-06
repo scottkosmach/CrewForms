@@ -124,6 +124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupTabNavigation();
   setupCaptainForm();
   setupBoatForm();
+  populateBoatDatalists();
   setupCompanyForm();
   setupTripForm();
   setupTravelerImport();
@@ -161,6 +162,65 @@ async function loadAllData() {
   state.trips = data.trips || [];
   state.travelers = data.travelers || [];
   state.travelerImages = data.travelerImages || {};
+
+  await seedRegistryData();
+}
+
+/**
+ * Seed boats, captain gaps, and learned lists from the files bundled with the
+ * extension (sidepanel/seeds/, mirrored from shared/registry/ by
+ * scripts/sync-extension-seeds.mjs). A captain's edit always beats a seed
+ * (mergeSeedBoat fills only never-answered fields), so re-running on every
+ * load is safe.
+ */
+async function seedRegistryData() {
+  let vesselSeed, listSeed;
+  try {
+    [vesselSeed, listSeed] = await Promise.all([
+      fetch(chrome.runtime.getURL('sidepanel/seeds/vessels.json')).then(r => r.json()),
+      fetch(chrome.runtime.getURL('sidepanel/seeds/learned-lists.json')).then(r => r.json())
+    ]);
+  } catch (error) {
+    console.warn('Registry seeds not bundled; skipping seeding', error);
+    return;
+  }
+
+  let boatsChanged = false;
+  for (const seed of vesselSeed.vessels || []) {
+    const match = state.boats.find(
+      b => (b.vesselName || '').trim().toLowerCase() === (seed.vesselName || '').trim().toLowerCase()
+    );
+    if (!match) {
+      state.boats.push({ id: generateId(), ...seed });
+      boatsChanged = true;
+    } else {
+      const patch = mergeSeedBoat(match, seed);
+      if (patch) {
+        Object.assign(match, patch);
+        boatsChanged = true;
+      }
+    }
+  }
+  if (boatsChanged) await setStorage({ boats: state.boats });
+
+  // Captain gaps (e.g. the eNOAD fax) fill only when the field is empty AND
+  // a captain record already exists — the seed never invents a captain.
+  if (vesselSeed.captain && state.captain) {
+    const patch = mergeSeedBoat(state.captain, vesselSeed.captain);
+    if (patch) {
+      state.captain = { ...state.captain, ...patch };
+      await setStorage({ captain: state.captain });
+    }
+  }
+
+  const stored = await getStorage(['learnedLists']);
+  if (!stored.learnedLists) {
+    const learnedLists = {};
+    for (const [listId, def] of Object.entries(listSeed.lists || {})) {
+      learnedLists[listId] = def.values || [];
+    }
+    await setStorage({ learnedLists });
+  }
 }
 
 /**
@@ -268,6 +328,7 @@ function setupCaptainForm() {
     const formData = new FormData(form);
     
     state.captain = {
+      ...state.captain,
       firstName: formData.get('firstName'),
       middleName: formData.get('middleName'),
       lastName: formData.get('lastName'),
@@ -285,7 +346,8 @@ function setupCaptainForm() {
       nationality: formData.get('nationality'),
       licenseNumber: formData.get('licenseNumber'),
       email: formData.get('email'),
-      phone: formData.get('phone')
+      phone: formData.get('phone'),
+      fax: formData.get('fax')
     };
     
     await setStorage({ captain: state.captain });
@@ -312,6 +374,7 @@ function populateCaptainForm() {
   document.getElementById('captainLicenseNumber').value = c.licenseNumber || '';
   document.getElementById('captainEmail').value = c.email || '';
   document.getElementById('captainPhone').value = c.phone || '';
+  document.getElementById('captainFax').value = c.fax || '';
 }
 
 // ============================================================================
@@ -341,15 +404,38 @@ function setupBoatForm() {
     e.preventDefault();
     
     const formData = new FormData(form);
-    
+    const existing = state.editingBoatId
+      ? state.boats.find(b => b.id === state.editingBoatId) || {}
+      : {};
+    const lt300 = formData.get('lessThan300GT');
+
+    // Spread the existing record first: fields this form doesn't carry (or
+    // that a newer seed added) survive an edit instead of being dropped.
     const boat = {
+      ...existing,
       id: state.editingBoatId || generateId(),
       vesselName: formData.get('vesselName'),
       registrationNumber: formData.get('registrationNumber'),
       flagState: formData.get('flagState'),
       homePort: formData.get('homePort'),
       vesselType: formData.get('vesselType'),
-      capacity: parseInt(formData.get('capacity')) || null
+      capacity: parseInt(formData.get('capacity')) || null,
+      callSign: formData.get('callSign').trim(),
+      mmsi: formData.get('mmsi').trim(),
+      idType: formData.get('idType'),
+      owner: formData.get('owner').trim(),
+      operator: formData.get('operator').trim(),
+      cofrOperator: formData.get('cofrOperator').trim(),
+      // Tri-state on purpose: null means "never answered", which downstream
+      // layers must leave blank rather than guess.
+      lessThan300GT: lt300 === 'yes' ? true : lt300 === 'no' ? false : null,
+      fuelTypes: formData.getAll('fuelTypes'),
+      classSociety: formData.get('classSociety').trim(),
+      oce: formData.get('oce'),
+      oceDescription: formData.get('oceDescription').trim(),
+      vesselClass: formData.get('vesselClass').trim(),
+      vesselClassType: formData.get('vesselClassType').trim(),
+      vesselSubType: formData.get('vesselSubType').trim()
     };
     
     if (state.editingBoatId) {
@@ -373,6 +459,29 @@ function setupBoatForm() {
     updateTripSelectors();
     showToast('Boat saved', 'success');
   });
+}
+
+/**
+ * Datalists for the eNOAD-vocabulary boat fields (class society, vessel
+ * class). Values ship in sidepanel/seeds/nvmc-lists.json; the datalist is a
+ * convenience, not validation — a missing file just means free typing.
+ */
+async function populateBoatDatalists() {
+  try {
+    const lists = await fetch(chrome.runtime.getURL('sidepanel/seeds/nvmc-lists.json')).then(r => r.json());
+    const fill = (id, values) => {
+      const dl = document.getElementById(id);
+      if (dl) {
+        dl.innerHTML = (values || [])
+          .map(v => `<option value="${v.replace(/"/g, '&quot;')}"></option>`)
+          .join('');
+      }
+    };
+    fill('classSocietyList', lists.classSociety);
+    fill('vesselClassList', lists.vesselClass);
+  } catch (error) {
+    console.warn('nvmc-lists seed not bundled; datalists stay empty', error);
+  }
 }
 
 function renderBoatList() {
@@ -442,7 +551,27 @@ function editBoat(id) {
   document.getElementById('boatHomePort').value = boat.homePort || '';
   document.getElementById('boatType').value = boat.vesselType || '';
   document.getElementById('boatCapacity').value = boat.capacity || '';
-  
+  document.getElementById('boatCallSign').value = boat.callSign || '';
+  document.getElementById('boatMmsi').value = boat.mmsi || '';
+  document.getElementById('boatIdType').value = boat.idType || '';
+  document.getElementById('boatOwner').value = boat.owner || '';
+  document.getElementById('boatOperator').value = boat.operator || '';
+  document.getElementById('boatCofrOperator').value = boat.cofrOperator || '';
+  document.getElementById('boatLessThan300').value =
+    boat.lessThan300GT === true ? 'yes' : boat.lessThan300GT === false ? 'no' : '';
+  document.querySelectorAll('#boatFuelTypes input').forEach(cb => {
+    cb.checked = (boat.fuelTypes || []).includes(cb.value);
+  });
+  document.getElementById('boatClassSociety').value = boat.classSociety || '';
+  document.getElementById('boatOce').value = boat.oce || '';
+  document.getElementById('boatOceDescription').value = boat.oceDescription || '';
+  document.getElementById('boatVesselClass').value = boat.vesselClass || '';
+  document.getElementById('boatVesselClassType').value = boat.vesselClassType || '';
+  document.getElementById('boatVesselSubType').value = boat.vesselSubType || '';
+  // Surface the eNOAD section when it already carries answers.
+  document.getElementById('boatEnoadDetails').open =
+    Boolean(boat.callSign || boat.mmsi || boat.owner || boat.classSociety);
+
   document.getElementById('boatFormModal').classList.remove('hidden');
 }
 
@@ -1527,6 +1656,28 @@ function dateLine(site, label, d) {
   // assistant is ever unsure which half is the day it has an unambiguous
   // reference sitting next to the value it is about to type.
   return `  ${label}: ${v}${spelled ? `   (${spelled})` : ''}`;
+}
+
+/**
+ * Which seed fields may fill into a stored boat record. Fill-only-if-empty:
+ * a field the captain has answered (including false — "not under 300 GT" is
+ * an answer) is never overwritten, and empty seed values never generate a
+ * patch. Returns the patch object, or null when there is nothing to fill.
+ */
+function mergeSeedBoat(stored, seed) {
+  const patch = {};
+  for (const [key, value] of Object.entries(seed)) {
+    if (key === 'id') continue;
+    const seedEmpty =
+      value === undefined || value === null || value === '' ||
+      (Array.isArray(value) && value.length === 0);
+    if (seedEmpty) continue;
+    const current = stored[key];
+    if (current === undefined || current === null || current === '') {
+      patch[key] = value;
+    }
+  }
+  return Object.keys(patch).length ? patch : null;
 }
 
 /** Each site validates against its own spelling of the same country. */
