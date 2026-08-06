@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   getValue,
+  resolveSource,
   formatDate,
   applyValueMap,
   colLetterToNumber,
@@ -179,7 +180,7 @@ function fillTravelerSheet(
     
     // Fill each column for this traveler
     sheetConfig.columns.forEach(mapping => {
-      const value = mapping.source ? getValue(dataContext, mapping.source) : undefined;
+      const value = mapping.source ? resolveSource(dataContext, mapping.source) : undefined;
       fillCell(worksheet, rowNum, mapping.col, value, mapping);
     });
   });
@@ -216,7 +217,7 @@ function fillCrewSheet(
     
     // Fill each column
     sheetConfig.columns.forEach(mapping => {
-      const value = mapping.source ? getValue(dataContext, mapping.source) : undefined;
+      const value = mapping.source ? resolveSource(dataContext, mapping.source) : undefined;
       fillCell(worksheet, rowNum, mapping.col, value, mapping);
     });
   });
@@ -241,7 +242,7 @@ function fillSingleSheet(
   sheetConfig.columns.forEach(mapping => {
     // For 'single' type, row is specified in the mapping
     const rowNum = mapping.row || sheetConfig.startRow;
-    const value = mapping.source ? getValue(dataContext, mapping.source) : undefined;
+    const value = mapping.source ? resolveSource(dataContext, mapping.source) : undefined;
     fillCell(worksheet, rowNum, mapping.col, value, mapping);
   });
 }

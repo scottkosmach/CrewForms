@@ -138,6 +138,51 @@ const sailclearIndividuals = {
   ],
 };
 
+/**
+ * The three single-value sheets.
+ *
+ * Layout rule, verified against the workbook's own data validations: the label
+ * sits on row N and its input is on row N+1. So "*Name" at B4 is filled at B5.
+ *
+ * Only fields we genuinely hold are mapped. Everything else is per-voyage data
+ * that lives in the captain's head, and guessing at it on a Coast Guard notice
+ * is exactly the failure mode this project exists to remove — those cells are
+ * listed in `preImport` instead, by exact address.
+ */
+const nvmcVesselDetails = {
+  sheetName: 'Vessel Details',
+  startRow: 5,
+  dataType: 'single',
+  columns: [
+    { col: 'B', row: 5, source: 'boat.vesselName' },        // *Name
+    { col: 'E', row: 5, source: 'boat.registrationNumber' }, // *ID Number
+    { col: 'G', row: 5, source: 'boat.flagState', valueMap: COUNTRY_NVMC }, // *Flag
+  ],
+};
+
+const nvmcReportingParty = {
+  sheetName: 'Reporting Party',
+  startRow: 5,
+  dataType: 'single',
+  columns: [
+    { col: 'B', row: 5, source: '{captain.lastName}, {captain.firstName}' }, // *Name
+    { col: 'E', row: 5, source: 'captain.email' },  // *Email
+    { col: 'B', row: 7, source: 'captain.phone' },  // Phone
+  ],
+};
+
+const nvmcVoyageInformation = {
+  sheetName: 'Voyage Information',
+  startRow: 10,
+  dataType: 'single',
+  columns: [
+    // 24-hour point of contact — the captain, by definition.
+    { col: 'B', row: 10, source: '{captain.lastName}, {captain.firstName}' }, // *Name
+    { col: 'B', row: 12, source: 'captain.email' },  // Email
+    { col: 'D', row: 12, source: 'captain.phone' },  // *24 Hour Phone
+  ],
+};
+
 const TEMPLATES = [
   {
     id: 'uscg-noad-8-2',
@@ -149,12 +194,18 @@ const TEMPLATES = [
       'because the workbook VLOOKUPs do not recalculate outside Excel.',
     file: 'assets/templates/nvmc-noad-workbook-8.2.xlsx',
     storagePath: 'nvmc-noad-workbook-8.2.xlsx',
-    sheets: [nvmcNonCrew, nvmcCrew],
+    sheets: [nvmcNonCrew, nvmcCrew, nvmcVesselDetails, nvmcReportingParty, nvmcVoyageInformation],
+    // Exact cells the captain must complete before importing. Addresses are
+    // verified against the workbook; label row N, input row N+1.
     unfilledRequired: [
-      'Non-Crew J/K Country of Residence',
-      'Non-Crew W..AC Embark Country/State/Port/Place/Date',
-      'Crew embark block, position and longshoreman declaration',
-      'Vessel Details, Reporting Party and Voyage Information sheets',
+      'Vessel Details  D5 Call Sign · F5 ID Type · B7 Less Than 300GT · B9 Owner · E9 Operator · B11 Charterer · B16 Operational Condition · E16 OCE Description',
+      'Reporting Party B11..I11 vessel lat/long · B13 Location Description',
+      'Voyage Information  B5 Notice Type · D5 Voyage Type · F5 Transaction Type · B7 Notice ID · E7 Less than 24HR · G7 Closed Loop',
+      'Voyage Information  ARRIVAL B15 State · E15 Port · B17 Arrive Date · D17 Arrive Time · B19 City · F19 Facility',
+      'Voyage Information  LAST PORT B22 Country · D22 State · F22 Port · B24 Place · D24 Arrive · F24 Depart',
+      'Voyage Information  DEPARTURE B27 City · D27 State · F27 Port · B29 Depart Date · E29 Depart Time',
+      'Non-Crew  J Country of Residence · W..AC Embark Country/State/Port/Place/Date',
+      'Crew List  embark block, position and longshoreman declaration',
     ],
   },
   {

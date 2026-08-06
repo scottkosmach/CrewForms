@@ -63,6 +63,33 @@ export function getValue(
 }
 
 /**
+ * Resolve a source that may be a template rather than a single path.
+ *
+ * The NOAD workbook has single "Name" cells where our data holds first and last
+ * separately, so `"{captain.lastName}, {captain.firstName}"` fills one cell from
+ * two fields. A placeholder that resolves to nothing collapses to an empty
+ * string, and if the whole result is empty the cell is left alone.
+ */
+export function resolveSource(
+  data: Record<string, unknown>,
+  source: string,
+): string | undefined {
+  if (!source.includes('{')) return getValue(data, source);
+
+  let sawValue = false;
+  const out = source.replace(/\{([^}]+)\}/g, (_, path) => {
+    const v = getValue(data, path.trim());
+    if (v) sawValue = true;
+    return v ?? '';
+  });
+
+  if (!sawValue) return undefined;
+  // "SMITH, " when a first name is missing reads as a data error; tidy it.
+  const tidied = out.replace(/\s*,\s*$/, '').replace(/^\s*,\s*/, '').replace(/\s{2,}/g, ' ').trim();
+  return tidied || undefined;
+}
+
+/**
  * Reformat a date string.
  *
  * YYYY-MM-DD is split textually rather than parsed through Date:
