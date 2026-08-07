@@ -134,3 +134,84 @@ test('survey mode is off by default', () => {
     assert.match(t, /Keep it to what actually gave trouble/);
   }
 });
+
+/** Anne Bonny as seeded from the 2026-08-06 Vessel Details capture. */
+const ANNE_BONNY = {
+  id: 'b1',
+  vesselName: 'Anne Bonny',
+  registrationNumber: 'VI7389TC',
+  flagState: 'UNITED STATES',
+  callSign: 'WDM4875',
+  mmsi: '338200891',
+  idType: 'Official Number',
+  owner: 'Virgin Wakes LLC',
+  operator: 'Virgin Wakes LLC',
+  lessThan300GT: true,
+  classSociety: 'U.S. Coast Guard',
+  oce: 'Operational',
+};
+
+/** A wizard trip: the observed Cruz Bay -> Tortola departure filing. */
+const DEPARTURE_TRIP = {
+  id: 't1',
+  boatId: 'b1',
+  noticeLeg: 'departure',
+  usPort: { label: 'Cruz Bay', enoad: { city: 'Cruz Bay', state: 'Virgin Islands', port: 'Cruz Bay' } },
+  foreignPort: { label: 'TORTOLA', enoad: { country: 'VIRGIN ISLANDS, BRITISH', port: 'TORTOLA' } },
+  departureDate: { day: '6', month: '8', year: '2026' },
+  departureTime: '09:30',
+  arrivalDate: { day: '6', month: '8', year: '2026' },
+  arrivalTime: '10:15',
+  closedLoop: true,
+  charterer: 'Rosato',
+};
+
+test('eNOAD vessel block carries the full static set with the live flag string', () => {
+  const t = build('enoad', [AMBIGUOUS], { boats: [ANNE_BONNY], trips: [DEPARTURE_TRIP] });
+  assert.match(t, /Flag: UNITED STATES - US/, 'flag is the verbatim "NAME - CODE" option');
+  assert.match(t, /Call Sign: WDM4875/);
+  assert.match(t, /MMSI Number: 338200891/);
+  assert.match(t, /ID Type: Official Number/);
+  assert.match(t, /ID Number: VI7389TC/);
+  assert.match(t, /Owner: Virgin Wakes LLC/);
+  assert.match(t, /Less Than 300 GT: yes/);
+  assert.match(t, /Class Society: U\.S\. Coast Guard/);
+  assert.match(t, /Operational Condition of Equipment: Operational/);
+});
+
+test('eNOAD trip block spells the voyage tab, charterer included', () => {
+  const t = build('enoad', [AMBIGUOUS], { boats: [ANNE_BONNY], trips: [DEPARTURE_TRIP] });
+  assert.match(t, /Notice Type: Departure/);
+  assert.match(t, /Voyage Type: US to Foreign/);
+  assert.match(t, /Vessel Charterer: Rosato/);
+  assert.match(t, /City "Cruz Bay" \/ State "Virgin Islands" \/ Port "Cruz Bay"/);
+  assert.match(t, /Country "VIRGIN ISLANDS, BRITISH" \/ Port "TORTOLA"/);
+  // Voyage-tab datetimes are M/D/YYYY HH:mm with the spelled safety net.
+  assert.match(t, /Departure Date\/Time: 8\/6\/2026 09:30\s+\(6 August 2026 at 09:30\)/);
+  assert.match(t, /Location Description\): Cruz Bay/);
+});
+
+test('the arrival leg flags its unobserved voyage type instead of asserting it', () => {
+  const arrival = { ...DEPARTURE_TRIP, noticeLeg: 'arrival' };
+  const t = build('enoad', [AMBIGUOUS], { boats: [ANNE_BONNY], trips: [arrival] });
+  assert.match(t, /Notice Type: Arrival/);
+  assert.match(t, /Voyage Type: Foreign to US/);
+  assert.match(t, /NOT yet seen on the live form/);
+  assert.match(t, /Last Port of Call: Country "VIRGIN ISLANDS, BRITISH"/);
+});
+
+test('a typed-in foreign port routes to Place, never a guessed dropdown value', () => {
+  const jvd = {
+    ...DEPARTURE_TRIP,
+    foreignPort: { label: 'GREAT HARBOUR, JOST VAN DYKE', enoad: null },
+  };
+  const t = build('enoad', [AMBIGUOUS], { boats: [ANNE_BONNY], trips: [jvd] });
+  assert.match(t, /GREAT HARBOUR, JOST VAN DYKE — no dropdown match known/);
+  assert.match(t, /leave Port unset and put this name in the Place field/);
+});
+
+test('an unlisted flag country instructs finding, not guessing', () => {
+  const french = { ...ANNE_BONNY, flagState: 'FRANCE' };
+  const t = build('enoad', [AMBIGUOUS], { boats: [french], trips: [DEPARTURE_TRIP] });
+  assert.match(t, /Flag: FRANCE\s+\(flag list shows "NAME - CODE"/);
+});

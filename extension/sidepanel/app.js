@@ -2303,6 +2303,39 @@ function tripPayload(trip, nvmc) {
   return p;
 }
 
+/**
+ * Live eNOAD flag-dropdown strings, keyed by NVMC country name. The dropdown
+ * renders "NAME - CODE" with long names truncated (~25 chars), so the exact
+ * string cannot be derived — these are seeded verbatim from the 2026-08-06
+ * capture (shared/reference/nvmc/flagList.json) for the flags this fleet
+ * actually flies. Anything else gets a find-it instruction, not a guess.
+ */
+const ENOAD_FLAG = {
+  'UNITED STATES': 'UNITED STATES - US',
+  'VIRGIN ISLANDS, BRITISH': 'VIRGIN ISLANDS, BRITISH - VG',
+  'UNITED KINGDOM': 'UNITED KINGDOM - GB',
+};
+
+function enoadFlag(raw) {
+  const country = countryFor('enoad', raw);
+  return (
+    ENOAD_FLAG[country] ||
+    `${country}   (flag list shows "NAME - CODE" with names truncated — pick the option that starts with this name)`
+  );
+}
+
+/**
+ * eNOAD's voyage-tab pickers display M/D/YYYY HH:mm (24-hour) — unlike the
+ * passenger tab's YYYY-MM-DD. The spelled month rides along as the usual
+ * anti-transposition net.
+ */
+function enoadDateTime(d, time) {
+  if (!d || !d.year) return '(MISSING — ask me)';
+  const machine = `${Number(d.month)}/${Number(d.day)}/${d.year}${time ? ` ${time}` : ''}`;
+  const spelled = spelledDate(d);
+  return spelled ? `${machine}   (${spelled}${time ? ` at ${time}` : ''})` : machine;
+}
+
 /** Each site validates against its own spelling of the same country. */
 const SITE_PROFILE = {
   bvi: {
@@ -2507,6 +2540,17 @@ function siteRules(site) {
       '  • Dates are YYYY-MM-DD. Every date below is already in that form.',
       '  • The field is "Sex" (renamed from Gender) and accepts only Male or Female.',
       '  • Country names are UPPERCASE.',
+      '  • THREE country spellings coexist on this site: the passenger tab wants the',
+      '    plain UPPERCASE name; the Vessel Details "Flag" dropdown is "NAME - CODE"',
+      '    with long names TRUNCATED (e.g. "BONAIRE, SINT EUSTATIUS A - BQ"); the',
+      '    voyage tab\'s Next Port of Call country list is full plain names again.',
+      '    Use the exact string I give you for each field.',
+      '  • The voyage tab\'s date/time fields display M/D/YYYY HH:mm (24-hour) —',
+      '    unlike the passenger tab. The values below are already in that form.',
+      '  • Departure Port options depend on the State dropdown (set State first);',
+      '    NPOC Port options depend on the NPOC Country the same way.',
+      '  • Vessel Charterer is the chartering party\'s SURNAME — the value below is',
+      '    derived from the guest list; type it as given.',
       '  • EMBARK = where THIS voyage started, which depends on the leg:',
       '      arriving into the USVI from the BVI → Embark Country is',
       '      "VIRGIN ISLANDS, BRITISH" (note the comma) and the port is e.g. TORTOLA.',
@@ -2636,8 +2680,24 @@ function buildAgentText(site, opts = {}) {
   if (boat) {
     lines.push('VESSEL');
     lines.push(`  Name: ${cased(boat.vesselName)}`);
-    lines.push(`  Registration: ${up(boat.registrationNumber)}`);
-    if (boat.flagState) lines.push(`  Flag / country of registration: ${countryFor(site, boat.flagState)}`);
+    if (site === 'enoad') {
+      // The Vessel Details tab's full static set, spelled per-field: the ID
+      // pair goes together, the flag needs the "NAME - CODE" string.
+      if (boat.idType) lines.push(`  ID Type: ${boat.idType}`);
+      lines.push(`  ID Number: ${up(boat.registrationNumber)}`);
+      if (boat.callSign) lines.push(`  Call Sign: ${up(boat.callSign)}`);
+      if (boat.mmsi) lines.push(`  MMSI Number: ${boat.mmsi}`);
+      if (boat.flagState) lines.push(`  Flag: ${enoadFlag(boat.flagState)}`);
+      if (boat.owner) lines.push(`  Owner: ${boat.owner}`);
+      if (boat.operator) lines.push(`  Operator: ${boat.operator}`);
+      if (boat.lessThan300GT === true) lines.push('  Less Than 300 GT: yes — tick the checkbox');
+      if (boat.lessThan300GT === false) lines.push('  Less Than 300 GT: no — leave the checkbox clear');
+      if (boat.classSociety) lines.push(`  Class Society: ${boat.classSociety}`);
+      if (boat.oce) lines.push(`  Operational Condition of Equipment: ${boat.oce}`);
+    } else {
+      lines.push(`  Registration: ${up(boat.registrationNumber)}`);
+      if (boat.flagState) lines.push(`  Flag / country of registration: ${countryFor(site, boat.flagState)}`);
+    }
     if (boat.homePort) lines.push(`  Home port: ${boat.homePort}`);
     lines.push('');
   }
@@ -2645,13 +2705,45 @@ function buildAgentText(site, opts = {}) {
   const trip = (state.trips || []).find((t) => t.id === getCurrentTripId());
   if (trip) {
     lines.push('TRIP');
-    if (trip.departurePort) lines.push(`  Departing from: ${trip.departurePort}`);
-    if (trip.destinationPorts) lines.push(`  Arriving at: ${trip.destinationPorts}`);
-    if (trip.purpose) lines.push(`  Purpose: ${trip.purpose}`);
-    const dep = dateFor(site, trip.departureDate);
-    const ret = dateFor(site, trip.returnDate);
-    if (dep) lines.push(`  Departure date: ${dep}`);
-    if (ret) lines.push(`  Return date: ${ret}`);
+    if (site === 'enoad' && trip.noticeLeg) {
+      // A wizard trip carries the whole voyage-tab answer set, each value in
+      // the exact form its control wants.
+      const isDep = trip.noticeLeg === 'departure';
+      const us = trip.usPort || {};
+      const foreign = trip.foreignPort || {};
+      lines.push(`  Notice Type: ${isDep ? 'Departure' : 'Arrival'}`);
+      lines.push(
+        `  Voyage Type: ${isDep ? 'US to Foreign' : 'Foreign to US'}` +
+          (isDep ? '' : '   ← from the workbook vocabulary, NOT yet seen on the live form — tell me if the dropdown disagrees'),
+      );
+      lines.push(`  Closed Loop Voyage: ${trip.closedLoop ? 'yes — tick it' : 'no — leave it clear'}`);
+      if (trip.charterer) lines.push(`  Vessel Charterer: ${trip.charterer}`);
+      const usSide = us.enoad
+        ? `City "${us.enoad.city}" / State "${us.enoad.state}" / Port "${us.enoad.port}"`
+        : `${us.label || '(missing)'} (dropdown rendering unknown — ask me rather than guess)`;
+      const foreignSide = foreign.enoad
+        ? `Country "${foreign.enoad.country}" / Port "${foreign.enoad.port}"`
+        : `${foreign.label || '(missing)'} — no dropdown match known: leave Port unset and put this name in the Place field`;
+      if (isDep) {
+        lines.push(`  Departure Information: ${usSide}`);
+        lines.push(`  Next Port of Call: ${foreignSide}`);
+      } else {
+        lines.push(`  Arrival Information: ${usSide}`);
+        lines.push(`  Last Port of Call: ${foreignSide}`);
+      }
+      lines.push(`  Departure Date/Time: ${enoadDateTime(trip.departureDate, trip.departureTime)}`);
+      lines.push(`  Arrival Date/Time: ${enoadDateTime(trip.arrivalDate, trip.arrivalTime)}`);
+      const location = isDep ? (us.enoad && us.enoad.city) || us.label : foreign.label;
+      if (location) lines.push(`  Reporting Party vessel location (Location Description): ${location}`);
+    } else {
+      if (trip.departurePort) lines.push(`  Departing from: ${trip.departurePort}`);
+      if (trip.destinationPorts) lines.push(`  Arriving at: ${trip.destinationPorts}`);
+      if (trip.purpose) lines.push(`  Purpose: ${trip.purpose}`);
+      const dep = dateFor(site, trip.departureDate);
+      const ret = dateFor(site, trip.returnDate);
+      if (dep) lines.push(`  Departure date: ${dep}`);
+      if (ret) lines.push(`  Return date: ${ret}`);
+    }
     lines.push('');
   }
 
