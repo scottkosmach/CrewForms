@@ -464,6 +464,19 @@ function setupBoatForm() {
   });
 }
 
+/** One fetch of sidepanel/seeds/nvmc-lists.json, shared by all consumers. */
+let nvmcSeedCache = null;
+async function loadNvmcSeeds() {
+  if (nvmcSeedCache) return nvmcSeedCache;
+  try {
+    nvmcSeedCache = await fetch(chrome.runtime.getURL('sidepanel/seeds/nvmc-lists.json')).then(r => r.json());
+  } catch (error) {
+    console.warn('nvmc-lists seed not bundled', error);
+    nvmcSeedCache = {};
+  }
+  return nvmcSeedCache;
+}
+
 /**
  * Datalists for the eNOAD-vocabulary boat fields (class society, vessel
  * class). Values ship in sidepanel/seeds/nvmc-lists.json; the datalist is a
@@ -471,7 +484,7 @@ function setupBoatForm() {
  */
 async function populateBoatDatalists() {
   try {
-    const lists = await fetch(chrome.runtime.getURL('sidepanel/seeds/nvmc-lists.json')).then(r => r.json());
+    const lists = await loadNvmcSeeds();
     const fill = (id, values) => {
       const dl = document.getElementById(id);
       if (dl) {
@@ -908,13 +921,7 @@ async function startTripWizard() {
   wizard.step = 0;
   wizard.answers = { closedLoop: true };
   wizard.lists = await getLearnedLists();
-  if (!wizard.nvmc) {
-    try {
-      wizard.nvmc = await fetch(chrome.runtime.getURL('sidepanel/seeds/nvmc-lists.json')).then(r => r.json());
-    } catch {
-      wizard.nvmc = { usStates: [], usPortsByState: {} };
-    }
-  }
+  wizard.nvmc = await loadNvmcSeeds();
   renderWizardStep();
   document.getElementById('tripWizardModal').classList.remove('hidden');
 }
@@ -2168,6 +2175,134 @@ function computeCharterer(travelers) {
   return { value: null, candidates: leaders.map((e) => e.display) };
 }
 
+/**
+ * Boat payload for the workbook generator — strings only. Booleans become
+ * the workbook's own 'Yes'/'No'; an unanswered tri-state simply omits the
+ * key so the cell stays blank instead of guessing.
+ */
+function boatPayload(boat) {
+  if (!boat) return null;
+  const p = {
+    vesselName: boat.vesselName,
+    registrationNumber: boat.registrationNumber,
+    flagState: boat.flagState,
+    homePort: boat.homePort,
+    vesselType: boat.vesselType,
+    capacity: boat.capacity,
+    callSign: boat.callSign,
+    mmsi: boat.mmsi,
+    idType: boat.idType,
+    owner: boat.owner,
+    operator: boat.operator,
+    cofrOperator: boat.cofrOperator,
+    classSociety: boat.classSociety,
+    oce: boat.oce,
+    oceDescription: boat.oceDescription,
+    vesselClass: boat.vesselClass,
+    vesselClassType: boat.vesselClassType,
+    vesselSubType: boat.vesselSubType
+  };
+  if (boat.lessThan300GT === true) p.lessThan300GT = 'Yes';
+  if (boat.lessThan300GT === false) p.lessThan300GT = 'No';
+  // Keyed to the workbook's fuel columns (B19..J19) — note its column order
+  // differs from the live site's checkbox order.
+  const FUEL_KEYS = {
+    'Oil': 'fuelOil',
+    'Electric': 'fuelElectric',
+    'Nuclear': 'fuelNuclear',
+    'Low Flash Point Fuel (Below 60C)': 'fuelLowFlash',
+    'LNG': 'fuelLNG',
+    'Methanol': 'fuelMethanol',
+    'Ammonia': 'fuelAmmonia',
+    'Hydrogen': 'fuelHydrogen',
+    'Other': 'fuelOther'
+  };
+  for (const label of boat.fuelTypes || []) {
+    if (FUEL_KEYS[label]) p[FUEL_KEYS[label]] = 'Yes';
+  }
+  return p;
+}
+
+/**
+ * Leg-aware trip payload. A wizard trip flattens into the NOAD Voyage
+ * sheet's keys: a Departure notice sends the DEPARTURE + NEXT PORT OF CALL
+ * blocks, an Arrival notice ARRIVAL + LAST PORT OF CALL. A port picked from
+ * a learned list carries its observed eNOAD rendering; a typed-in foreign
+ * port has none, so its name rides the free-text Place field and the
+ * dropdown-backed cells stay blank. Pre-wizard trips keep the old shape.
+ */
+function tripPayload(trip, nvmc) {
+  if (!trip) return null;
+  const p = {
+    departurePort: trip.departurePort,
+    destinationPorts: trip.destinationPorts,
+    purpose: trip.purpose,
+    guestCount: trip.guestCount,
+    departureDate: trip.departureDate,
+    returnDate: trip.returnDate,
+    charterer: trip.charterer
+  };
+  if (!trip.noticeLeg) return p;
+
+  const us = trip.usPort || {};
+  const foreign = trip.foreignPort || {};
+  const codes = (nvmc && nvmc.foreignPortCodes) || {};
+  const foreignPortCode =
+    foreign.enoad && foreign.enoad.country && foreign.enoad.port
+      ? (codes[foreign.enoad.country] || {})[foreign.enoad.port] || ''
+      : '';
+
+  p.closedLoop = trip.closedLoop ? 'Yes' : 'No';
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const toStamp = (d, time) =>
+    d && d.year ? new Date(`${d.year}-${pad(d.month)}-${pad(d.day)}T${time || '00:00'}`) : null;
+  const dep = toStamp(trip.departureDate, trip.departureTime);
+  const arr = toStamp(trip.arrivalDate, trip.arrivalTime);
+  if (dep && arr && !Number.isNaN(dep.getTime()) && !Number.isNaN(arr.getTime())) {
+    p.lessThan24hr = arr - dep < 24 * 60 * 60 * 1000 ? 'Yes' : 'No';
+  }
+
+  if (trip.noticeLeg === 'departure') {
+    p.noticeType = 'Departure';
+    p.voyageType = 'US to Foreign';
+    p.departureCity = (us.enoad && us.enoad.city) || '';
+    p.departureState = (us.enoad && us.enoad.state) || '';
+    p.departurePortName = (us.enoad && us.enoad.port) || '';
+    p.departureTime = trip.departureTime;
+    // Reporting Party vessel location: filing happens before departure, so
+    // the vessel sits at the US departure port (observed 2026-08-06).
+    p.locationDescription = (us.enoad && us.enoad.city) || us.label || '';
+    p.nextCountry = (foreign.enoad && foreign.enoad.country) || '';
+    p.nextPortName = (foreign.enoad && foreign.enoad.port) || '';
+    p.nextPlace = foreign.enoad ? '' : foreign.label || '';
+    p.nextPortCode = foreignPortCode;
+    p.nextArriveDate = trip.arrivalDate;
+    p.nextArriveTime = trip.arrivalTime;
+    // Hidden DEPART_DT/DEPART_TIME helpers mirror the departure block.
+    p.departDtDate = trip.departureDate;
+    p.departDtTime = trip.departureTime;
+  } else {
+    p.noticeType = 'Arrival';
+    // From the workbook's own Arrival list; unobserved on the live form —
+    // flagged for confirmation in the wizard and the prompt.
+    p.voyageType = 'Foreign to US';
+    p.arrivalState = (us.enoad && us.enoad.state) || '';
+    p.arrivalPortName = (us.enoad && us.enoad.port) || '';
+    p.arrivalCity = (us.enoad && us.enoad.city) || '';
+    p.arriveDate = trip.arrivalDate;
+    p.arriveTime = trip.arrivalTime;
+    // Filing before leaving the foreign port — that is where the vessel is.
+    p.locationDescription = foreign.label || '';
+    p.lastCountry = (foreign.enoad && foreign.enoad.country) || '';
+    p.lastPortName = (foreign.enoad && foreign.enoad.port) || '';
+    p.lastPlace = foreign.enoad ? '' : foreign.label || '';
+    p.lastPortCode = foreignPortCode;
+    p.lastDepartDate = trip.departureDate;
+  }
+  return p;
+}
+
 /** Each site validates against its own spelling of the same country. */
 const SITE_PROFILE = {
   bvi: {
@@ -3204,26 +3339,13 @@ async function handleExcelDownload(templateOverride, buttonId) {
         licenseNumber: state.captain.licenseNumber,
         email: state.captain.email,
         phone: state.captain.phone,
+        fax: state.captain.fax,
         dateOfBirth: state.captain.dateOfBirth,
         passportExpiry: state.captain.passportExpiry
       } : null,
       crew: [], // Future: add crew members support
-      boat: currentBoat ? {
-        vesselName: currentBoat.vesselName,
-        registrationNumber: currentBoat.registrationNumber,
-        flagState: currentBoat.flagState,
-        homePort: currentBoat.homePort,
-        vesselType: currentBoat.vesselType,
-        capacity: currentBoat.capacity
-      } : null,
-      trip: currentTrip ? {
-        departurePort: currentTrip.departurePort,
-        destinationPorts: currentTrip.destinationPorts,
-        purpose: currentTrip.purpose,
-        guestCount: currentTrip.guestCount,
-        departureDate: currentTrip.departureDate,
-        returnDate: currentTrip.returnDate
-      } : null
+      boat: boatPayload(currentBoat),
+      trip: tripPayload(currentTrip, await loadNvmcSeeds())
     };
     
     console.log('Generating Excel with data:', data);

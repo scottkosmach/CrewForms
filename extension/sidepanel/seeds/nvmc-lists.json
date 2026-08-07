@@ -1432,5 +1432,13 @@
       "Washburn",
       "Washburn County"
     ]
+  },
+  "foreignPortCodes": {
+    "VIRGIN ISLANDS, BRITISH": {
+      "BEEF ISLAND, TORTOLA": "EIS",
+      "ROAD TOWN, TORTOLA": "RAD",
+      "TORTOLA": "TOV",
+      "VIRGIN GORDA": "VIJ"
+    }
   }
 }

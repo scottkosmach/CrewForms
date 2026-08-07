@@ -82,25 +82,64 @@ type CaptainData = TravelerData;
 type CrewMemberData = TravelerData;
 
 /**
- * Boat/vessel data structure
+ * Boat/vessel data structure. Everything is a string on the wire: the
+ * extension converts booleans to the workbook's own 'Yes'/'No' strings and
+ * simply omits unanswered tri-states, so unanswered never becomes a guess.
  */
 interface BoatData {
   vesselName?: string;
   flagState?: string;
   registrationNumber?: string;
   callSign?: string;
+  mmsi?: string;
+  idType?: string;          // 'IMO Number' | 'Official Number'
+  owner?: string;
+  operator?: string;
+  cofrOperator?: string;
+  lessThan300GT?: string;   // 'Yes' | 'No'
+  classSociety?: string;
+  oce?: string;
+  oceDescription?: string;
+  vesselClass?: string;
+  vesselClassType?: string;
+  vesselSubType?: string;
+  // fuelOil, fuelElectric, ... arrive as 'Yes' via the index signature.
   grossTonnage?: string;
   [key: string]: string | undefined;
 }
 
 /**
- * Trip data structure
+ * Trip data structure. The extension flattens the wizard's trip into
+ * leg-specific keys: a Departure notice carries departure* + next*, an
+ * Arrival notice carries arrival*/arrive* + last*. Dates are {day,month,year}
+ * objects handled by formatDate, same as traveler dates.
  */
 interface TripData {
+  noticeType?: string;      // 'Departure' | 'Arrival'
+  voyageType?: string;      // 'US to Foreign' | 'Foreign to US' | ...
+  lessThan24hr?: string;    // 'Yes' | 'No'
+  closedLoop?: string;      // 'Yes' | 'No'
+  charterer?: string;       // majority guest surname (tie -> captain's pick)
+  locationDescription?: string;
   departurePort?: string;
-  departureDate?: string;
+  departureCity?: string;
+  departureState?: string;
+  departurePortName?: string;
+  departureTime?: string;   // 'HH:mm'
+  nextCountry?: string;
+  nextPortName?: string;
+  nextPlace?: string;
+  nextPortCode?: string;
+  nextArriveTime?: string;
   arrivalPort?: string;
-  arrivalDate?: string;
+  arrivalCity?: string;
+  arrivalState?: string;
+  arrivalPortName?: string;
+  arriveTime?: string;
+  lastCountry?: string;
+  lastPortName?: string;
+  lastPlace?: string;
+  lastPortCode?: string;
   purpose?: string;
   [key: string]: string | undefined;
 }
