@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, addImageToSession } from '../../route';
+import { getSession, addImageToSession } from '@/lib/upload-sessions';
 
 // ============================================================================
 // API HANDLERS

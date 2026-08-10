@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireApiUser } from '@/lib/api-auth';
 import {
   getValue,
   resolveSource,
@@ -111,7 +112,7 @@ interface BoatData {
 /**
  * Trip data structure. The extension flattens the wizard's trip into
  * leg-specific keys: a Departure notice carries departure* + next*, an
- * Arrival notice carries arrival*/arrive* + last*. Dates are {day,month,year}
+ * Arrival notice carries arrival* and arrive* + last*. Dates are {day,month,year}
  * objects handled by formatDate, same as traveler dates.
  */
 interface TripData {
@@ -314,6 +315,9 @@ function fillSingleSheet(
  * Response: Excel file download
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+
   try {
     const body: GenerateRequest = await request.json();
     
@@ -426,9 +430,12 @@ export async function POST(request: NextRequest) {
  * Response: { hasTemplate: boolean, templateId?: string, templateName?: string }
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const url = searchParams.get('url');
-  
+
   if (!url) {
     return NextResponse.json(
       { error: 'Missing url parameter' },

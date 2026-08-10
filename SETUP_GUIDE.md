@@ -10,6 +10,65 @@ Complete setup instructions for the CrewForms application.
 4. [Server Configuration](#server-configuration)
 5. [Testing](#testing)
 6. [Production Deployment](#production-deployment)
+7. [Authentication Setup](#authentication-setup)
+
+---
+
+## Authentication Setup
+
+CrewForms uses Supabase Auth for user accounts (email/password + Google).
+Signed-in users get their extension data (boats, companies, trips, travelers,
+captain profile, passport images) synced to their account across computers.
+These are one-time dashboard steps:
+
+### 1. Apply the database migration
+
+```bash
+npx supabase db push
+```
+
+(or paste `supabase/migrations/20260807000000_user_data_tables.sql` into the
+Supabase SQL editor). This creates the per-user sync tables with RLS, the
+private `traveler-images` bucket, and removes the over-permissive `templates`
+bucket policies.
+
+### 2. Google Cloud Console (free, no verification review)
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → create a project (e.g. "CrewForms").
+2. **APIs & Services → OAuth consent screen**: External, app name "CrewForms",
+   your support email. Scopes: `openid`, `email`, `profile` (non-sensitive).
+   Publish the app.
+3. **Credentials → Create Credentials → OAuth client ID**, type **Web application**:
+   - Authorized JavaScript origins: `https://crewforms.vercel.app`, `http://localhost:3000`
+   - Authorized redirect URI: the **Callback URL** shown in Supabase Dashboard →
+     Authentication → Providers → Google (looks like
+     `https://<project-ref>.supabase.co/auth/v1/callback`). This is the ONLY
+     redirect Google needs — the extension's redirect is registered in Supabase, not Google.
+4. Copy the Client ID and Client Secret.
+
+### 3. Supabase Dashboard → Authentication
+
+1. **Providers → Google**: enable, paste the Client ID + Secret.
+2. **URL Configuration**:
+   - Site URL: `https://crewforms.vercel.app`
+   - Additional Redirect URLs:
+     - `http://localhost:3000/**`
+     - `https://crewforms.vercel.app/**`
+     - `https://doolnbjkkkohibfnchfobpdpjeapjbjd.chromiumapp.org/*`
+       (the extension's OAuth callback — its id is pinned by the `key` in
+       `extension/manifest.json`, so it is identical on every machine)
+
+### 4. Vercel environment
+
+Add `ADMIN_EMAILS=<your email>` (comma-separated list allowed to write global
+site mappings / Excel templates through the API).
+
+### 5. Extension signing key
+
+`extension-key.pem` in the repo root is the private key whose public half pins
+the extension id. It is gitignored (`*.pem`) — **keep it safe and out of the
+zip**; only the public `key` in `manifest.json` ships. If it is ever lost the
+extension id changes and the redirect URL in step 3 must be updated.
 
 ---
 

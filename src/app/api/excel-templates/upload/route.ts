@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireApiUser, isAdmin, forbiddenResponse } from '@/lib/api-auth';
 
 // Valid MIME types for Excel files
 const VALID_MIME_TYPES = [
@@ -25,6 +26,10 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
  * Response: { path: string } - the storage path for use in template creation
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!isAdmin(auth.user)) return forbiddenResponse();
+
   try {
     // Parse form data
     const formData = await request.formData();
@@ -110,6 +115,10 @@ export async function POST(request: NextRequest) {
  * - path: File path in storage (required)
  */
 export async function DELETE(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!isAdmin(auth.user)) return forbiddenResponse();
+
   const { searchParams } = new URL(request.url);
   const path = searchParams.get('path');
   

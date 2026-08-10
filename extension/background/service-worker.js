@@ -18,6 +18,70 @@ const SERVER_URL = 'https://crewforms.vercel.app';
 // Data expiry time in milliseconds (12 hours)
 const DATA_EXPIRY_MS = 12 * 60 * 60 * 1000;
 
+// Supabase project (public values; RLS is the security boundary). The side
+// panel's supabase-js client persists its session in chrome.storage.local
+// under this key — the worker reads the same session and refreshes it in
+// place when stale, so both sides share one set of tokens.
+const SUPABASE_URL = 'https://kgjlgxihnajaqtocozko.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_yldchee_tvHZnamx_UgU1A_9m-5sjpl';
+const SUPABASE_SESSION_KEY = 'sb-kgjlgxihnajaqtocozko-auth-token';
+
+// ============================================================================
+// AUTH TOKEN ACCESS
+// ============================================================================
+
+/**
+ * Get a valid Supabase access token, refreshing it if it expires within the
+ * next minute. Returns null when signed out (server calls then go out
+ * unauthenticated and the API answers 401).
+ */
+async function getAccessToken() {
+  try {
+    const stored = await chrome.storage.local.get(SUPABASE_SESSION_KEY);
+    const raw = stored[SUPABASE_SESSION_KEY];
+    if (!raw) return null;
+
+    const session = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!session?.access_token) return null;
+
+    const expiresAtMs = (session.expires_at || 0) * 1000;
+    if (expiresAtMs - Date.now() > 60 * 1000) {
+      return session.access_token;
+    }
+
+    if (!session.refresh_token) return null;
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY
+      },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    if (!response.ok) {
+      console.warn('[Auth] Token refresh failed:', response.status);
+      return null;
+    }
+
+    const refreshed = await response.json();
+    // Persist in supabase-js's own shape so the side panel client sees it too.
+    const nextSession = { ...session, ...refreshed };
+    await chrome.storage.local.set({ [SUPABASE_SESSION_KEY]: JSON.stringify(nextSession) });
+    return refreshed.access_token;
+  } catch (error) {
+    console.warn('[Auth] Could not read access token:', error);
+    return null;
+  }
+}
+
+/**
+ * Build fetch headers for CrewForms API calls, attaching the user's token.
+ */
+async function apiAuthHeaders(extra = {}) {
+  const token = await getAccessToken();
+  return token ? { ...extra, 'Authorization': `Bearer ${token}` } : extra;
+}
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -309,7 +373,7 @@ async function createUploadSession() {
     
     const response = await fetch(`${serverUrl}/api/sessions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: await apiAuthHeaders({ 'Content-Type': 'application/json' })
     });
     
     if (!response.ok) {
@@ -474,10 +538,10 @@ async function pollSessionForImages(sessionId) {
 
       const imagesResponse = await fetch(imagesUrl, {
         method: 'GET',
-        headers: {
+        headers: await apiAuthHeaders({
           'Accept': 'application/json',
           'Cache-Control': 'no-cache'
-        }
+        })
       });
 
       console.log(`[Polling] Images response: ${imagesResponse.status}`);
@@ -581,7 +645,7 @@ async function processOCR(imageData) {
 
       const response = await fetch(`${serverUrl}/api/ocr`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await apiAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ image: imageData })
       });
 
@@ -624,7 +688,9 @@ async function getFieldMapping(url) {
     const settings = await chrome.storage.local.get('settings');
     const serverUrl = settings.settings?.serverUrl || SERVER_URL;
     
-    const response = await fetch(`${serverUrl}/api/mappings?url=${encodeURIComponent(url)}`);
+    const response = await fetch(`${serverUrl}/api/mappings?url=${encodeURIComponent(url)}`, {
+      headers: await apiAuthHeaders()
+    });
     
     if (response.status === 404) {
       return { success: true, mapping: null };
@@ -655,7 +721,9 @@ async function checkExcelTemplate(url) {
     const settings = await chrome.storage.local.get('settings');
     const serverUrl = settings.settings?.serverUrl || SERVER_URL;
     
-    const response = await fetch(`${serverUrl}/api/excel/generate?url=${encodeURIComponent(url)}`);
+    const response = await fetch(`${serverUrl}/api/excel/generate?url=${encodeURIComponent(url)}`, {
+      headers: await apiAuthHeaders()
+    });
     
     if (!response.ok) {
       throw new Error(`Template check error: ${response.status}`);
@@ -680,7 +748,7 @@ async function generateExcel(templateId, data) {
     
     const response = await fetch(`${serverUrl}/api/excel/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await apiAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         templateId,
         travelers: data.travelers || [],

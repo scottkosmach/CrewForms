@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hello World | Vercel + Supabase Test",
-  description: "Integration test for Next.js, Vercel, and Supabase connectivity",
+  title: "CrewForms",
+  description: "Auto-fill guest passport information for boat captains",
 };
 
 export default function RootLayout({

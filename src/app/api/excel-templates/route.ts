@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireApiUser, isAdmin, forbiddenResponse } from '@/lib/api-auth';
 
 // ============================================================================
 // TYPES
@@ -126,10 +127,13 @@ function generateTemplateId(urlPattern: string): string {
  * - (none): List all templates
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const url = searchParams.get('url');
   const id = searchParams.get('id');
-  
+
   try {
     const supabase = createAdminClient();
     
@@ -229,6 +233,10 @@ export async function GET(request: NextRequest) {
  * - sheets: Array of sheet configurations
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!isAdmin(auth.user)) return forbiddenResponse();
+
   try {
     const body = await request.json();
     
@@ -304,6 +312,10 @@ export async function POST(request: NextRequest) {
  * - name, urlPattern, description, templatePath, sheets: Fields to update
  */
 export async function PUT(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!isAdmin(auth.user)) return forbiddenResponse();
+
   try {
     const body = await request.json();
     
@@ -375,6 +387,10 @@ export async function PUT(request: NextRequest) {
  * - id: Template ID (required)
  */
 export async function DELETE(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!isAdmin(auth.user)) return forbiddenResponse();
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   
@@ -441,9 +457,4 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// ============================================================================
-// EXPORTS
-// ============================================================================
-
-export { urlMatchesPattern };
 

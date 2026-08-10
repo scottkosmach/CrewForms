@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, getPendingImages, setSessionConnected, deleteSession } from '../route';
+import { getSession, getPendingImages, setSessionConnected, deleteSession } from '@/lib/upload-sessions';
 
 // Force dynamic rendering - session status must never be cached
 export const dynamic = 'force-dynamic';

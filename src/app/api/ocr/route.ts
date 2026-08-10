@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { requireApiUser } from '@/lib/api-auth';
 
 // ============================================================================
 // CONFIGURATION
@@ -120,6 +121,10 @@ Extraction Rules:
  * Process a passport image and extract data
  */
 export async function POST(request: NextRequest) {
+  // Every call costs OpenAI money — signed-in users only.
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+
   try {
     // Check for API key
     if (!process.env.OPENAI_API_KEY) {

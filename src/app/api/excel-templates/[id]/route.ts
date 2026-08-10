@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireApiUser, isAdmin, forbiddenResponse } from '@/lib/api-auth';
 
 // ============================================================================
 // TYPES
@@ -82,8 +83,11 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+
   const { id } = await params;
-  
+
   try {
     const supabase = createAdminClient();
     
@@ -119,8 +123,12 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!isAdmin(auth.user)) return forbiddenResponse();
+
   const { id } = await params;
-  
+
   try {
     const body = await request.json();
     const supabase = createAdminClient();
@@ -184,11 +192,15 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!isAdmin(auth.user)) return forbiddenResponse();
+
   const { id } = await params;
-  
+
   try {
     const supabase = createAdminClient();
-    
+
     // Get template to find the file path
     const { data: existing } = await supabase
       .from('excel_templates')

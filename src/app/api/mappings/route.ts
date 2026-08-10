@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireApiUser, isAdmin, forbiddenResponse } from '@/lib/api-auth';
 
 // ============================================================================
 // TYPES
@@ -112,6 +113,9 @@ function generateMappingId(urlPattern: string): string {
  * Get a mapping by URL or list all mappings
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const url = searchParams.get('url');
   const id = searchParams.get('id');
@@ -208,9 +212,13 @@ export async function GET(request: NextRequest) {
  * Create a new mapping
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!isAdmin(auth.user)) return forbiddenResponse();
+
   try {
     const body = await request.json();
-    
+
     // Validate required fields
     if (!body.name || !body.urlPattern || !body.fields) {
       return NextResponse.json(
@@ -279,9 +287,13 @@ export async function POST(request: NextRequest) {
  * Update an existing mapping
  */
 export async function PUT(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!isAdmin(auth.user)) return forbiddenResponse();
+
   try {
     const body = await request.json();
-    
+
     if (!body.id) {
       return NextResponse.json(
         { error: 'Missing mapping ID' },
@@ -347,9 +359,13 @@ export async function PUT(request: NextRequest) {
  * Delete a mapping
  */
 export async function DELETE(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!isAdmin(auth.user)) return forbiddenResponse();
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
-  
+
   if (!id) {
     return NextResponse.json(
       { error: 'Missing mapping ID' },
@@ -400,9 +416,3 @@ export async function DELETE(request: NextRequest) {
     );
   }
 }
-
-// ============================================================================
-// EXPORT HELPERS FOR TESTING
-// ============================================================================
-
-export { urlMatchesPattern };

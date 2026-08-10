@@ -70,9 +70,40 @@ export async function middleware(request: NextRequest) {
 
   // IMPORTANT: This refreshes the session if expired
   // The getUser() call will update cookies if the session was refreshed
-  await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const { pathname } = request.nextUrl
+
+  // Admin pages require a signed-in user. API routes are NOT redirected here —
+  // they return 401 JSON themselves (redirecting fetch() callers and the
+  // extension to an HTML login page would break them). The phone upload flow
+  // (/upload/*) stays anonymous by design: the session id is the credential.
+  if (!user && pathname.startsWith('/admin')) {
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('next', pathname)
+    return redirectWithCookies(loginUrl, response)
+  }
+
+  // Signed-in users have no business on the login page.
+  if (user && pathname === '/login') {
+    return redirectWithCookies(new URL('/admin', request.url), response)
+  }
 
   return response
+}
+
+/**
+ * Build a redirect that carries any auth cookies the Supabase client just
+ * refreshed — dropping them causes redirect loops after token expiry.
+ */
+function redirectWithCookies(url: URL, response: NextResponse): NextResponse {
+  const redirect = NextResponse.redirect(url)
+  response.cookies.getAll().forEach((cookie) => {
+    redirect.cookies.set(cookie)
+  })
+  return redirect
 }
 
 // Configure which routes the middleware runs on

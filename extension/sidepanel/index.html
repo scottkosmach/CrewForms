@@ -18,7 +18,8 @@
         </svg>
         <span class="logo-text">CrewForms</span>
       </div>
-      <button class="btn-icon" id="settingsBtn" title="Settings">
+      <span class="sync-dot signedout" id="syncDot" title="Not signed in"></span>
+      <button class="btn-icon" id="settingsBtn" title="Account &amp; Sync">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -770,10 +771,54 @@
     </footer>
   </div>
 
+  <!-- Account & Sync Modal -->
+  <div class="qr-modal hidden" id="accountModal">
+    <div class="qr-content account-content">
+      <h3>Account &amp; Sync</h3>
+
+      <!-- Signed-out state -->
+      <div id="accountSignedOut">
+        <p class="text-muted">Sign in to back up your data and sync it across computers.</p>
+        <div class="account-error hidden" id="accountError"></div>
+        <div class="account-notice hidden" id="accountNotice"></div>
+        <form id="accountForm" class="account-form">
+          <input type="email" id="accountEmail" placeholder="Email" autocomplete="email" required>
+          <input type="password" id="accountPassword" placeholder="Password" autocomplete="current-password" minlength="6" required>
+          <button type="submit" class="btn btn-primary" id="accountSignInBtn">Sign in</button>
+        </form>
+        <div class="account-links">
+          <button type="button" class="link-btn" id="accountSignUpBtn">Create account</button>
+          <button type="button" class="link-btn" id="accountForgotBtn">Forgot password?</button>
+        </div>
+        <div class="account-divider"><span>or</span></div>
+        <button type="button" class="btn btn-secondary" id="accountGoogleBtn">Continue with Google</button>
+      </div>
+
+      <!-- Signed-in state -->
+      <div id="accountSignedIn" class="hidden">
+        <p class="account-email" id="accountUserEmail"></p>
+        <p class="text-muted" id="accountSyncStatus">Sync status</p>
+        <div class="account-error hidden" id="accountErrorIn"></div>
+        <div class="account-actions">
+          <button type="button" class="btn btn-primary" id="accountSyncNowBtn">Sync now</button>
+          <button type="button" class="btn btn-secondary" id="accountSignOutBtn">Sign out</button>
+          <button type="button" class="link-btn danger" id="accountEraseBtn">Sign out and erase local data</button>
+        </div>
+      </div>
+
+      <button class="btn btn-secondary account-close" id="accountCloseBtn">Close</button>
+    </div>
+  </div>
+
   <!-- Toast Notifications -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <!-- QR Code Library -->
+  <!-- Vendored libraries + auth/sync (order matters: config before auth,
+       auth before sync, everything before app.js) -->
+  <script src="vendor/supabase.js"></script>
+  <script src="supabase-config.js"></script>
+  <script src="auth.js"></script>
+  <script src="sync.js"></script>
   <script src="qrcode.min.js"></script>
   <script src="app.js"></script>
 </body>

@@ -65,6 +65,15 @@ function showToast(message, type = 'info') {
 }
 
 /**
+ * Build fetch headers for the CrewForms API, attaching the signed-in user's
+ * access token. The API returns 401 without one.
+ */
+async function apiAuthHeaders(extra = {}) {
+  const token = typeof CFAuth !== 'undefined' ? await CFAuth.getAccessToken() : null;
+  return token ? { ...extra, 'Authorization': `Bearer ${token}` } : extra;
+}
+
+/**
  * Send message to background service worker
  */
 async function sendMessage(message) {
@@ -86,9 +95,18 @@ async function getStorage(keys) {
 
 /**
  * Save data to storage
+ *
+ * CFSync hooks both sides of the write: stampChanges() marks changed records
+ * with updatedAt before they're persisted, onLocalWrite() diffs against its
+ * snapshot afterwards and queues the cloud push. Both are no-ops signed out.
  */
 async function setStorage(data) {
-  return await sendMessage({ type: 'SET_STORAGE', data });
+  if (typeof CFSync !== 'undefined') CFSync.stampChanges(data);
+  const result = await sendMessage({ type: 'SET_STORAGE', data });
+  if (typeof CFSync !== 'undefined' && result && result.success !== false) {
+    CFSync.onLocalWrite(data);
+  }
+  return result;
 }
 
 // ============================================================================
@@ -118,7 +136,12 @@ const state = {
 
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('CrewForms side panel loaded');
-  
+
+  // Start the sync engine before the first load so its snapshot reflects
+  // pre-sync reality; the pull happens after render (below) so the UI is
+  // never blocked on the network.
+  await CFSync.init();
+
   // Load data from storage
   await loadAllData();
   
@@ -134,9 +157,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPasteAction();
   setupExcelDownload();
   setupAdminMode();
-  
+  setupAccountModal();
+
   // Update UI
   renderAll();
+
+  // Pull remote changes in the background; CFSync re-renders if anything
+  // changed. Signed-out or offline this is a no-op.
+  CFSync.pullAll();
   
   // Start expiry timer update
   startExpiryTimer();
@@ -3786,7 +3814,9 @@ async function loadExistingMappings() {
     const currentUrl = tabResult.tab?.url || '';
     
     // Fetch all mappings from the server
-    const response = await fetch('https://crewforms.vercel.app/api/mappings');
+    const response = await fetch('https://crewforms.vercel.app/api/mappings', {
+      headers: await apiAuthHeaders()
+    });
     
     if (!response.ok) {
       throw new Error('Failed to fetch mappings');
@@ -3906,7 +3936,9 @@ async function editExistingMapping(mappingId) {
     
     // Fetch the full mapping details
     console.log('Fetching mapping:', mappingId);
-    const response = await fetch(`https://crewforms.vercel.app/api/mappings?id=${mappingId}`);
+    const response = await fetch(`https://crewforms.vercel.app/api/mappings?id=${mappingId}`, {
+      headers: await apiAuthHeaders()
+    });
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -4066,7 +4098,8 @@ async function deleteExistingMapping(mappingId, mappingName) {
   
   try {
     const response = await fetch(`https://crewforms.vercel.app/api/mappings?id=${mappingId}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: await apiAuthHeaders()
     });
     
     if (!response.ok) {
@@ -5134,9 +5167,7 @@ async function saveMapping() {
     // Send to the API - use PUT for updates, POST for new
     const response = await fetch('https://crewforms.vercel.app/api/mappings', {
       method: isEditing ? 'PUT' : 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: await apiAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(mapping)
     });
     
@@ -5351,6 +5382,191 @@ function getTestDataForField(dataSource) {
   }
   
   return value;
+}
+
+// ============================================================================
+// ACCOUNT & SYNC MODAL
+// ============================================================================
+
+/**
+ * Wire the header gear button to the Account & Sync modal: sign in / sign up /
+ * Google / reset when signed out; sync status and sign-out actions when
+ * signed in. The header dot mirrors CFSync's status at all times.
+ */
+function setupAccountModal() {
+  const modal = document.getElementById('accountModal');
+  const signedOutPane = document.getElementById('accountSignedOut');
+  const signedInPane = document.getElementById('accountSignedIn');
+  const errorBox = document.getElementById('accountError');
+  const errorBoxIn = document.getElementById('accountErrorIn');
+  const noticeBox = document.getElementById('accountNotice');
+  const emailInput = document.getElementById('accountEmail');
+  const passwordInput = document.getElementById('accountPassword');
+  const userEmail = document.getElementById('accountUserEmail');
+  const syncStatus = document.getElementById('accountSyncStatus');
+  const syncDot = document.getElementById('syncDot');
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.classList.remove('hidden');
+    errorBoxIn.textContent = message;
+    errorBoxIn.classList.remove('hidden');
+  }
+
+  function showNotice(message) {
+    noticeBox.textContent = message;
+    noticeBox.classList.remove('hidden');
+  }
+
+  function clearMessages() {
+    errorBox.classList.add('hidden');
+    errorBoxIn.classList.add('hidden');
+    noticeBox.classList.add('hidden');
+  }
+
+  async function refreshPanes() {
+    const user = await CFAuth.getUser();
+    signedOutPane.classList.toggle('hidden', !!user);
+    signedInPane.classList.toggle('hidden', !user);
+    if (user) userEmail.textContent = user.email;
+    updateStatusLine(CFSync.getState());
+  }
+
+  function statusLabel(state) {
+    switch (state.status) {
+      case 'signedout': return 'Not signed in';
+      case 'synced':
+        return state.lastSyncAt
+          ? `Synced ${new Date(state.lastSyncAt).toLocaleTimeString()}`
+          : 'Synced';
+      case 'pending': return `${state.pending} change${state.pending === 1 ? '' : 's'} waiting to sync`;
+      case 'syncing': return 'Syncing…';
+      case 'offline': return 'Offline — changes will sync when back online';
+      case 'error': return `Sync error: ${state.error || 'unknown'}`;
+      default: return '';
+    }
+  }
+
+  function updateStatusLine(state) {
+    syncStatus.textContent = statusLabel(state);
+    syncDot.className = `sync-dot ${state.status}`;
+    syncDot.title = statusLabel(state);
+  }
+
+  CFSync.onStatus((_status, _detail) => updateStatusLine(CFSync.getState()));
+  CFAuth.onAuthStateChange(() => refreshPanes());
+
+  document.getElementById('settingsBtn').addEventListener('click', () => {
+    clearMessages();
+    refreshPanes();
+    modal.classList.remove('hidden');
+  });
+
+  document.getElementById('accountCloseBtn').addEventListener('click', () => {
+    modal.classList.add('hidden');
+  });
+
+  document.getElementById('accountForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearMessages();
+    try {
+      await CFAuth.signInWithPassword(emailInput.value.trim(), passwordInput.value);
+      passwordInput.value = '';
+      showToast('Signed in', 'success');
+      refreshPanes();
+    } catch (err) {
+      showError(err.message);
+    }
+  });
+
+  document.getElementById('accountSignUpBtn').addEventListener('click', async () => {
+    clearMessages();
+    if (!emailInput.value.trim() || !passwordInput.value) {
+      showError('Enter an email and password first, then click Create account.');
+      return;
+    }
+    try {
+      const { needsConfirmation } = await CFAuth.signUp(emailInput.value.trim(), passwordInput.value);
+      if (needsConfirmation) {
+        showNotice('Check your email for a confirmation link, then sign in here.');
+      } else {
+        showToast('Account created', 'success');
+        refreshPanes();
+      }
+    } catch (err) {
+      showError(err.message);
+    }
+  });
+
+  document.getElementById('accountForgotBtn').addEventListener('click', async () => {
+    clearMessages();
+    if (!emailInput.value.trim()) {
+      showError('Enter your email first, then click Forgot password.');
+      return;
+    }
+    try {
+      await CFAuth.resetPassword(emailInput.value.trim());
+      showNotice('Check your email for a password reset link.');
+    } catch (err) {
+      showError(err.message);
+    }
+  });
+
+  document.getElementById('accountGoogleBtn').addEventListener('click', async () => {
+    clearMessages();
+    try {
+      await CFAuth.signInWithGoogle();
+      showToast('Signed in with Google', 'success');
+      refreshPanes();
+    } catch (err) {
+      // Cancelling the popup lands here too — keep it quiet but visible.
+      showError(err.message);
+    }
+  });
+
+  document.getElementById('accountSyncNowBtn').addEventListener('click', async () => {
+    clearMessages();
+    await CFSync.syncNow();
+    updateStatusLine(CFSync.getState());
+  });
+
+  document.getElementById('accountSignOutBtn').addEventListener('click', async () => {
+    clearMessages();
+    try {
+      await CFAuth.signOut();
+      showToast('Signed out — your local data is untouched', 'info');
+      refreshPanes();
+    } catch (err) {
+      showError(err.message);
+    }
+  });
+
+  document.getElementById('accountEraseBtn').addEventListener('click', async () => {
+    clearMessages();
+    const confirmed = confirm(
+      'Sign out and erase all CrewForms data from this computer?\n\n' +
+      'Your synced data stays in your account and will come back when you sign in again.'
+    );
+    if (!confirmed) return;
+    try {
+      await CFAuth.signOut();
+    } catch (err) {
+      console.warn('Sign-out before erase failed:', err);
+    }
+    await CFSync.eraseLocalData();
+    await loadAllData();
+    renderAll();
+    showToast('Local data erased', 'info');
+    refreshPanes();
+  });
+
+  // Nudge: signed out but sitting on local data worth backing up.
+  (async () => {
+    const user = await CFAuth.getUser();
+    if (!user && (state.travelers.length || state.boats.length || state.captain)) {
+      updateStatusLine(CFSync.getState());
+    }
+  })();
 }
 
 // ============================================================================

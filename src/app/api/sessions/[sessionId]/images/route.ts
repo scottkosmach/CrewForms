@@ -6,7 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getPendingImages, sessionExists } from '../../route';
+import { getPendingImages, sessionExists, sessionOwnedBy } from '@/lib/upload-sessions';
+import { requireApiUser } from '@/lib/api-auth';
 
 // ============================================================================
 // API HANDLERS
@@ -21,6 +22,18 @@ export async function GET(
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const { sessionId } = await params;
+
+  // Draining is destructive and hands over passport images, so a leaked
+  // session id alone is no longer enough: the caller must be signed in AND be
+  // the session's creator.
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  if (!(await sessionOwnedBy(sessionId, auth.user.id))) {
+    return NextResponse.json(
+      { error: 'Session not found or expired' },
+      { status: 404 }
+    );
+  }
 
   // Reject unknown or expired sessions explicitly. This endpoint used to return
   // an empty array for any id, which made it a free oracle: probe ids, and any
